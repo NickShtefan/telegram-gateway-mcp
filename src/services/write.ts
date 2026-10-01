@@ -28,7 +28,18 @@ export interface WriteLimits {
   reactionsPerDay: number;
 }
 
+/**
+ * Пределы по умолчанию. Это осторожные числа шлюза, а не правила Telegram:
+ * Telegram своих порогов не публикует и наказывает за массовые сообщения
+ * незнакомым людям, вступления и реакции (PEER_FLOOD, заморозка аккаунта).
+ * Владелец меняет пределы переменными TG_MCP_LIMIT_*; 0 снимает предел.
+ */
 export const DEFAULT_WRITE_LIMITS: WriteLimits = { repliesPerDay: 20, newDialogsPerDay: 5, joinsPerDay: 5, reactionsPerDay: 30 };
+
+/** Достигнут ли дневной предел; 0 значит, что предела нет. */
+function reached(count: number, limit: number): boolean {
+  return limit > 0 && count >= limit;
+}
 
 const VARIATION_SELECTOR = String.fromCharCode(0xfe0f);
 
@@ -118,9 +129,16 @@ export class WriteService {
   private readonly log: Logger;
 
   constructor(private readonly deps: WriteServiceDeps) {
-    this.limits = { ...DEFAULT_WRITE_LIMITS, ...deps.limits };
+    // undefined из настроек не должен затирать значение по умолчанию.
+    const custom = Object.fromEntries(Object.entries(deps.limits ?? {}).filter(([, v]) => typeof v === 'number'));
+    this.limits = { ...DEFAULT_WRITE_LIMITS, ...custom };
     this.now = deps.now ?? (() => Date.now());
     this.log = deps.log ?? createLogger('write');
+  }
+
+  /** Действующие дневные пределы на аккаунт; 0 значит без предела. */
+  get dailyLimits(): WriteLimits {
+    return { ...this.limits };
   }
 
   /**
@@ -149,7 +167,7 @@ export class WriteService {
     if (this.deps.store.hasReply(accountId, chatKey, postId)) {
       throw new GatewayError('LIMIT_REACHED', 'This account has already replied to this post. Only one reply per post is allowed.');
     }
-    if (this.deps.store.writesSince(accountId, 'reply', dayStart(this.now())) >= this.limits.repliesPerDay) {
+    if (reached(this.deps.store.writesSince(accountId, 'reply', dayStart(this.now())), this.limits.repliesPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.repliesPerDay} replies for this account is reached.`);
     }
   }
@@ -192,10 +210,10 @@ export class WriteService {
     if (peer.kind !== 'user') return;
     if (peer.meta.bot === true) return;
     if (this.deps.store.hasWrittenTo(accountId, peer.peerKey)) return;
-    if (this.deps.store.newDialogsSince(accountId, dayStart(this.now())) >= this.limits.newDialogsPerDay) {
+    if (reached(this.deps.store.newDialogsSince(accountId, dayStart(this.now())), this.limits.newDialogsPerDay)) {
       throw new GatewayError(
         'LIMIT_REACHED',
-        `Daily limit of ${this.limits.newDialogsPerDay} new dialogs for this account is reached. Messages to new people are the riskiest action for a Telegram account.`,
+        `Daily limit of ${this.limits.newDialogsPerDay} new dialogs for this account is reached: messages to people the account has not written to before. The limit is a gateway setting (TG_MCP_LIMIT_NEW_DIALOGS), only the owner can change it.`,
       );
     }
   }
@@ -231,7 +249,7 @@ export class WriteService {
 
   /** Дневной предел реакций: реакции под каждым постом подряд выглядят как накрутка. */
   assertCanReact(accountId: string): void {
-    if (this.deps.store.writesSince(accountId, 'react', dayStart(this.now())) >= this.limits.reactionsPerDay) {
+    if (reached(this.deps.store.writesSince(accountId, 'react', dayStart(this.now())), this.limits.reactionsPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.reactionsPerDay} reactions for this account is reached.`);
     }
   }
@@ -262,7 +280,7 @@ export class WriteService {
 
   /** Вступление в публичный чат или по инвайту. Капчу привратника шлюз не проходит. */
   async join(context: WriteContext, target: { chat?: EntityRecord; inviteHash?: string }): Promise<{ chatKey: string | null; outcome: JoinOutcome }> {
-    if (this.deps.store.writesSince(context.accountId, 'join', dayStart(this.now())) >= this.limits.joinsPerDay) {
+    if (reached(this.deps.store.writesSince(context.accountId, 'join', dayStart(this.now())), this.limits.joinsPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.joinsPerDay} joins for this account is reached.`);
     }
     let chatKey: string | null = null;

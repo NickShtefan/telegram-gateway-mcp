@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { removeAccount } from '../../cli/admin.js';
 import { createLogger } from '../../core/log.js';
+import { writePrivateMode } from '../../policy/scopes.js';
 import { HistoryService } from '../../services/history.js';
 import { JobManager } from '../../services/jobs.js';
 import { buildMatch, IndexStore, LocalIndexService } from '../../services/localIndex.js';
@@ -94,6 +95,29 @@ describe('tg_list_dialogs: чаты аккаунта', () => {
     expect(calls[0]!.limit).toBe(100);
     // запросы собраны настоящими классами teleproto и сериализуются
     for (const call of gw.tg.callsOf('messages.GetDialogs')) expect(() => call.request.getBytes()).not.toThrow();
+  });
+
+  it('type=private показывает только те личные чаты, которые владелец открыл на чтение', async () => {
+    const closed = await nick.call('tg_list_dialogs', { type: 'private' });
+    expect(closed.text).toContain('0 shown, private only');
+    expect(closed.text).not.toContain('friend');
+
+    // режим send чтения не открывает
+    writePrivateMode(gw.storage, 'nick', 'agent', 'send');
+    expect((await nick.call('tg_list_dialogs', { type: 'private' })).text).not.toContain('friend');
+
+    writePrivateMode(gw.storage, 'nick', 'agent', 'open');
+    const open = await nick.call('tg_list_dialogs', { type: 'private' });
+    expect(open.text).toContain('1 shown, private only');
+    expect(open.text).toContain('@friend "Друг" | user | unread 1');
+    expect(open.text).not.toContain('@stonksnws');
+    // в общем списке людей по-прежнему нет
+    expect((await nick.call('tg_list_dialogs')).text).not.toContain('friend');
+
+    // один чат, открытый правилом, тоже виден
+    writePrivateMode(gw.storage, 'nick', 'agent', 'closed');
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'friend', effect: 'allow', source: 'owner' });
+    expect((await nick.call('tg_list_dialogs', { type: 'private' })).text).toContain('@friend');
   });
 
   it('фильтр по названию и типу; чат из списка дальше открывается по id', async () => {

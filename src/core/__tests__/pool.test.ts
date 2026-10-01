@@ -297,6 +297,16 @@ describe('config', () => {
     expect(requireApiCredentials(config)).toEqual({ apiId: 12345, apiHash: 'abcdef' });
   });
 
+  it('дневные пределы записи читаются из настроек; опечатка это ошибка, а не предел по умолчанию', () => {
+    expect(loadConfig({ TG_MCP_HOME: home }).writeLimits).toEqual({});
+    writeFileSync(join(home, '.env'), 'TG_MCP_LIMIT_NEW_DIALOGS=25\nTG_MCP_LIMIT_REACTIONS=0\n');
+    expect(loadConfig({ TG_MCP_HOME: home }).writeLimits).toEqual({ newDialogsPerDay: 25, reactionsPerDay: 0 });
+    expect(loadConfig({ TG_MCP_HOME: home, TG_MCP_LIMIT_REPLIES: ' 40 ', TG_MCP_LIMIT_JOINS: '' }).writeLimits).toMatchObject({ repliesPerDay: 40 });
+    for (const bad of ['many', '-1', '2.5', '10 per day']) {
+      expect(() => loadConfig({ TG_MCP_HOME: home, TG_MCP_LIMIT_NEW_DIALOGS: bad })).toThrow(/TG_MCP_LIMIT_NEW_DIALOGS must be a whole number/);
+    }
+  });
+
   it('без учётных данных API объясняет, куда их положить', () => {
     const config = loadConfig({ TG_MCP_HOME: home });
     expect(() => requireApiCredentials(config)).toThrow(/TG_API_ID/);

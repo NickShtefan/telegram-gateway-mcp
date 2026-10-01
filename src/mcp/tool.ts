@@ -9,6 +9,7 @@ import type { z } from 'zod';
 import { classifyError, GatewayError, isGatewayError } from '../core/errors.js';
 import type { Logger } from '../core/log.js';
 import type { Principal } from '../policy/access.js';
+import type { ScopeAction } from '../policy/scopes.js';
 import type { GatewayServices } from '../services/index.js';
 import type { EntityRecord } from '../storage/port.js';
 import type { ParsedRef } from '../services/links.js';
@@ -37,9 +38,10 @@ export interface ToolContext {
   account(requested?: string): string;
   /**
    * Находит чат по ссылке, username или id и проверяет скоупы пользователя.
-   * `allowUsers` открывает карточку человека (но не его переписку).
+   * `action` по умолчанию `read`; `write` нужен инструменту, который только
+   * пишет в чат и не показывает его сообщения.
    */
-  openChat(ref: string, accountId: string): Promise<{ parsed: ParsedRef; chat: EntityRecord }>;
+  openChat(ref: string, accountId: string, action?: ScopeAction): Promise<{ parsed: ParsedRef; chat: EntityRecord }>;
 }
 
 export type ToolShape = Record<string, z.ZodTypeAny>;
@@ -97,9 +99,9 @@ export function createToolContext(options: RegisterOptions): ToolContext {
     log: options.log,
     now,
     account: requested => services.access.resolveAccount(principal, requested || undefined),
-    openChat: async (ref, accountId) => {
+    openChat: async (ref, accountId, action = 'read') => {
       const found = await services.resolver.resolve(accountId, ref);
-      services.scopes.assertAllowed(principal.userId, accountId, found.chat);
+      services.scopes.assertAllowed(principal.userId, accountId, found.chat, action);
       return found;
     },
   };

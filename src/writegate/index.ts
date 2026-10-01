@@ -4,6 +4,7 @@
  * Сам по себе шлюз ничего не пишет и никого не запускает.
  */
 import { GatewayError } from '../core/errors.js';
+import { ScopePolicy, type ScopeAction } from '../policy/scopes.js';
 import type { Runtime } from '../runtime.js';
 import type { CommentsService } from '../services/comments.js';
 import { WriteService } from '../services/write.js';
@@ -33,11 +34,15 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
   const now = deps.now ?? (() => Date.now());
   const store = new WriteStore(storage, now);
   const approvals = new Approvals({ store, log: log.child('approvals'), now });
-  const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, now, log: log.child('write') });
+  const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, limits: runtime.config.writeLimits, now, log: log.child('write') });
 
-  const chatOf = (accountId: string, chatKey: string): EntityRecord => {
+  // Скоупы проверяются ещё раз в момент выполнения: между предпросмотром и
+  // подтверждением владелец мог закрыть чат или сменить режим личных чатов.
+  const scopes = new ScopePolicy(storage);
+  const chatOf = (approval: { userId: string }, accountId: string, chatKey: string, action: ScopeAction): EntityRecord => {
     const chat = storage.entities.get(accountId, chatKey);
     if (!chat) throw new GatewayError('CHAT_NOT_FOUND', `Chat ${chatKey} is no longer known to account ${accountId}.`);
+    scopes.assertAllowed(approval.userId, accountId, chat, action);
     return chat;
   };
 
@@ -45,7 +50,7 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
     'reply',
     async approval => {
       const p = approval.payload as { accountId: string; chatKey: string; postId: number; text: string; sendAs?: 'account' | 'channel' };
-      const sent = await write.reply({ userId: approval.userId, accountId: p.accountId }, chatOf(p.accountId, p.chatKey), p.postId, p.text, p.sendAs ?? 'account');
+      const sent = await write.reply({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'read'), p.postId, p.text, p.sendAs ?? 'account');
       return { summary: sent.link ? `Sent: ${sent.link}` : 'Sent', data: { link: sent.link, message_id: sent.messageId } };
     },
     { editable: true },
@@ -55,7 +60,7 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
     'send',
     async approval => {
       const p = approval.payload as { accountId: string; chatKey: string; text: string };
-      const sent = await write.send({ userId: approval.userId, accountId: p.accountId }, chatOf(p.accountId, p.chatKey), p.text);
+      const sent = await write.send({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'write'), p.text);
       return { summary: sent.link ? `Sent: ${sent.link}` : 'Sent', data: { message_id: sent.messageId } };
     },
     { editable: true },
@@ -63,7 +68,7 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
 
   approvals.register('react', async approval => {
     const p = approval.payload as { accountId: string; chatKey: string; messageId: number; emoji: string | null; where: string };
-    await write.react({ userId: approval.userId, accountId: p.accountId }, chatOf(p.accountId, p.chatKey), p.messageId, p.emoji);
+    await write.react({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'read'), p.messageId, p.emoji);
     return { summary: p.emoji ? `Reaction ${p.emoji} is set on ${p.where}` : `The reaction is removed from ${p.where}` };
   });
 
@@ -71,7 +76,7 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
     const p = approval.payload as { accountId: string; chatKey?: string; inviteHash?: string; label: string };
     const joined = await write.join(
       { userId: approval.userId, accountId: p.accountId },
-      { chat: p.chatKey ? chatOf(p.accountId, p.chatKey) : undefined, inviteHash: p.inviteHash },
+      { chat: p.chatKey ? chatOf(approval, p.accountId, p.chatKey, 'read') : undefined, inviteHash: p.inviteHash },
     );
     if (joined.outcome === 'requested') return { summary: `A join request to ${p.label} is sent: an admin of the chat has to accept it.`, data: { outcome: joined.outcome } };
     if (joined.outcome === 'already') return { summary: `The account is already a member of ${p.label}.`, data: { outcome: joined.outcome } };

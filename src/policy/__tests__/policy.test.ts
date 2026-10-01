@@ -4,7 +4,7 @@ import { GatewayError } from '../../core/errors.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
 import { AccessPolicy } from '../access.js';
 import { Audit } from '../audit.js';
-import { ScopePolicy } from '../scopes.js';
+import { readPrivateMode, ScopePolicy, writePrivateMode } from '../scopes.js';
 
 let storage: SqliteStorage;
 let access: AccessPolicy;
@@ -87,6 +87,63 @@ describe('ScopePolicy', () => {
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(false);
     expect(storage.scopes.remove('nick', 'agent', channel.peerKey)).toBe(1);
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(true);
+  });
+});
+
+describe('режим личных чатов', () => {
+  const seller = { peerKey: '42', kind: 'user' as const, username: 'seller' };
+  const stranger = { peerKey: '77', kind: 'user' as const, username: null };
+  const channel = { peerKey: '-1000000000500', kind: 'channel' as const, username: 'News' };
+
+  it('send: писать можно любому человеку, читать нельзя', () => {
+    expect(scopes.privateMode('nick', 'agent')).toBe('closed');
+    expect(scopes.isAllowed('nick', 'agent', stranger, 'write')).toBe(false);
+
+    writePrivateMode(storage, 'nick', 'agent', 'send');
+    expect(scopes.privateMode('nick', 'agent')).toBe('send');
+    expect(scopes.isAllowed('nick', 'agent', stranger, 'write')).toBe(true);
+    expect(scopes.isAllowed('nick', 'agent', stranger)).toBe(false);
+    const decision = scopes.decide('nick', 'agent', stranger);
+    expect(decision).toMatchObject({ allowed: false, code: 'private' });
+    expect(decision.allowed === false && decision.reason).toContain('open for sending only');
+
+    // чат, открытый правилом, читается и в режиме send
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow', source: 'owner' });
+    expect(scopes.isAllowed('nick', 'agent', seller)).toBe(true);
+    // каналам режим ничего не меняет
+    expect(scopes.isAllowed('nick', 'agent', channel)).toBe(true);
+  });
+
+  it('open: читать и писать можно в любой личный чат', () => {
+    writePrivateMode(storage, 'nick', 'agent', 'open');
+    expect(scopes.isAllowed('nick', 'agent', stranger)).toBe(true);
+    expect(scopes.isAllowed('nick', 'agent', stranger, 'write')).toBe(true);
+  });
+
+  it('служебные чаты и запрет владельца сильнее режима', () => {
+    writePrivateMode(storage, 'nick', 'agent', 'open');
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '42', effect: 'deny', source: 'owner' });
+    for (const action of ['read', 'write'] as const) {
+      expect(scopes.isAllowed('nick', 'agent', seller, action)).toBe(false);
+      expect(scopes.isAllowed('nick', 'agent', { peerKey: '777000', kind: 'user' }, action)).toBe(false);
+      expect(scopes.isAllowed('nick', 'agent', { peerKey: '999', kind: 'user', username: 'SpamBot' }, action)).toBe(false);
+    }
+  });
+
+  it('режим свой у каждой пары пользователь и аккаунт; новый режим заменяет старый', () => {
+    writePrivateMode(storage, 'nick', 'agent', 'open');
+    expect(readPrivateMode(storage, 'partner', 'agent')).toBe('closed');
+    expect(readPrivateMode(storage, 'nick', 'nick')).toBe('closed');
+    expect(scopes.isAllowed('partner', 'agent', stranger, 'write')).toBe(false);
+
+    writePrivateMode(storage, 'nick', 'agent', 'send');
+    expect(readPrivateMode(storage, 'nick', 'agent')).toBe('send');
+    expect(storage.scopes.list('nick', 'agent')).toHaveLength(1);
+    expect(scopes.isAllowed('nick', 'agent', stranger)).toBe(false);
+
+    writePrivateMode(storage, 'nick', 'agent', 'closed');
+    expect(storage.scopes.list('nick', 'agent')).toHaveLength(0);
+    expect(scopes.isAllowed('nick', 'agent', stranger, 'write')).toBe(false);
   });
 });
 

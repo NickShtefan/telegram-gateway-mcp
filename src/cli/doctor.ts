@@ -9,7 +9,9 @@ import type { ClientFactory } from '../core/clientPool.js';
 import { loadSessionSecret, RETIRED_TOOLSETS, type GatewayConfig } from '../core/config.js';
 import { acquireLock, isLockHeld } from '../core/lock.js';
 import { createLogger } from '../core/log.js';
+import { readPrivateMode } from '../policy/scopes.js';
 import { createRuntime } from '../runtime.js';
+import { DEFAULT_WRITE_LIMITS } from '../services/write.js';
 import type { Storage } from '../storage/port.js';
 import { describeAccounts, describeUsers } from './admin.js';
 import type { CliIo } from './io.js';
@@ -74,6 +76,15 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
     .filter(t => RETIRED_TOOLSETS.includes(t));
   if (retired.length > 0) add('warn', `toolset "${retired.join(', ')}" no longer exists and is ignored: remove it from TG_MCP_TOOLSETS`);
 
+  if (config.toolsets.includes('write')) {
+    const limits = { ...DEFAULT_WRITE_LIMITS, ...config.writeLimits };
+    const show = (n: number): string => (n > 0 ? String(n) : 'no limit');
+    add(
+      'ok',
+      `write limits per account per day: replies ${show(limits.repliesPerDay)}, new dialogs ${show(limits.newDialogsPerDay)}, joins ${show(limits.joinsPerDay)}, reactions ${show(limits.reactionsPerDay)}`,
+    );
+  }
+
   const users = describeUsers(storage);
   if (users.length === 0) add('warn', 'no gateway users: add one with tg-mcp user add <id>');
   for (const u of users) {
@@ -81,6 +92,12 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
       u.accounts.length > 0 ? 'ok' : 'warn',
       `user ${u.id}: accounts [${u.accounts.join(', ')}]${u.defaultAccount ? `, default ${u.defaultAccount}` : ''}`,
     );
+    for (const accountId of u.accounts) {
+      const mode = readPrivateMode(storage, u.id, accountId);
+      if (mode !== 'closed') {
+        add('ok', `user ${u.id} on account ${accountId}: private chats are ${mode === 'open' ? 'open for reading and sending' : 'open for sending only'} (tg-mcp scope private)`);
+      }
+    }
   }
 
   const accounts = describeAccounts(storage);

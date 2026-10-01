@@ -4,6 +4,7 @@ import { makeTestGateway, type TestClient, type TestGateway } from '../../__test
 import { rawChannel, rawMessage, rawUser } from '../../__tests__/helpers/fakeTg.js';
 import { APPROVAL_TTL_MS } from '../approvals.js';
 import { classifyError, GatewayError } from '../../core/errors.js';
+import { writePrivateMode } from '../../policy/scopes.js';
 import { sentMessageId } from '../../services/write.js';
 
 const CHANNEL = 500;
@@ -404,6 +405,80 @@ describe('мелочи', () => {
     const toGroup = await nick.call('tg_send', { chat: '@stonks_chat', text: 'сообщение в группу' });
     expect((await confirm(approvalIdOf(toGroup.text), { text: 'другой текст' })).isError).toBe(false);
     expect(gw.tg.last('messages.SendMessage').request.message).toBe('другой текст');
+  });
+
+  it('режим send: агент пишет любому человеку, но переписку не читает', async () => {
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Друг' })] }));
+    writePrivateMode(gw.storage, 'nick', 'agent', 'send');
+
+    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'привет' });
+    expect(drafted.isError, drafted.text).toBe(false);
+    expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
+    expect((await confirm(approvalIdOf(drafted.text))).text).toBe('Done: Sent');
+    expect(gw.tg.last('messages.SendMessage').request.peer.className).toBe('InputPeerUser');
+
+    const read = await nick.call('tg_read_history', { chat: '@friend' });
+    expect(read.isError).toBe(true);
+    expect(read.text).toContain('Error: ACCESS_DENIED');
+    expect(read.text).toContain('open for sending only');
+    expect(gw.tg.callsOf('messages.GetHistory')).toHaveLength(0);
+
+    gw.tg.on('users.GetFullUser', () => ({ fullUser: { about: null }, users: [rawUser(42, { username: 'friend' })] }));
+    const card = await nick.call('tg_resolve', { ref: '@friend' });
+    expect(card.text).toContain('private chat is open for sending only');
+    expect((await nick.call('tg_status')).text).toContain('private chats: send only');
+
+    // у второго пользователя того же аккаунта режим свой
+    const partner = await gw.client('partner', ALL);
+    expect((await partner.call('tg_send', { chat: '@friend', text: 'привет', account: 'agent' })).text).toContain('Private chats are closed by default');
+    await partner.close();
+  });
+
+  it('режим open: переписку можно и читать', async () => {
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Друг' })] }));
+    gw.tg.on('messages.GetHistory', () => ({ messages: [], chats: [], users: [] }));
+    writePrivateMode(gw.storage, 'nick', 'agent', 'open');
+    expect((await nick.call('tg_read_history', { chat: '@friend' })).isError).toBe(false);
+    expect((await nick.call('tg_send', { chat: '@friend', text: 'привет' })).isError).toBe(false);
+    expect((await nick.call('tg_status')).text).toContain('private chats: open (read and send)');
+  });
+
+  it('режим закрыт после предпросмотра: подтверждение ничего не отправляет', async () => {
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Друг' })] }));
+    writePrivateMode(gw.storage, 'nick', 'agent', 'send');
+    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'привет' });
+    writePrivateMode(gw.storage, 'nick', 'agent', 'closed');
+    const failed = await confirm(approvalIdOf(drafted.text));
+    expect(failed.isError).toBe(true);
+    expect(failed.text).toContain('Error: ACCESS_DENIED');
+    expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
+  });
+
+  it('дневные пределы берутся из настроек, 0 снимает предел', () => {
+    const person = (id: number) => ({ accountId: 'agent', peerKey: String(id), kind: 'user' as const, accessHash: '1', username: null, title: null, meta: {}, updatedAt: 0 });
+    const record = (g: TestGateway, n: number): void => {
+      for (let i = 1; i <= n; i++) g.services.writeGate.store.recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'send', chatKey: String(i), postId: null, sentMessageId: i });
+    };
+
+    const tight = makeTestGateway({ now: () => clock, writeLimits: { newDialogsPerDay: 2 } });
+    record(tight, 2);
+    expect(() => tight.services.writeGate.write.assertCanMessage('agent', person(99))).toThrow(/Daily limit of 2 new dialogs.*TG_MCP_LIMIT_NEW_DIALOGS/);
+    // остальные пределы остались по умолчанию
+    expect(tight.services.writeGate.write.dailyLimits).toEqual({ repliesPerDay: 20, newDialogsPerDay: 2, joinsPerDay: 5, reactionsPerDay: 30 });
+    tight.cleanup();
+
+    const free = makeTestGateway({ now: () => clock, writeLimits: { newDialogsPerDay: 0, reactionsPerDay: 0 } });
+    record(free, 40);
+    for (let i = 0; i < 40; i++) free.services.writeGate.store.recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'react', chatKey: '-1000000000500', postId: i, sentMessageId: null });
+    expect(() => free.services.writeGate.write.assertCanMessage('agent', person(99))).not.toThrow();
+    expect(() => free.services.writeGate.write.assertCanReact('agent')).not.toThrow();
+    free.cleanup();
+  });
+
+  it('tg_status показывает дневные пределы записи', async () => {
+    const text = (await nick.call('tg_status')).text;
+    expect(text).toContain('Write limits per account per day: replies 20, new dialogs 5, joins 5, reactions 30.');
+    expect(text).toContain('private chats: closed, except the ones the owner opened');
   });
 
   it('личные сообщения незнакомым: лимит новых диалогов в день', () => {

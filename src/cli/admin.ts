@@ -4,6 +4,7 @@
  */
 import { randomToken, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
+import { isPrivateModeTarget, PRIVATE_MODES, readPrivateMode, writePrivateMode, type PrivateMode } from '../policy/scopes.js';
 import { parseRef } from '../services/links.js';
 import type { AccountRecord, ScopeEffect, ScopeRule, Storage, UserRecord } from '../storage/port.js';
 
@@ -176,7 +177,23 @@ export function removeScope(storage: Storage, userId: string, accountId: string,
   return storage.scopes.remove(userId, accountId, scopeTarget(chat), 'owner');
 }
 
+/** Правила для чатов, без служебной записи о режиме личных чатов. */
 export function listScopes(storage: Storage, userId: string, accountId: string): ScopeRule[] {
   assertUserAccount(storage, userId, accountId);
-  return storage.scopes.list(userId, accountId);
+  return storage.scopes.list(userId, accountId).filter(r => !isPrivateModeTarget(r.target));
+}
+
+export function getPrivateMode(storage: Storage, userId: string, accountId: string): PrivateMode {
+  assertUserAccount(storage, userId, accountId);
+  return readPrivateMode(storage, userId, accountId);
+}
+
+/** Режим личных чатов: closed, send (только писать) или open (читать и писать). */
+export function setPrivateMode(storage: Storage, userId: string, accountId: string, mode: string): PrivateMode {
+  assertUserAccount(storage, userId, accountId);
+  if (!(PRIVATE_MODES as readonly string[]).includes(mode)) {
+    throw new GatewayError('INVALID_ARGUMENT', `Unknown private chat mode "${mode}". Use one of: ${PRIVATE_MODES.join(', ')}.`);
+  }
+  writePrivateMode(storage, userId, accountId, mode as PrivateMode);
+  return mode as PrivateMode;
 }

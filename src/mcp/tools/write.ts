@@ -102,7 +102,7 @@ const tgSend = defineTool({
   toolset: 'write',
   title: 'Send a message',
   description:
-    'Prepares a message to a chat and returns a preview with an approval_id; nothing is sent until tg_confirm, which you call after the owner agrees. "chat" is a group, a channel where the account may post, or a private chat the owner has opened.',
+    'Prepares a message to a chat and returns a preview with an approval_id; nothing is sent until tg_confirm, which you call after the owner agrees. "chat" is a group, a channel where the account may post, or a person. Messages to people work only if the owner has opened that chat or allowed private messages for this account (tg_status shows the mode); in "send" mode you can write to a person but cannot read the conversation.',
   input: {
     chat: chatArg,
     text: z.string().describe('Message text, plain text, up to 4096 characters.'),
@@ -113,7 +113,7 @@ const tgSend = defineTool({
     const { writeGate } = ctx.services;
     const text = assertMessageText(args.text);
     const accountId = ctx.account(args.account);
-    const { chat } = await ctx.openChat(args.chat, accountId);
+    const { chat } = await ctx.openChat(args.chat, accountId, 'write');
     writeGate.write.assertCanMessage(accountId, chat);
     const approval = writeGate.approvals.request({
       userId: ctx.principal.userId,

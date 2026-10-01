@@ -42,7 +42,7 @@ export interface TestClient {
   close(): Promise<void>;
 }
 
-export function makeTestGateway(options: { now?: () => number } = {}): TestGateway {
+export function makeTestGateway(options: { now?: () => number; writeLimits?: GatewayConfig['writeLimits'] } = {}): TestGateway {
   const home = mkdtempSync(join(tmpdir(), 'tgmcp-gw-'));
   const storage = new SqliteStorage({ path: ':memory:' });
   const tg = new FakeTg(storage.entities);
@@ -56,6 +56,7 @@ export function makeTestGateway(options: { now?: () => number } = {}): TestGatew
     toolsets: ['core'],
     apiId: 1,
     apiHash: 'hash',
+    writeLimits: options.writeLimits ?? {},
   };
 
   const nick = addUser(storage, { id: 'nick', accounts: ['nick', 'agent'] });

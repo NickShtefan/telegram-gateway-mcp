@@ -8,6 +8,7 @@ import type { ClientFactory } from '../../core/clientPool.js';
 import { loadConfig, type GatewayConfig } from '../../core/config.js';
 import { sha256Hex, unseal } from '../../core/crypto.js';
 import { acquireLock, isLockHeld, lockPath } from '../../core/lock.js';
+import { ScopePolicy, writePrivateMode } from '../../policy/scopes.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
 import { addUser, describeAccounts, grantAccount, removeAccount, revokeAccount, rotateToken } from '../admin.js';
 import { collectChecks } from '../doctor.js';
@@ -113,6 +114,20 @@ describe('doctor', () => {
       if (before === undefined) delete process.env.TG_MCP_TOOLSETS;
       else process.env.TG_MCP_TOOLSETS = before;
     }
+  });
+
+  it('показывает режим личных чатов и дневные пределы записи', async () => {
+    addUser(storage, { id: 'nick', accounts: ['agent'] });
+    const quiet = (await collectChecks({ config, storage, io })).map(c => c.message).join('\n');
+    expect(quiet).not.toContain('private chats');
+    // пределы касаются только записи: без набора write их не показываем
+    expect(quiet).not.toContain('write limits');
+
+    writePrivateMode(storage, 'nick', 'agent', 'send');
+    const custom = { ...config, toolsets: ['core', 'write'], writeLimits: { newDialogsPerDay: 25, reactionsPerDay: 0 } };
+    const text = (await collectChecks({ config: custom, storage, io })).map(c => c.message).join('\n');
+    expect(text).toContain('user nick on account agent: private chats are open for sending only');
+    expect(text).toContain('write limits per account per day: replies 20, new dialogs 25, joins 5, reactions no limit');
   });
 
   it('старый Node и аккаунт без сессии это ошибки', async () => {
@@ -260,5 +275,34 @@ describe('main', () => {
     // чужой аккаунт и инвайт не принимаются
     expect(await main(['scope', 'allow', 'nick', 'other', '@x_user'], { io, config, storage })).toBe(1);
     expect(await main(['scope', 'allow', 'nick', 'agent', 't.me/+AbCdEf'], { io, config, storage })).toBe(1);
+  });
+
+  it('scope private: режим личных чатов показывается, меняется и не выглядит правилом для чата', async () => {
+    await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage });
+    out.length = 0;
+    expect(await main(['scope', 'private', 'nick', 'agent'], { io, config, storage })).toBe(0);
+    expect(out.join('\n')).toContain('Private chats for user "nick" on account "agent": closed');
+
+    expect(await main(['scope', 'private', 'nick', 'agent', 'send'], { io, config, storage })).toBe(0);
+    expect(new ScopePolicy(storage).isAllowed('nick', 'agent', { peerKey: '42', kind: 'user' }, 'write')).toBe(true);
+    expect(new ScopePolicy(storage).isAllowed('nick', 'agent', { peerKey: '42', kind: 'user' })).toBe(false);
+
+    out.length = 0;
+    expect(await main(['scope', 'list', 'nick', 'agent'], { io, config, storage })).toBe(0);
+    expect(out.join('\n')).toContain('Private chats: send');
+    expect(out.join('\n')).toContain('No rules for single chats');
+    expect(out.join('\n')).not.toContain('*private');
+
+    expect(await main(['scope', 'private', 'nick', 'agent', 'open'], { io, config, storage })).toBe(0);
+    expect(new ScopePolicy(storage).privateMode('nick', 'agent')).toBe('open');
+    expect(await main(['scope', 'private', 'nick', 'agent', 'closed'], { io, config, storage })).toBe(0);
+    expect(storage.scopes.list('nick', 'agent')).toHaveLength(0);
+
+    // опечатка в режиме и чужой аккаунт ничего не меняют
+    expect(await main(['scope', 'private', 'nick', 'agent', 'all'], { io, config, storage })).toBe(1);
+    expect(await main(['scope', 'private', 'nick', 'other', 'open'], { io, config, storage })).toBe(1);
+    expect(new ScopePolicy(storage).privateMode('nick', 'agent')).toBe('closed');
+    // служебную цель нельзя поставить или снять обычным правилом
+    expect(await main(['scope', 'allow', 'nick', 'agent', '*private-open'], { io, config, storage })).toBe(1);
   });
 });

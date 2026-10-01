@@ -102,6 +102,25 @@ sudo -u tgmcp sed -i '' 's/^TG_MCP_TOOLSETS=.*/TG_MCP_TOOLSETS=core,discover,ana
 sudo launchctl kickstart -k system/com.tg-mcp.gateway
 ```
 
+### Дневные пределы записи
+
+Шлюз считает действия каждого аккаунта за сутки (UTC) и после предела отказывает агенту с `LIMIT_REACHED`. Значения по умолчанию: 20 ответов под постами, 5 новых диалогов (сообщений людям, которым аккаунт ещё не писал), 5 вступлений, 30 реакций. Это осторожные числа шлюза, а не правила Telegram (решение 27). Поменять их можно в `/var/tgmcp/.tg-mcp/.env`, 0 снимает предел:
+
+```
+TG_MCP_LIMIT_NEW_DIALOGS=20
+TG_MCP_LIMIT_REPLIES=20
+TG_MCP_LIMIT_JOINS=5
+TG_MCP_LIMIT_REACTIONS=30
+```
+
+Добавить или заменить одну строку без редактора:
+
+```bash
+sudo -u tgmcp sh -c 'f=/var/tgmcp/.tg-mcp/.env; grep -v "^TG_MCP_LIMIT_NEW_DIALOGS=" "$f" > "$f.new"; echo "TG_MCP_LIMIT_NEW_DIALOGS=20" >> "$f.new"; chmod 600 "$f.new"; mv "$f.new" "$f"'
+```
+
+После правки перезапусти демон той же командой `kickstart`. Действующие пределы показывает `tg-mcp-admin doctor`. Число с опечаткой демон не примет и не запустится: `doctor` назовёт переменную.
+
 Отдельного бота для согласований нет (решение 23): агент показывает тебе предпросмотр, ты соглашаешься, он вызывает `tg_confirm`. Набора `automate` больше нет (решение 25): шлюз ничего не делает без вызова. Если `automate` остался в `.env`, шлюз его пропустит, а `doctor` напомнит убрать.
 
 ## Обновление
@@ -134,6 +153,14 @@ sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin account grant agent partner
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin scope allow nick agent @username
 ```
+
+Разрешить писать любому человеку без чтения переписки (режим `send`), открыть личные чаты целиком (`open`) или вернуть как было (`closed`):
+
+```bash
+sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin scope private nick agent send
+```
+
+Режим задаётся отдельно для каждой пары «пользователь и аккаунт» и действует сразу, без перезапуска демона. Посмотреть текущий: та же команда без последнего слова или `scope list nick agent`.
 
 ## Подключение агентов
 

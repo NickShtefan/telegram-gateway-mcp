@@ -20,7 +20,24 @@ export interface GatewayConfig {
   toolsets: string[];
   apiId: number | null;
   apiHash: string | null;
+  /** Дневные пределы записи, заданные владельцем. Чего здесь нет, берётся по умолчанию. */
+  writeLimits: WriteLimitsConfig;
 }
+
+/** Пределы записи на один аккаунт в сутки. 0 снимает предел. */
+export interface WriteLimitsConfig {
+  repliesPerDay?: number;
+  newDialogsPerDay?: number;
+  joinsPerDay?: number;
+  reactionsPerDay?: number;
+}
+
+export const WRITE_LIMIT_ENV: Record<keyof WriteLimitsConfig, string> = {
+  repliesPerDay: 'TG_MCP_LIMIT_REPLIES',
+  newDialogsPerDay: 'TG_MCP_LIMIT_NEW_DIALOGS',
+  joinsPerDay: 'TG_MCP_LIMIT_JOINS',
+  reactionsPerDay: 'TG_MCP_LIMIT_REACTIONS',
+};
 
 export const DEFAULT_PORT = 7777;
 export const DEFAULT_HOST = '127.0.0.1';
@@ -69,6 +86,20 @@ export function parseToolsets(raw: string | undefined): string[] {
   return [...new Set(requested.length > 0 ? requested : ['core'])];
 }
 
+export function parseWriteLimits(env: NodeJS.ProcessEnv = process.env): WriteLimitsConfig {
+  const limits: WriteLimitsConfig = {};
+  for (const [key, name] of Object.entries(WRITE_LIMIT_ENV) as Array<[keyof WriteLimitsConfig, string]>) {
+    const raw = (env[name] ?? '').trim();
+    if (raw === '') continue;
+    // Опечатка в числе не должна молча вернуть предел по умолчанию или снять его.
+    if (!/^\d{1,6}$/.test(raw)) {
+      throw new GatewayError('INVALID_ARGUMENT', `${name} must be a whole number of actions per day (0 turns the limit off), got "${raw}".`);
+    }
+    limits[key] = Number(raw);
+  }
+  return limits;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const home = resolveHome(env);
   mkdirSync(home, { recursive: true, mode: 0o700 });
@@ -90,6 +121,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     toolsets: parseToolsets(env.TG_MCP_TOOLSETS),
     apiId,
     apiHash,
+    writeLimits: parseWriteLimits(env),
   };
 }
 
