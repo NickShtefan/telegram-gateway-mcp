@@ -256,4 +256,49 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX task_messages_task ON task_messages(task_id, id);
   `,
+
+  // 5: число участников по дням (рост канала) и локальный индекс сообщений с полнотекстовым поиском
+  `
+  CREATE TABLE chat_snapshots (
+    chat_key TEXT NOT NULL,
+    -- день в UTC, ГГГГ-ММ-ДД: один снимок на чат в день
+    day TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    members INTEGER NOT NULL,
+    PRIMARY KEY (chat_key, day)
+  );
+
+  CREATE TABLE indexed_chats (
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    chat_key TEXT NOT NULL,
+    -- индекс полон для сообщений не старше этой даты (unix-секунды)
+    since_ts INTEGER NOT NULL,
+    newest_id INTEGER NOT NULL DEFAULT 0,
+    oldest_id INTEGER NOT NULL DEFAULT 0,
+    synced_at INTEGER,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (account_id, chat_key)
+  );
+
+  CREATE TABLE indexed_messages (
+    rowid INTEGER PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    chat_key TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    date INTEGER NOT NULL,
+    -- сообщение в едином виде (MessageDto), как его отдают инструменты чтения
+    dto TEXT NOT NULL,
+    UNIQUE (account_id, chat_key, message_id)
+  );
+  CREATE INDEX indexed_messages_date ON indexed_messages(account_id, chat_key, date);
+
+  -- Триграммы: «велосипед» находит и «велосипеды», и «велосипедом», регистр не важен.
+  CREATE VIRTUAL TABLE indexed_fts USING fts5(text, tokenize='trigram');
+
+  -- Текст в поиске не должен пережить сообщение, в том числе при удалении аккаунта.
+  CREATE TRIGGER indexed_messages_delete AFTER DELETE ON indexed_messages BEGIN
+    DELETE FROM indexed_fts WHERE rowid = old.rowid;
+  END;
+  `,
 ];

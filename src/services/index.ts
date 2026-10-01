@@ -16,6 +16,9 @@ import { JobManager } from './jobs.js';
 import { MediaService } from './media.js';
 import { Resolver } from './resolve.js';
 import { SearchService } from './search.js';
+import { SnapshotStore, StatsService } from './stats.js';
+import { GatewayError } from '../core/errors.js';
+import { SqliteStorage } from '../storage/sqlite.js';
 import { TopicsService } from './topics.js';
 
 export interface GatewayServices {
@@ -29,6 +32,8 @@ export interface GatewayServices {
   comments: CommentsService;
   dialogs: DialogsService;
   discover: DiscoverService;
+  stats: StatsService;
+  snapshots: SnapshotStore;
   topics: TopicsService;
   media: MediaService;
   exporter: ExportService;
@@ -52,18 +57,23 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
 
   const comments = new CommentsService(tg, storage.entities);
   const automation = buildAutomation({ runtime, history, comments, now });
+  if (!(storage instanceof SqliteStorage)) throw new GatewayError('UNAVAILABLE', 'The gateway needs the SQLite storage.');
+  const resolver = new Resolver({ tg, entities: storage.entities, now });
+  const snapshots = new SnapshotStore(storage, now);
 
   return {
     runtime,
     access: new AccessPolicy(storage, automation.store),
     scopes: new ScopePolicy(storage),
     audit: new Audit(storage, now, log.child('audit')),
-    resolver: new Resolver({ tg, entities: storage.entities, now }),
+    resolver,
     history,
     search,
     comments,
     dialogs: new DialogsService(tg, storage.entities),
     discover: new DiscoverService(tg, storage.entities, history),
+    stats: new StatsService({ history, resolver, snapshots, now }),
+    snapshots,
     topics: new TopicsService(tg),
     media,
     exporter,

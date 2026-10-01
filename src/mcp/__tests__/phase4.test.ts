@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { collapseAlbums, computeStats } from '../../services/stats.js';
+import { normalizeMessages } from '../../services/messages.js';
 import { makeTestGateway, type TestClient, type TestGateway } from '../../__tests__/helpers/gateway.js';
 import { rawChannel, rawMessage, rawUser } from '../../__tests__/helpers/fakeTg.js';
 
@@ -273,5 +275,117 @@ describe('набор discover: поиск каналов', () => {
     expect(reply.text).toContain('15 forwards in 150 posts (10%)');
     expect(gw.tg.callsOf('messages.GetHistory').map(c => (c.request as { limit: number }).limit)).toEqual([100, 50]);
     expect((await agent.call('tg_forward_sources', { chat: '@stonksnws', posts: 5000 })).text).toContain('in 260 posts');
+  });
+});
+
+describe('набор analytics: статистика канала', () => {
+  let agent: TestClient;
+  let members: number;
+  const chan = () => rawChannel(500, { username: 'stonksnws', title: 'Stonks' });
+  const reaction = (emoticon: string, count: number) => ({ reaction: { className: 'ReactionEmoji', emoticon }, count });
+  const at = (daysAgo: number) => NOW_SEC - Math.round(daysAgo * DAY);
+  const post = (id: number, daysAgo: number, views: number, extra: Record<string, unknown> = {}) =>
+    rawMessage(500, id, { post: true, date: at(daysAgo), views, message: `Пост ${id}`, ...extra });
+
+  const feed = () => [
+    post(70, 0.2, 50, { reactions: { results: [reaction('👍', 1)] } }),
+    post(60, 2, 400, { reactions: { results: [reaction('👍', 8), reaction('❤', 2)] }, replies: { replies: 4, comments: true }, forwards: 2 }),
+    post(50, 5, 300, { reactions: { results: [reaction('👍', 6)] }, replies: { replies: 2, comments: true }, forwards: 1 }),
+    post(40, 9, 200, { reactions: { results: [reaction('🔥', 4)] }, replies: { replies: 0, comments: true }, forwards: 0, fwdFrom: { fromId: { className: 'PeerChannel', channelId: 3001n }, channelPost: 5 } }),
+    post(30, 20, 100, { message: 'Реклама. Купите курс erid: 2Vtzq', replies: { replies: 0, comments: true }, forwards: 1 }),
+    { className: 'MessageService', id: 25, peerId: { className: 'PeerChannel', channelId: 500n }, date: at(22), action: { className: 'MessageActionPinMessage' } },
+    post(21, 25, 190, { message: '', groupedId: 9n }),
+    post(20, 25, 200, { message: 'Подпись альбома', groupedId: 9n }),
+    post(10, 28, 150),
+  ];
+
+  beforeEach(async () => {
+    members = 1000;
+    agent = await gw.client('nick', ['core', 'analytics']);
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerChannel', channelId: 500n }, chats: [chan()], users: [] }));
+    gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: members, about: 'about' }, chats: [chan()], users: [] }));
+    gw.tg.on('messages.GetHistory', () => ({ messages: feed(), chats: [chan()], users: [] }));
+  });
+
+  afterEach(async () => {
+    await agent.close();
+  });
+
+  it('расчёт: охват, вовлечённость, разброс, тренд, альбом это один пост', () => {
+    const stats = computeStats(normalizeMessages({ messages: feed(), chats: [chan()], users: [] }, '-1000000000500'), 1000, NOW_SEC, NOW_SEC - 30 * DAY);
+    expect(stats).toMatchObject({
+      posts: 7,
+      settledPosts: 6,
+      postsPerWeek: 1.8,
+      avgViews: 225,
+      medianViews: 200,
+      viewsSpread: 44,
+      reachRate: 22.5,
+      err: 1.48,
+      reactionsPerPost: 3,
+      commentsPerPost: 1.5,
+      sharesPerPost: 1,
+      reactionKinds: 3,
+      forwardedShare: 14,
+      adShare: 14,
+      viewsTrend: 100,
+    });
+    expect(stats.topReactions).toEqual([{ reaction: '👍', share: 71 }, { reaction: '🔥', share: 19 }, { reaction: '❤', share: 10 }]);
+    expect(stats.topPosts.map(p => p.id)).toEqual([60, 50, 40]);
+    // альбом: одно сообщение с подписью и наибольшими просмотрами
+    const album = collapseAlbums(normalizeMessages({ messages: feed(), chats: [chan()], users: [] }, '-1000000000500')).filter(m => m.groupedId !== null);
+    expect(album).toHaveLength(1);
+    expect(album[0]).toMatchObject({ text: 'Подпись альбома', views: 200 });
+  });
+
+  it('мало данных: без устоявшихся постов считает по всем, без подписчиков не считает охват', () => {
+    const few = normalizeMessages({ messages: [post(2, 0.1, 30), post(1, 0.5, 60)], chats: [chan()], users: [] }, '-1000000000500');
+    const stats = computeStats(few, null, NOW_SEC, NOW_SEC - 7 * DAY);
+    expect(stats).toMatchObject({ posts: 2, settledPosts: 2, avgViews: 45, reachRate: null, viewsTrend: null, err: 0 });
+    expect(computeStats([], 100, NOW_SEC, NOW_SEC - 7 * DAY)).toMatchObject({ posts: 0, avgViews: null, medianViews: null, err: null, postsPerWeek: 0 });
+  });
+
+  it('tg_channel_stats: числа по каналу и изменение подписчиков между днями', async () => {
+    const first = await agent.call('tg_channel_stats', { chat: '@stonksnws' });
+    expect(first.isError, first.text).toBe(false);
+    expect(first.text).toContain('Statistics of @stonksnws [channel] for the last 30 days: 7 posts');
+    expect(first.text).toContain('subscribers: 1k (1000) | change: no earlier snapshot yet');
+    expect(first.text).toContain('posts: 7 (1.8 per week) | reposts from elsewhere: 14% | marked as ads: 14%');
+    expect(first.text).toContain('views per post: avg 225 | median 200 | spread 44%');
+    expect(first.text).toContain('reach: an average post is seen by 22.5% of subscribers');
+    expect(first.text).toContain('engagement (ERR): 1.48% of views leave a reaction');
+    expect(first.text).toContain('per post: 3 reactions, 1.5 comments, 1 shares');
+    expect(first.text).toContain('reactions used: 👍 71%, 🔥 19%, ❤ 10% (3 kinds)');
+    expect(first.text).toContain('trend: views per post +100% in the newer half of the period against the older half');
+    expect(first.text).toContain('View numbers use 6 posts older than 24 hours');
+    expect(first.text).toContain('#60 | 2026-09-29 12:00 | views 400 | comments 4 | https://t.me/stonksnws/60');
+    expect(first.text).toMatch(/By week \(Monday, UTC\):\n2026-09-28 \| 2 posts \| avg views 225/);
+    // текст постов в статистику не попадает
+    expect(first.text).not.toContain('Купите курс');
+
+    // через три дня подписчиков стало больше: виден рост от первого снимка
+    clock += 3 * DAY * 1000;
+    members = 1100;
+    const later = await agent.call('tg_channel_stats', { chat: '@stonksnws', days: 14 });
+    expect(later.text).toContain('subscribers: 1.1k (1100) | on 2026-10-01: 1000 (+100, +10%)');
+  });
+
+  it('tg_channel_stats: предел постов, пустой период, человек вместо канала', async () => {
+    const all = Array.from({ length: 250 }, (_, i) => post(1000 - i, i * 0.1 + 2, 100));
+    gw.tg.on('messages.GetHistory', (req: { offsetId: number; limit: number }) => {
+      const start = req.offsetId === 0 ? 0 : all.findIndex(m => m.id === req.offsetId) + 1;
+      return { messages: all.slice(start, start + req.limit), chats: [chan()], users: [] };
+    });
+    const capped = await agent.call('tg_channel_stats', { chat: '@stonksnws', max_posts: 100 });
+    expect(capped.text).toContain('Only the newest 100 posts were read (max_posts)');
+    expect(gw.tg.callsOf('messages.GetHistory')).toHaveLength(1);
+
+    gw.tg.on('messages.GetHistory', () => ({ messages: [], chats: [chan()], users: [] }));
+    expect((await agent.call('tg_channel_stats', { chat: '@stonksnws' })).text).toContain('No posts in this period.');
+
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'seller' })] }));
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow', source: 'owner' });
+    expect((await agent.call('tg_channel_stats', { chat: '@seller' })).text).toContain('not for people');
+    expect((await nick.tools()).map(t => t.name)).not.toContain('tg_channel_stats');
   });
 });

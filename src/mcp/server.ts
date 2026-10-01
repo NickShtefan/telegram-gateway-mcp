@@ -8,6 +8,7 @@ import type { Logger } from '../core/log.js';
 import type { Principal } from '../policy/access.js';
 import type { GatewayServices } from '../services/index.js';
 import { registerTools, type ToolDef } from './tool.js';
+import { ANALYTICS_TOOLS } from './tools/analytics.js';
 import { AUTOMATE_TOOLS, WRITE_TOOLS } from './tools/automate.js';
 import { CONFIRM_TOOLS } from './tools/confirm.js';
 import { CORE_TOOLS } from './tools/core.js';
@@ -33,7 +34,7 @@ How to work:
 - tg_inbox may list drafts prepared by unattended runs (rules, tasks) and questions of tasks to the owner: bring them to the owner, then use tg_confirm or tg_task_update.
 - All times are UTC.`;
 
-export const ALL_TOOLS: ToolDef[] = [...CORE_TOOLS, ...DISCOVER_TOOLS, ...AUTOMATE_TOOLS, ...TASK_TOOLS_AUTOMATE, ...WRITE_TOOLS, ...TASK_TOOLS_WRITE, ...CONFIRM_TOOLS];
+export const ALL_TOOLS: ToolDef[] = [...CORE_TOOLS, ...DISCOVER_TOOLS, ...ANALYTICS_TOOLS, ...AUTOMATE_TOOLS, ...TASK_TOOLS_AUTOMATE, ...WRITE_TOOLS, ...TASK_TOOLS_WRITE, ...CONFIRM_TOOLS];
 
 export interface McpServerOptions {
   services: GatewayServices;

@@ -120,6 +120,8 @@ const tgResolve = defineTool({
     if (!decision.allowed && (chat.kind !== 'user' || decision.code !== 'private')) throw new GatewayError('ACCESS_DENIED', decision.reason);
 
     const card = await services.resolver.card(accountId, chat);
+    // Снимок числа участников: из них tg_channel_stats потом покажет рост.
+    if (chat.kind !== 'user') services.snapshots.record(chat.peerKey, card.members);
     const linked = card.linkedChatKey ? services.runtime.storage.entities.get(accountId, card.linkedChatKey) : null;
     const text = formatCard(`${chatLabel(chat)}`, [
       ['id', card.peerKey],
