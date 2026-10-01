@@ -98,12 +98,18 @@ describe('запись только через согласование', () => 
     await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'черновик агента' });
     const card = gw.bot.lastCard();
     await approvals().handleUpdate(gw.bot.press(card, 'Изменить', NICK_TG));
-    expect(gw.bot.sent.at(-1)!.text).toContain('Пришли новый текст');
-    expect(gw.bot.sent.at(-1)!.options.forceReply).toBe(true);
+    const prompt = gw.bot.sent.at(-1)!;
+    expect(prompt.text).toContain('Ответь на это сообщение новым текстом');
+    expect(prompt.options.forceReply).toBe(true);
     // текст от другого человека не подходит
-    await approvals().handleUpdate(gw.bot.text(PARTNER_TG, 'чужой текст'));
+    await approvals().handleUpdate(gw.bot.text(PARTNER_TG, 'чужой текст', prompt.messageId));
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
-    await approvals().handleUpdate(gw.bot.text(NICK_TG, 'мой текст'));
+    // сообщение не в ответ на просьбу никуда не уходит: человек мог писать боту по другому поводу
+    await approvals().handleUpdate(gw.bot.text(NICK_TG, 'пароль от вайфая 12345'));
+    await approvals().handleUpdate(gw.bot.text(NICK_TG, 'ответ на другое сообщение', card.messageId));
+    expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
+    expect(gw.bot.sent.at(-1)!.text).toContain('никуда не отправлено');
+    await approvals().handleUpdate(gw.bot.text(NICK_TG, 'мой текст', prompt.messageId));
     expect(gw.tg.last('messages.SendMessage').request.message).toBe('мой текст');
   });
 
@@ -141,6 +147,28 @@ describe('запись только через согласование', () => 
     expect((await nick.call('tg_inbox')).text).toContain('reply failed');
     // неудачная отправка не занимает «один ответ на пост»
     expect(store().hasReply('agent', '-1000000000500', 10)).toBe(false);
+  });
+
+  it('человек одобряет ровно то, что уйдёт: длинный и «невидимый» текст', async () => {
+    const tooLong = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'я'.repeat(2801) });
+    expect(tooLong.isError).toBe(true);
+    expect(tooLong.text).toContain('limited to 2800');
+
+    const hidden = 'Хорошая новость' + String.fromCharCode(0x202e) + String.fromCharCode(0x200b) + ' спрятанный хвост';
+    await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: hidden });
+    const card = gw.bot.lastCard();
+    expect(card.text).toContain('Хорошая новость спрятанный хвост');
+    await approvals().handleUpdate(gw.bot.press(card, 'Отправить', NICK_TG));
+    // в Telegram ушло то же, что было на карточке
+    expect(gw.tg.last('messages.SendMessage').request.message).toBe('Хорошая новость спрятанный хвост');
+  });
+
+  it('нажатие после срока не выполняет действие, даже если уборка ещё не прошла', async () => {
+    await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' });
+    clock += 7 * 60 * 60 * 1000;
+    await approvals().handleUpdate(gw.bot.press(gw.bot.lastCard(), 'Отправить', NICK_TG));
+    expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
+    expect(gw.bot.answers.at(-1)!.text).toBe('Срок согласования истёк.');
   });
 
   it('согласование истекает без решения', async () => {
@@ -263,6 +291,33 @@ describe('наблюдение и входящие', () => {
     await partner.close();
   });
 
+  it('наблюдать можно только каналы и группы; закрытый владельцем чат выпадает из наблюдения', async () => {
+    gw.tg.on('contacts.ResolveUsername', (req: { username: string }) =>
+      req.username === 'seller'
+        ? { peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'seller' })] }
+        : { peer: { className: 'PeerChannel', channelId: BigInt(CHANNEL) }, chats: [channel()], users: [] },
+    );
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow', source: 'owner' });
+    const person = await nick.call('tg_watch', { action: 'add', chat: '@seller' });
+    expect(person.isError).toBe(true);
+    expect(person.text).toContain('Only channels and groups can be watched');
+
+    await nick.call('tg_watch', { action: 'add', chat: '@stonksnws' });
+    gw.tg.on('messages.GetHistory', () => ({ messages: [post(10)], chats: [channel()] }));
+    await gw.services.automation.watcher.tick();
+    clock += 61_000;
+    gw.tg.on('messages.GetHistory', () => ({ messages: [post(11, 'пост до запрета'), post(10)], chats: [channel()] }));
+    await gw.services.automation.watcher.tick();
+    // владелец закрыл канал: старое событие больше не показывается, наблюдение снимается
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000500', effect: 'deny', source: 'owner' });
+    expect((await nick.call('tg_inbox')).text).not.toContain('пост до запрета');
+    clock += 61_000;
+    const before = gw.tg.callsOf('messages.GetHistory').length;
+    await gw.services.automation.watcher.tick();
+    expect(gw.tg.callsOf('messages.GetHistory').length).toBe(before);
+    expect(store().listWatches('nick')).toHaveLength(0);
+  });
+
   it('предел числа наблюдаемых чатов на аккаунт', async () => {
     for (let i = 0; i < 30; i++) store().addWatch('nick', 'agent', `-100${1000 + i}`);
     const reply = await nick.call('tg_watch', { action: 'add', chat: '@stonksnws' });
@@ -298,10 +353,10 @@ describe('правила', () => {
     expect(card.text).toContain('Только посты со словами: ставка');
     expect(card.text).toContain('Тихие часы (UTC): 23:00-09:00');
     expect(card.text).toContain('Коротко ответь по существу.');
-    expect(store().getRule('reply-posts')).toBeNull();
+    expect(store().getRule('nick:reply-posts')).toBeNull();
 
     await approvals().handleUpdate(gw.bot.press(card, 'Включить', NICK_TG));
-    expect(store().getRule('reply-posts')).toMatchObject({ enabled: true, accountId: 'agent', chatKey: '-1000000000500' });
+    expect(store().getRule('nick:reply-posts')).toMatchObject({ enabled: true, accountId: 'agent', chatKey: '-1000000000500' });
     // чат правила сам попал в наблюдение
     expect(store().listWatches('nick')).toHaveLength(1);
     expect((await nick.call('tg_rules')).text).toContain('rule reply-posts | @stonksnws | account agent | ON | yours | runs today 0/2');
@@ -312,13 +367,15 @@ describe('правила', () => {
     await approvals().handleUpdate(gw.bot.press(gw.bot.lastCard(), 'Включить', NICK_TG));
     const partner = await gw.client('partner', ALL);
     expect((await partner.call('tg_rules')).text).toContain('rule reply-posts | @stonksnws | account agent | ON | by nick (read only)');
+    // чужое правило с тем же именем неотличимо от несуществующего
     const denied = await partner.call('tg_rule_set', { id: 'reply-posts', enabled: false });
-    expect(denied.text).toContain('belongs to another user');
+    expect(denied.text).toContain('You have no rule "reply-posts"');
+    expect(store().getRule('nick:reply-posts')!.enabled).toBe(true);
     await partner.close();
 
     const off = await nick.call('tg_rule_set', { id: 'reply-posts', enabled: false });
     expect(off.text).toContain('switched off');
-    expect(store().getRule('reply-posts')!.enabled).toBe(false);
+    expect(store().getRule('nick:reply-posts')!.enabled).toBe(false);
   });
 
   it('правило без лимитов и без задания не создаётся', async () => {
@@ -338,7 +395,7 @@ describe('правила', () => {
     clock += 61_000;
     gw.tg.on('messages.GetHistory', () => ({ messages: [post(13, 'Третий пост'), post(12, 'Реклама. Купите курс erid: 2Vtzq'), post(11, 'Первый пост'), post(10)], chats: [channel()] }));
     await watcher.tick();
-    expect(store().lastFires('reply-posts', 5).map(f => [f.messageId, f.outcome])).toEqual([[13, 'queued'], [12, 'skipped:ad'], [11, 'queued']]);
+    expect(store().lastFires('nick:reply-posts', 5).map(f => [f.messageId, f.outcome])).toEqual([[13, 'queued'], [12, 'skipped:ad'], [11, 'queued']]);
 
     // пауза перед запуском: сразу заданий нет
     const runner = gw.services.automation.runner;
@@ -355,7 +412,7 @@ describe('правила', () => {
     clock += 61_000;
     gw.tg.on('messages.GetHistory', () => ({ messages: [post(14), post(13)], chats: [channel()] }));
     await watcher.tick();
-    expect(store().lastFires('reply-posts', 1)[0]).toMatchObject({ messageId: 14, outcome: 'skipped:daily_limit' });
+    expect(store().lastFires('nick:reply-posts', 1)[0]).toMatchObject({ messageId: 14, outcome: 'skipped:daily_limit' });
   });
 
   it('тихие часы, ключевые слова и признаки рекламы', () => {
@@ -430,10 +487,12 @@ describe('запуск агента по правилу', () => {
     const wrongPost = await agent.call('tg_reply', { link: 'https://t.me/stonksnws/5', text: 'не туда' });
     expect(wrongPost.text).toContain('may reply only to the post it was started for');
 
-    const ok = await agent.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'Ответ агента' });
+    // способ ответа задаёт правило, а не агент
+    const ok = await agent.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'Ответ агента', send_as: 'channel' });
     expect(ok.isError).toBe(false);
     const card = gw.bot.lastCard();
-    expect(card.text).toContain('Источник: rule:reply-posts');
+    expect(card.text).toContain('Источник: rule:nick:reply-posts');
+    expect(card.text).not.toContain('от имени канала');
     const second = await agent.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'ещё раз' });
     expect(second.text).toContain('already waiting');
     await agent.close();
@@ -441,7 +500,7 @@ describe('запуск агента по правилу', () => {
     // после отчёта runner токен перестаёт действовать
     expect(gw.services.automation.runner.finish('nick', job.id, 0, 'done')).toBe(true);
     expect(() => gw.services.access.authenticate(job.token)).toThrow('Missing or invalid gateway token.');
-    expect(store().lastFires('reply-posts', 1)[0]!.outcome).toBe('agent_done');
+    expect(store().lastFires('nick:reply-posts', 1)[0]!.outcome).toBe('agent_done');
     expect((await nick.call('tg_inbox')).text).toContain('agent_run | rule reply-posts | in @stonksnws | exit code 0');
   });
 
@@ -450,7 +509,7 @@ describe('запуск агента по правилу', () => {
     try {
       await nick.call('tg_rule_set', { id: 'reply-posts', chat: '@stonksnws', prompt: 'Ответь.' });
       await approvals().handleUpdate(gw.bot.press(gw.bot.lastCard(), 'Включить', NICK_TG));
-      store().enqueueRunnerJob({ id: 'run_test', userId: 'nick', kind: 'rule', runAfter: 0, payload: { ruleId: 'reply-posts', accountId: 'agent', chatKey: '-1000000000500', chatLabel: '@stonksnws', postId: 11, link: 'https://t.me/stonksnws/11', prompt: 'Ответь.' } });
+      store().enqueueRunnerJob({ id: 'run_test', userId: 'nick', kind: 'rule', runAfter: 0, payload: { ruleId: 'nick:reply-posts', accountId: 'agent', chatKey: '-1000000000500', chatLabel: '@stonksnws', postId: 11, link: 'https://t.me/stonksnws/11', prompt: 'Ответь.' } });
       const base = `http://127.0.0.1:${http.port}`;
       const call = (path: string, token: string, body: unknown) =>
         fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
@@ -512,7 +571,7 @@ describe('команда runner', () => {
     try {
       await nick.call('tg_rule_set', { id: 'reply-posts', chat: '@stonksnws', prompt: 'Ответь.' });
       await approvals().handleUpdate(gw.bot.press(gw.bot.lastCard(), 'Включить', NICK_TG));
-      store().enqueueRunnerJob({ id: 'run_loop', userId: 'nick', kind: 'rule', runAfter: 0, payload: { ruleId: 'reply-posts', accountId: 'agent', chatKey: '-1000000000500', chatLabel: '@stonksnws', postId: 11, link: null, prompt: 'Ответь.' } });
+      store().enqueueRunnerJob({ id: 'run_loop', userId: 'nick', kind: 'rule', runAfter: 0, payload: { ruleId: 'nick:reply-posts', accountId: 'agent', chatKey: '-1000000000500', chatLabel: '@stonksnws', postId: 11, link: null, prompt: 'Ответь.' } });
       const loop = runRunner({
         baseUrl: `http://127.0.0.1:${http.port}`,
         token: gw.tokens.nick,

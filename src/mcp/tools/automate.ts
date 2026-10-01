@@ -6,10 +6,10 @@
  * возвращает `approval_id`, а действие выполняет шлюз после нажатия кнопки.
  */
 import { z } from 'zod';
-import { assertRuleId, describeRule, normalizeRuleConfig, RULE_PER_DAY_MAX } from '../../automation/rules.js';
+import { assertRuleId, describeRule, normalizeRuleConfig, RULE_PER_DAY_MAX, ruleKey, ruleName } from '../../automation/rules.js';
 import type { ApprovalRecord, InboxEvent } from '../../automation/store.js';
 import { GatewayError } from '../../core/errors.js';
-import { createEnvelope } from '../../policy/envelope.js';
+import { createEnvelope, safeLabel } from '../../policy/envelope.js';
 import { messageLink, parseRef } from '../../services/links.js';
 import { assertMessageText } from '../../services/write.js';
 import { clampLimit } from '../args.js';
@@ -66,6 +66,9 @@ const tgWatch = defineTool({
     if (!args.chat) throw new GatewayError('INVALID_ARGUMENT', `"chat" is required for action=${args.action}.`);
     const accountId = ctx.account(args.account);
     const { chat } = await ctx.openChat(args.chat, accountId);
+    if (chat.kind === 'user') {
+      throw new GatewayError('INVALID_ARGUMENT', 'Only channels and groups can be watched. A conversation with a person is a task: see tg_task_start.');
+    }
 
     if (args.action === 'add') {
       const result = automation.watcher.add(userId, accountId, chat);
@@ -136,7 +139,14 @@ const tgInbox = defineTool({
     const latest = store.latestInboxId(userId);
     const after = args.cursor ? decodeCursor<{ o: number }>('inbox', args.cursor).o : Math.max(0, latest - limit);
 
-    const events = store.inboxAfter(userId, after, limit).filter(e => e.accountId === null || ctx.principal.accounts.includes(e.accountId));
+    const { scopes, runtime } = ctx.services;
+    const events = store.inboxAfter(userId, after, limit).filter(e => {
+      if (e.accountId !== null && !ctx.principal.accounts.includes(e.accountId)) return false;
+      if (e.kind !== 'new_post') return true;
+      // Доступ к чату могли закрыть уже после события: такие посты не показываются.
+      const chat = e.accountId && e.chatKey ? runtime.storage.entities.get(e.accountId, e.chatKey) : null;
+      return chat !== null && scopes.isAllowed(userId, e.accountId!, chat);
+    });
     const env = createEnvelope();
     const lines = [`Inbox: ${events.length} event(s)`];
     if (events.some(e => e.kind === 'new_post')) lines.push(env.notice(), 'Times are UTC.');
@@ -173,14 +183,15 @@ const tgRuleSet = defineTool({
     const { automation, runtime } = ctx.services;
     const userId = ctx.principal.userId;
     const id = assertRuleId(args.id);
-    const existing = automation.store.getRule(id);
-    if (existing && existing.userId !== userId) {
-      throw new GatewayError('ACCESS_DENIED', `Rule "${id}" belongs to another user: only its author can change it.`);
-    }
+    // Имена правил у каждого пользователя свои: чужое правило с тем же именем здесь не видно.
+    const key = ruleKey(userId, id);
+    const existing = automation.store.getRule(key);
 
     if (args.enabled === false) {
-      if (!existing) throw new GatewayError('NOT_FOUND', `Rule "${id}" does not exist.`);
-      automation.store.setRuleEnabled(id, false);
+      if (!existing) throw new GatewayError('NOT_FOUND', `You have no rule "${id}".`);
+      automation.store.setRuleEnabled(key, false);
+      // Запуски агента, которые ещё ждут своей паузы, тоже отменяются.
+      automation.store.cancelPendingRunnerJobs('rule', 'ruleId', key);
       return { accountId: existing.accountId, peerKey: existing.chatKey, text: `Rule "${id}" is switched off. Its chat stays on the watch list; remove it with tg_watch if not needed.` };
     }
 
@@ -202,7 +213,7 @@ const tgRuleSet = defineTool({
       sendAs: args.send_as ?? existing?.config.sendAs,
     });
 
-    const rule = { id, userId, accountId, chatKey: chat.peerKey, config };
+    const rule = { id: key, userId, accountId, chatKey: chat.peerKey, config };
     const approval = await automation.approvals.request({
       userId,
       accountId,
@@ -232,7 +243,7 @@ const tgRules = defineTool({
       const chat = ctx.services.runtime.storage.entities.get(rule.accountId, rule.chatKey);
       lines.push(
         [
-          `rule ${rule.id}`,
+          `rule ${ruleName(rule.id)}`,
           chat ? chatLabel(chat) : `id ${rule.chatKey}`,
           `account ${rule.accountId}`,
           rule.enabled ? 'ON' : 'off',
@@ -292,7 +303,8 @@ const tgReply = defineTool({
     }
 
     const link = messageLink({ username: post.chat.username, peerKey: post.chat.peerKey, messageId: post.postId }) ?? `#${post.postId} в ${chatLabel(post.chat)}`;
-    const sendAs = args.send_as ?? 'account';
+    // Агент, запущенный по правилу, отвечает так, как записано в правиле, а не как решит сам.
+    const sendAs = grant ? (grant.reply?.sendAs ?? 'account') : (args.send_as ?? 'account');
     const approval = await automation.approvals.request({
       userId: ctx.principal.userId,
       accountId: where.accountId,
@@ -323,7 +335,7 @@ const tgJoin = defineTool({
     if (parsed.chat.type === 'invite') {
       const invite = await resolver.invite(accountId, parsed.chat.hash);
       if (invite.member) return { accountId, text: 'The account is already a member of this chat.' };
-      label = `закрытый чат «${invite.title ?? 'без названия'}»${invite.members ? `, участников: ${invite.members}` : ''}${invite.requestNeeded ? ' (вступление по заявке)' : ''}`;
+      label = `закрытый чат «${safeLabel(invite.title, 60) || 'без названия'}»${invite.members ? `, участников: ${invite.members}` : ''}${invite.requestNeeded ? ' (вступление по заявке)' : ''}`;
       payload = { accountId, inviteHash: parsed.chat.hash, label };
     } else {
       const { chat } = await ctx.openChat(args.ref, accountId);

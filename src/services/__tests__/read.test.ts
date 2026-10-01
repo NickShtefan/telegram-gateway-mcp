@@ -223,7 +223,7 @@ describe('SearchService', () => {
     expect(tg.last('messages.SearchGlobal').request).toMatchObject({ q: 'iphone 15', groupsOnly: true, offsetRate: 0 });
     expect(tg.last('messages.SearchGlobal').request.offsetPeer.className).toBe('InputPeerEmpty');
 
-    await search.global(ACC, { query: 'iphone 15', limit: 2, position: first.next! });
+    await search.global(ACC, { query: 'iphone 15', limit: 2, where: 'groups', position: first.next! });
     const second = tg.last('messages.SearchGlobal').request;
     expect(second).toMatchObject({ offsetRate: 1234, offsetId: 4 });
     expect(second.offsetPeer.className).toBe('InputPeerChannel');
@@ -231,7 +231,7 @@ describe('SearchService', () => {
 
   it('короткая страница означает конец выдачи', async () => {
     tg.on('messages.SearchGlobal', () => ({ messages: [rawMessage(500, 9)], chats: [rawChannel(500)], nextRate: 5 }));
-    expect((await new SearchService(tg, storage.entities).global(ACC, { query: 'x', limit: 20 })).next).toBeNull();
+    expect((await new SearchService(tg, storage.entities).global(ACC, { query: 'x', limit: 20, where: 'channels' })).next).toBeNull();
   });
 
   it('хэштег ищется без решётки', async () => {

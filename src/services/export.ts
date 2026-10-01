@@ -9,11 +9,13 @@
  * Постраничный проход с отсечкой по дате взят из channel-scope
  * `archiveService.ts:180`, извлечение ссылок из `db/export/export.ts:87`.
  */
-import { chmodSync, closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { chmodSync, closeSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomToken, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
 import { totalReactions } from '../core/reactions.js';
+import { ensureTrustedDir, openNewFile } from '../core/safeFs.js';
 import type { TgCallOptions } from '../core/tg.js';
 import { sanitizeText } from '../policy/envelope.js';
 import type { EntityRecord, Storage } from '../storage/port.js';
@@ -105,7 +107,9 @@ export interface ExportResult extends Record<string, unknown> {
 /** Значение для CSV по RFC 4180. */
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const text = String(value);
+  let text = String(value);
+  // Текст из Telegram не должен стать формулой, когда файл откроют в таблице.
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
@@ -188,18 +192,12 @@ export class ExportService {
     const call: TgCallOptions = { priority: 'background' };
 
     const stamp = new Date(this.now()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-    const name = `${stamp}-${slugify([chat.username ?? chat.peerKey, params.query ?? ''].join(' '))}.${params.format}`;
+    // Случайный хвост в имени: путь нельзя предсказать и занять заранее.
+    const name = `${stamp}-${slugify([chat.username ?? chat.peerKey, params.query ?? ''].join(' '))}-${randomBytes(3).toString('hex')}.${params.format}`;
     const path = join(this.deps.filesDir, 'exports', context.job.userId, name);
-    mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
-    for (const dir of [this.deps.filesDir, join(this.deps.filesDir, 'exports'), dirname(path)]) {
-      try {
-        chmodSync(dir, 0o755);
-      } catch {
-        // права папки не критичны для самой записи
-      }
-    }
+    ensureTrustedDir(dirname(path), this.deps.filesDir);
 
-    const fd = openSync(path, 'w', 0o644);
+    const fd = openNewFile(path, 0o644);
     let rows = 0;
     let scanned = 0;
     let withPrice = 0;

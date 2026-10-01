@@ -11,6 +11,7 @@ import { Api } from 'telegram';
 import { parsePeerKey, peerKey as makePeerKey } from '../core/chatId.js';
 import { entityFromApi, peerKeyOfPeer, toInputChannel, toInputPeer, toInputUser } from '../core/entities.js';
 import { GatewayError, isGatewayError } from '../core/errors.js';
+import { safeLabel } from '../policy/envelope.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntitiesRepo, EntityRecord } from '../storage/port.js';
 import { parseRef, type ChatTarget, type ParsedRef } from './links.js';
@@ -94,7 +95,7 @@ export class Resolver {
         if (!invite.chat) {
           throw new GatewayError(
             'JOIN_REQUIRED',
-            `This is a private chat "${invite.title ?? 'unknown'}" and the account is not a member. Joining goes through tg_join with the owner's confirmation.`,
+            `This is a private chat "${safeLabel(invite.title, 60) || 'unknown'}" and the account is not a member. Joining goes through tg_join with the owner's confirmation.`,
           );
         }
         return invite.chat;

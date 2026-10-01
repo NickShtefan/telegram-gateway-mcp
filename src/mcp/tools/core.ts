@@ -3,9 +3,9 @@
  * Десять инструментов: описания всех попадают в контекст агента при каждом
  * запуске, поэтому набор держится небольшим, а описания короткими.
  */
-import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';
+import { readOwnFile } from '../../core/safeFs.js';
 import { createEnvelope, safeLabel } from '../../policy/envelope.js';
 import { EXPORT_MAX_ROWS, type ExportParams, type ExportResult } from '../../services/export.js';
 import { messageLink, parseRef } from '../../services/links.js';
@@ -106,9 +106,8 @@ const tgResolve = defineTool({
 
     const { chat } = await services.resolver.resolve(accountId, args.ref);
     const decision = services.scopes.decide(principal.userId, accountId, chat);
-    // Карточку человека показать можно, его переписку нет. Остальные запреты действуют целиком.
-    if (!decision.allowed && chat.kind !== 'user') throw new GatewayError('ACCESS_DENIED', decision.reason);
-    if (!decision.allowed && /service chats/.test(decision.reason)) throw new GatewayError('ACCESS_DENIED', decision.reason);
+    // Карточку человека показать можно, его переписку нет. Запрет владельца и служебные чаты действуют целиком.
+    if (!decision.allowed && (chat.kind !== 'user' || decision.code !== 'private')) throw new GatewayError('ACCESS_DENIED', decision.reason);
 
     const card = await services.resolver.card(accountId, chat);
     const linked = card.linkedChatKey ? services.runtime.storage.entities.get(accountId, card.linkedChatKey) : null;
@@ -250,10 +249,10 @@ const tgSearchMessages = defineTool({
   toolset: 'core',
   title: 'Search across chats',
   description:
-    'Search messages in all chats and channels the account has joined (not the whole Telegram). A query that is a single #hashtag searches public channel posts by that hashtag instead.',
+    'Search messages in the channels (default) or groups the account has joined, not the whole Telegram and not private chats. A query that is a single #hashtag searches public channel posts by that hashtag instead.',
   input: {
     query: z.string().min(1).describe('Words to search for, or one #hashtag.'),
-    where: z.enum(['all', 'channels', 'groups']).optional().describe('Limit to channels or groups. Default: all.'),
+    where: z.enum(['channels', 'groups']).optional().describe('channels (default) or groups. Call twice to cover both.'),
     since: sinceArg,
     until: untilArg,
     limit: z.number().int().optional().describe('Results per page: default 20, max 50.'),
@@ -277,7 +276,7 @@ const tgSearchMessages = defineTool({
 
     const page = hashtag
       ? await services.search.hashtag(accountId, args.query.trim(), limit, position)
-      : await services.search.global(accountId, { query: args.query, limit, where: args.where ?? 'all', position, ...window });
+      : await services.search.global(accountId, { query: args.query, limit, where: args.where ?? 'channels', position, ...window });
 
     const entities = services.runtime.storage.entities;
     const chats = new Map<string, ReturnType<typeof entities.get>>();
@@ -286,15 +285,15 @@ const tgSearchMessages = defineTool({
       return chats.get(m.chatKey) ?? null;
     };
 
-    // Личные переписки и закрытые чаты в общую выдачу не попадают.
+    // Личные переписки Telegram не ищет вовсе (флаги channels и groups), а чаты, закрытые
+    // владельцем, молча отбрасываются: ни текст, ни число совпадений из них не видны.
     const visible = page.messages.filter(m => {
       const chat = chatOf(m);
-      return chat !== null && services.scopes.isAllowed(principal.userId, accountId, chat);
+      return chat !== null && chat.kind !== 'user' && services.scopes.isAllowed(principal.userId, accountId, chat);
     });
-    const hidden = page.messages.length - visible.length;
 
     const hints: string[] = [];
-    if (hidden > 0) hints.push(`${hidden} result(s) from private or closed chats are hidden.`);
+    if (!hashtag && !args.where) hints.push('Searched channels only. For group chats call again with where=groups.');
     if (!hashtag && visible.length === 0 && !args.cursor) {
       hints.push('Nothing found in the chats this account has joined. To search inside a specific public chat use tg_search_chat.');
     }
@@ -305,7 +304,7 @@ const tgSearchMessages = defineTool({
       text: formatMessageList(visible, {
         title: hashtag
           ? `Public posts with ${safeLabel(args.query, 60)}: ${visible.length} shown`
-          : `Search "${safeLabel(args.query, 80)}" in joined chats${args.where && args.where !== 'all' ? ` (${args.where})` : ''}: ${visible.length} shown${describeWindow(window)}`,
+          : `Search "${safeLabel(args.query, 80)}" in joined ${args.where ?? 'channels'}: ${visible.length} shown${describeWindow(window)}`,
         mode: 'brief',
         briefChars: 320,
         envelope: createEnvelope(),
@@ -455,6 +454,11 @@ const tgGetComments = defineTool({
       const page = await services.comments.page(where.accountId, post.chat, post.postId, { limit, offsetId });
       ({ messages, total, nextOffsetId } = page);
     }
+
+    // Комментарии лежат в группе обсуждений: если владелец закрыл её, они не отдаются.
+    const discussionKey = messages[0]?.chatKey;
+    const discussion = discussionKey ? services.runtime.storage.entities.get(where.accountId, discussionKey) : null;
+    if (discussion) services.scopes.assertAllowed(ctx.principal.userId, where.accountId, discussion);
 
     return {
       accountId: where.accountId,
@@ -632,7 +636,8 @@ const tgGetMedia = defineTool({
       for (const f of result.files) {
         if (images.length >= INLINE_MAX_IMAGES) break;
         if (f.bytes > INLINE_MAX_BYTES || !f.mime.startsWith('image/')) continue;
-        images.push({ data: readFileSync(f.path).toString('base64'), mimeType: f.mime });
+        const data = readOwnFile(f.path, INLINE_MAX_BYTES);
+        if (data) images.push({ data: data.toString('base64'), mimeType: f.mime });
       }
     } else if (args.inline === true) {
       lines.push('inline works only with size=thumb: open the file by its path instead.');

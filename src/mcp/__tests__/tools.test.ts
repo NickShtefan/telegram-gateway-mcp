@@ -288,7 +288,7 @@ describe('безопасность', () => {
     expect(service.text).toContain('service chats');
   });
 
-  it('глобальный поиск скрывает результаты из личных чатов', async () => {
+  it('глобальный поиск не ищет в личных чатах и не раскрывает их', async () => {
     gw.tg.on('messages.SearchGlobal', () => ({
       messages: [rawMessage(CHANNEL, 9, { message: 'публичный пост' }), { className: 'Message', id: 3, peerId: { className: 'PeerUser', userId: 42n }, date: 1_790_000_000, message: 'секрет из лички' }],
       chats: [channel()],
@@ -298,7 +298,45 @@ describe('безопасность', () => {
     expect(reply.text).toContain('публичный пост');
     expect(reply.text).toContain('in @stonksnws');
     expect(reply.text).not.toContain('секрет из лички');
-    expect(reply.text).toContain('1 result(s) from private or closed chats are hidden.');
+    // личные чаты Telegram не ищет вовсе, и число скрытых совпадений не раскрывается
+    expect(gw.tg.last('messages.SearchGlobal').request.broadcastsOnly).toBe(true);
+    expect(reply.text).not.toMatch(/hidden/);
+    await nick.call('tg_search_messages', { query: 'велосипед', where: 'groups' });
+    expect(gw.tg.last('messages.SearchGlobal').request.groupsOnly).toBe(true);
+  });
+
+  it('ссылка на комментарий читает только комментарии своего поста', async () => {
+    const group = rawChannel(GROUP, { broadcast: false, megagroup: true, title: 'Stonks chat' });
+    gw.tg.on('messages.GetDiscussionMessage', () => ({ messages: [rawMessage(GROUP, 300, { fwdFrom: { savedFromMsgId: 30 } })], chats: [group], users: [] }));
+    gw.tg.on('channels.GetMessages', (req: { id: Array<{ id: number }> }) => ({
+      messages: req.id.map(({ id }) =>
+        id === 45
+          ? rawMessage(GROUP, 45, { message: 'комментарий к посту 30', replyTo: { replyToMsgId: 300 } })
+          : rawMessage(GROUP, id, { message: 'сообщение из другой ветки', replyTo: { replyToMsgId: 999, replyToTopId: 777 } }),
+      ),
+      chats: [group],
+      users: [],
+    }));
+    const own = await nick.call('tg_get_message', { link: 'https://t.me/stonksnws/30?comment=45' });
+    expect(own.isError).toBe(false);
+    expect(own.text).toContain('Comment #45 under post #30 of @stonksnws');
+    expect(own.text).toContain('комментарий к посту 30');
+
+    const foreign = await nick.call('tg_get_message', { link: 'https://t.me/stonksnws/30?comment=46' });
+    expect(foreign.isError).toBe(true);
+    expect(foreign.text).toContain('Comment 46 not found under post 30');
+    expect(foreign.text).not.toContain('другой ветки');
+
+    // владелец закрыл группу обсуждений: комментарии через ссылку тоже закрыты
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000600', effect: 'deny', source: 'owner' });
+    expect((await nick.call('tg_get_message', { link: 'https://t.me/stonksnws/30?comment=45' })).text).toContain('deny list');
+  });
+
+  it('карточка человека, закрытого владельцем, не показывается', async () => {
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'deny', source: 'owner' });
+    const card = await nick.call('tg_resolve', { ref: '@seller' });
+    expect(card.isError).toBe(true);
+    expect(card.text).toContain('deny list');
   });
 
   it('хэштег ищется по публичным постам', async () => {

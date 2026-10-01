@@ -141,7 +141,9 @@ export interface ScopedGrant {
   chatKeys: string[];
   tools: string[];
   /** Единственное разрешённое действие записи. */
-  reply?: { chatKey: string; postId: number };
+  reply?: { chatKey: string; postId: number; sendAs?: 'account' | 'channel' };
+  /** Сообщения старше этого id в чате недоступны: поручение не открывает прежнюю переписку. */
+  minMessageId?: number;
   send?: { chatKey: string };
   ruleId?: string;
   taskId?: string;
@@ -541,6 +543,18 @@ export class AutomationStore {
         .run(this.now(), str(row.id));
     }
     return rows.map(r => this.mapJob(r));
+  }
+
+  /** Отменяет ещё не начатые задания с таким значением в payload: правило выключили или поручение остановили. */
+  cancelPendingRunnerJobs(kind: string, field: string, value: string): number {
+    const rows = this.db.prepare("SELECT id, payload FROM runner_jobs WHERE kind = ? AND state = 'pending'").all(kind) as Row[];
+    let cancelled = 0;
+    for (const row of rows) {
+      if (json<Record<string, unknown>>(row.payload, {})[field] !== value) continue;
+      this.db.prepare("UPDATE runner_jobs SET state = 'failed', finished_at = ?, exit_code = -2, output = 'cancelled' WHERE id = ? AND state = 'pending'").run(this.now(), str(row.id));
+      cancelled++;
+    }
+    return cancelled;
   }
 
   /** Есть ли незавершённое задание этого вида с таким значением в payload (например, для поручения). */

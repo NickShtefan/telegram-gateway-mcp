@@ -4,6 +4,7 @@
  * сессиях не стартует.
  */
 import { parseToolsets, type GatewayConfig } from '../core/config.js';
+import { GatewayError } from '../core/errors.js';
 import { acquireLock } from '../core/lock.js';
 import { createLogger, type Logger } from '../core/log.js';
 import { createRuntime, type RuntimeOverrides } from '../runtime.js';
@@ -42,6 +43,15 @@ export async function runServe(options: ServeOptions): Promise<number> {
     toolsets: options.toolsets ? parseToolsets(options.toolsets) : options.config.toolsets,
     filesDir: options.filesDir ?? options.config.filesDir,
   };
+
+  // Токен идёт открытым текстом по HTTP: вне localhost его можно перехватить.
+  const loopback = ['127.0.0.1', 'localhost', '::1'].includes(config.host);
+  if (!loopback && process.env.TG_MCP_ALLOW_REMOTE !== '1') {
+    throw new GatewayError(
+      'INVALID_ARGUMENT',
+      `Refusing to listen on ${config.host}: the gateway token would travel over plain HTTP. Use 127.0.0.1, or set TG_MCP_ALLOW_REMOTE=1 if the network is private and you accept the risk.`,
+    );
+  }
 
   const lock = await acquireLock(config.home);
   const runtime = createRuntime(config, { log: log.child('gateway'), ...options.overrides });

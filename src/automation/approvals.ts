@@ -14,7 +14,7 @@ import { randomBytes } from 'node:crypto';
 import { GatewayError, isGatewayError } from '../core/errors.js';
 import { createLogger, type Logger } from '../core/log.js';
 import { sleep } from '../core/time.js';
-import { sanitizeText, truncate } from '../policy/envelope.js';
+import { sanitizeOutgoing, truncate } from '../policy/envelope.js';
 import type { Storage } from '../storage/port.js';
 import { BotApiError, type BotApi, type BotCallbackQuery, type BotMessage, type BotUpdate, type InlineButton } from './botApi.js';
 import type { ApprovalRecord, AutomationStore } from './store.js';
@@ -54,8 +54,26 @@ export interface ApprovalsOptions {
   defaultTtlMs?: number;
 }
 
-const DRAFT_MAX_CHARS = 3000;
+/**
+ * Предел длины черновика. Карточка в боте вмещает 4096 символов вместе с
+ * заголовком, а человек должен видеть весь текст, который одобряет.
+ */
+export const APPROVAL_TEXT_MAX = 2800;
+const TITLE_MAX_CHARS = 1100;
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Текст действия в том виде, в каком он уйдёт в Telegram и будет показан человеку. */
+function cleanDraft(text: string, maxChars: number): string {
+  const clean = sanitizeOutgoing(text).trim();
+  if (!clean) throw new GatewayError('INVALID_ARGUMENT', 'Message text is empty.');
+  if (clean.length > maxChars) {
+    throw new GatewayError(
+      'INVALID_ARGUMENT',
+      `Message text is ${clean.length} characters. A message that needs approval is limited to ${maxChars}, so that the owner sees all of it.`,
+    );
+  }
+  return clean;
+}
 
 export class Approvals {
   private readonly store: AutomationStore;
@@ -120,13 +138,16 @@ export class Approvals {
       );
     }
 
+    // Человек одобряет ровно то, что уйдёт: текст чистится до показа, а не после.
+    const payload = typeof request.payload.text === 'string' ? { ...request.payload, text: cleanDraft(request.payload.text, APPROVAL_TEXT_MAX) } : request.payload;
+
     const approval = this.store.createApproval({
       id: `ap_${randomBytes(5).toString('hex')}`,
       userId: request.userId,
       accountId: request.accountId,
       kind: request.kind,
       source: request.source,
-      payload: request.payload,
+      payload,
       preview: request.title,
       expiresAt: this.now() + (request.ttlMs ?? this.defaultTtlMs),
     });
@@ -151,12 +172,13 @@ export class Approvals {
 
   private cardText(approval: ApprovalRecord, footer?: string): string {
     const account = approval.accountId ? this.storage.accounts.get(approval.accountId) : null;
-    const lines = [`Согласование ${approval.id}`, approval.preview];
+    // Обрезается только заголовок: текст действия всегда виден целиком.
+    const lines = [`Согласование ${approval.id}`, truncate(approval.preview, TITLE_MAX_CHARS)];
     if (account) lines.push(`Аккаунт: ${account.id}${account.username ? ` (@${account.username})` : ''}`);
     if (approval.source !== 'tool') lines.push(`Источник: ${approval.source}`);
     const text = approval.payload.text;
     if (typeof text === 'string' && text) {
-      lines.push('', 'Текст:', truncate(sanitizeText(text), DRAFT_MAX_CHARS));
+      lines.push('', 'Текст:', text);
     }
     if (footer) lines.push('', footer);
     return lines.join('\n');
@@ -194,6 +216,14 @@ export class Approvals {
     if (approval.state !== 'pending' && approval.state !== 'awaiting_edit') {
       return bot.answerCallbackQuery(query.id, `Уже решено: ${this.stateLabel(approval.state)}.`);
     }
+    // Уборка просроченных идёт раз в минуту: срок проверяется и в момент нажатия.
+    if (approval.expiresAt <= this.now()) {
+      if (this.store.transitionApproval(approval.id, ['pending', 'awaiting_edit'], 'expired')) {
+        await this.finishCard(approval.id, '⌛ Истекло без решения');
+        this.notify(approval.id);
+      }
+      return bot.answerCallbackQuery(query.id, 'Срок согласования истёк.');
+    }
 
     if (action === 'no') {
       if (!this.store.transitionApproval(approval.id, ['pending', 'awaiting_edit'], 'rejected')) return bot.answerCallbackQuery(query.id);
@@ -208,10 +238,11 @@ export class Approvals {
       if (!entry?.editable) return bot.answerCallbackQuery(query.id, 'Этот запрос нельзя изменить.');
       if (!this.store.transitionApproval(approval.id, ['pending'], 'awaiting_edit')) return bot.answerCallbackQuery(query.id);
       await bot.answerCallbackQuery(query.id);
-      await bot.sendMessage(user.telegramId, `Пришли новый текст для ${approval.id} одним сообщением. Он уйдёт сразу.`, {
+      const prompt = await bot.sendMessage(user.telegramId, `Ответь на это сообщение новым текстом для ${approval.id}. Он уйдёт сразу.`, {
         replyTo: approval.botMessageId ?? undefined,
         forceReply: true,
       });
+      this.storage.kv.set(this.editPromptKey(approval.id), String(prompt.message_id));
       return;
     }
 
@@ -240,8 +271,29 @@ export class Approvals {
     const user = awaiting ? this.storage.users.get(awaiting.userId) : null;
     if (!awaiting || user?.telegramId !== fromId || !text) return;
 
-    this.store.updateApproval(awaiting.id, { payload: { ...awaiting.payload, text, editedByOwner: true } });
+    // Новым текстом считается только ответ (Reply) на просьбу о нём. Иначе
+    // любое сообщение человека боту, написанное по другому поводу, ушло бы в Telegram.
+    const promptId = Number(this.storage.kv.get(this.editPromptKey(awaiting.id)) ?? '0');
+    if (!promptId || message.reply_to_message?.message_id !== promptId) {
+      await bot.sendMessage(message.chat.id, `Чтобы заменить текст в ${awaiting.id}, ответь (Reply) на моё сообщение с просьбой о новом тексте. Это сообщение никуда не отправлено.`);
+      return;
+    }
+
+    let edited: string;
+    try {
+      // Свой текст человек видит сам, поэтому предел здесь полный, как у Telegram.
+      edited = cleanDraft(text, 4096);
+    } catch (err) {
+      await bot.sendMessage(message.chat.id, `Не подходит: ${(err as Error).message}`);
+      return;
+    }
+    this.storage.kv.remove(this.editPromptKey(awaiting.id));
+    this.store.updateApproval(awaiting.id, { payload: { ...awaiting.payload, text: edited, editedByOwner: true } });
     await this.execute(awaiting.id);
+  }
+
+  private editPromptKey(id: string): string {
+    return `approval.editprompt.${id}`;
   }
 
   /** Выполняет одобренное действие. Двойное нажатие не выполнит его дважды. */

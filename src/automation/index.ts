@@ -12,7 +12,8 @@ import type { EntityRecord } from '../storage/port.js';
 import { SqliteStorage } from '../storage/sqlite.js';
 import { Approvals } from './approvals.js';
 import { HttpBotApi, type BotApi } from './botApi.js';
-import { RuleEngine } from './rules.js';
+import { ScopePolicy } from '../policy/scopes.js';
+import { RuleEngine, ruleKey, ruleName } from './rules.js';
 import { RunnerQueue } from './runner.js';
 import { AutomationStore, type RuleRecord } from './store.js';
 import { TaskEngine } from './tasks.js';
@@ -52,12 +53,14 @@ export function buildAutomation(deps: AutomationDeps): Automation {
   const approvals = new Approvals({ store, storage, bot, log: log.child('approvals'), now });
   const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, now });
   const rules = new RuleEngine({ store, log: log.child('rules'), now });
+  const scopes = new ScopePolicy(storage);
   const runner = new RunnerQueue({ store, log: log.child('runner'), now });
   const watcher = new Watcher({
     store,
     storage,
     history: deps.history,
     onNewPost: event => void rules.onNewPost(event),
+    allowed: (userId, accountId, chat) => scopes.isAllowed(userId, accountId, chat),
     onStuck: reason => runtime.fatal(reason),
     log: log.child('watcher'),
     now,
@@ -96,10 +99,14 @@ export function buildAutomation(deps: AutomationDeps): Automation {
     'rule',
     async approval => {
       const rule = approval.payload.rule as Pick<RuleRecord, 'id' | 'userId' | 'accountId' | 'chatKey' | 'config'>;
+      // Правило включается только на имя того, кто его согласовал.
+      if (rule.userId !== approval.userId || rule.id !== ruleKey(approval.userId, ruleName(rule.id))) {
+        throw new GatewayError('ACCESS_DENIED', 'The rule does not belong to the user who approved it.');
+      }
       store.putRule({ ...rule, enabled: true });
       // Правило без наблюдения не сработает: чат добавляется в список автора.
       store.addWatch(rule.userId, rule.accountId, rule.chatKey);
-      return { summary: `Правило «${rule.id}» включено`, data: { rule: rule.id } };
+      return { summary: `Правило «${ruleName(rule.id)}» включено`, data: { rule: ruleName(rule.id) } };
     },
     { approveLabel: '✅ Включить', rejectLabel: '🚫 Отклонить' },
   );

@@ -22,7 +22,9 @@ function compactArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(redactFields(args))) {
     if (value === undefined) continue;
-    out[key] = typeof value === 'string' && value.length > 200 ? value.slice(0, 200) + '…' : value;
+    if (typeof value === 'string') out[key] = value.length > 200 ? value.slice(0, 200) + '…' : value;
+    else if (Array.isArray(value)) out[key] = value.slice(0, 20).map(v => (typeof v === 'string' && v.length > 60 ? v.slice(0, 60) + '…' : v));
+    else out[key] = value;
   }
   return out;
 }

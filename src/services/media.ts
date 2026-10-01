@@ -6,10 +6,11 @@
  * ошибке «файл в другом дата-центре» (`isDcRedirectError`) и кэш по наличию
  * файла на диске. Добавлены выбор размера, предел размера файла и квота папки.
  */
-import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import type { Api } from 'telegram';
 import { createLogger, type Logger } from '../core/log.js';
+import { ensureTrustedDir, isOwnRegularFile, writeNewFile } from '../core/safeFs.js';
 import { sleep } from '../core/time.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import { normalizeMedia, type MediaKind } from './messages.js';
@@ -111,6 +112,7 @@ export function chatDirName(chatKey: string): string {
 
 export class MediaService {
   private readonly tg: Tg;
+  private readonly filesDir: string;
   private readonly root: string;
   private readonly maxFullBytes: number;
   private readonly quotaBytes: number;
@@ -120,6 +122,7 @@ export class MediaService {
 
   constructor(options: MediaServiceOptions) {
     this.tg = options.tg;
+    this.filesDir = options.filesDir;
     this.root = join(options.filesDir, 'media');
     this.maxFullBytes = options.maxFullBytes ?? DEFAULT_MAX_FULL_BYTES;
     this.quotaBytes = options.quotaBytes ?? DEFAULT_QUOTA_BYTES;
@@ -165,12 +168,16 @@ export class MediaService {
           continue;
         }
         mime = media.mime ?? 'application/octet-stream';
-        ext = (media.fileName ? extname(media.fileName).toLowerCase() : '') || MIME_EXT[mime] || '.bin';
+        // Имя файла приходит из Telegram: расширение берётся только простое, иначе по типу.
+        const named = media.fileName ? extname(media.fileName).toLowerCase() : '';
+        ext = /^\.[a-z0-9]{1,8}$/.test(named) ? named : (MIME_EXT[mime] ?? '.bin');
       }
 
-      const path = join(this.root, chatDirName(chatKey), `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
-      if (existsSync(path) && statSync(path).size > 0) {
-        result.files.push({ messageId, kind: media.kind, size: thumb ? 'thumb' : 'full', path, bytes: statSync(path).size, mime, cached: true });
+      // id сообщений в личных чатах свои у каждого аккаунта: кэш раздельный.
+      const path = join(this.root, accountId, chatDirName(chatKey), `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
+      // Кэшем считается только свой обычный файл: по подложенной ссылке шлюз не пойдёт.
+      if (isOwnRegularFile(path) && lstatSync(path).size > 0) {
+        result.files.push({ messageId, kind: media.kind, size: thumb ? 'thumb' : 'full', path, bytes: lstatSync(path).size, mime, cached: true });
         continue;
       }
 
@@ -216,17 +223,8 @@ export class MediaService {
 
   /** Пишет файл так, чтобы его могли прочитать агенты под другим пользователем macOS. */
   private write(path: string, buffer: Buffer): void {
-    const dir = dirname(path);
-    mkdirSync(dir, { recursive: true, mode: 0o755 });
-    for (const d of [this.root, dir]) {
-      try {
-        chmodSync(d, 0o755);
-      } catch {
-        // права папки не критичны для самой записи
-      }
-    }
-    writeFileSync(path, buffer, { mode: 0o644 });
-    chmodSync(path, 0o644);
+    ensureTrustedDir(dirname(path), this.filesDir);
+    writeNewFile(path, buffer, 0o644);
 
     if (++this.writesSinceQuotaCheck >= QUOTA_CHECK_EVERY) {
       this.writesSinceQuotaCheck = 0;
@@ -241,9 +239,11 @@ export class MediaService {
       if (!existsSync(dir)) return;
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name);
+        // Ссылки не учитываются и не обходятся: чужое шлюз не удаляет.
+        if (entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) walk(full);
         else if (entry.isFile()) {
-          const st = statSync(full);
+          const st = lstatSync(full);
           files.push({ path: full, size: st.size, mtime: st.mtimeMs });
         }
       }

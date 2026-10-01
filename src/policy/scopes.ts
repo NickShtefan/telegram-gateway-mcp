@@ -20,7 +20,10 @@ export interface ScopeTarget {
   username?: string | null;
 }
 
-export type ScopeDecision = { allowed: true } | { allowed: false; reason: string };
+/** Почему чат закрыт: служебный, закрыт владельцем или личный (закрыт по умолчанию). */
+export type ScopeDenial = 'service' | 'deny' | 'private';
+
+export type ScopeDecision = { allowed: true } | { allowed: false; code: ScopeDenial; reason: string };
 
 export class ScopePolicy {
   constructor(private readonly storage: Storage) {}
@@ -29,18 +32,19 @@ export class ScopePolicy {
     const username = target.username ? target.username.replace(/^@/, '').toLowerCase() : null;
 
     if (SERVICE_PEER_KEYS.has(target.peerKey) || (username !== null && SERVICE_USERNAMES.has(username))) {
-      return { allowed: false, reason: 'Telegram service chats (login codes, BotFather, SpamBot) are never available through the gateway.' };
+      return { allowed: false, code: 'service', reason: 'Telegram service chats (login codes, BotFather, SpamBot) are never available through the gateway.' };
     }
 
     const rules = this.storage.scopes.list(userId, accountId).filter(r => r.target === target.peerKey || (username !== null && r.target === username));
     if (rules.some(r => r.effect === 'deny')) {
-      return { allowed: false, reason: 'This chat is on the deny list set by the owner.' };
+      return { allowed: false, code: 'deny', reason: 'This chat is on the deny list set by the owner.' };
     }
     if (rules.some(r => r.effect === 'allow')) return { allowed: true };
 
     if (target.kind === 'user') {
       return {
         allowed: false,
+        code: 'private',
         reason:
           'Private chats are closed by default. The owner can open one with: tg-mcp scope allow <user> <account> <chat>, or start a task for this person.',
       };

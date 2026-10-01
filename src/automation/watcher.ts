@@ -14,7 +14,7 @@ import { GatewayError, isGatewayError } from '../core/errors.js';
 import { createLogger, type Logger } from '../core/log.js';
 import { TickWatchdog } from '../core/recovery.js';
 import { sleep } from '../core/time.js';
-import { oneLine } from '../policy/envelope.js';
+import { oneLine, safeLabel } from '../policy/envelope.js';
 import type { HistoryService } from '../services/history.js';
 import { messageLink } from '../services/links.js';
 import type { MessageDto } from '../services/messages.js';
@@ -36,6 +36,8 @@ export interface WatcherOptions {
   onNewPost?: (event: NewPostEvent) => void | Promise<void>;
   /** Зависший опрос: процесс должен выйти. */
   onStuck?: (reason: string) => void;
+  /** Открыт ли чат пользователю сейчас. Наблюдение не должно пережить доступ. */
+  allowed?: (userId: string, accountId: string, chat: EntityRecord) => boolean;
   maxChatsPerAccount?: number;
   baseIntervalMs?: number;
   maxIntervalMs?: number;
@@ -54,6 +56,7 @@ export class Watcher {
   private readonly storage: Storage;
   private readonly history: HistoryService;
   private readonly onNewPost?: (event: NewPostEvent) => void | Promise<void>;
+  private readonly allowed: (userId: string, accountId: string, chat: EntityRecord) => boolean;
   private readonly maxChats: number;
   private readonly baseIntervalMs: number;
   private readonly maxIntervalMs: number;
@@ -67,6 +70,7 @@ export class Watcher {
     this.storage = options.storage;
     this.history = options.history;
     this.onNewPost = options.onNewPost;
+    this.allowed = options.allowed ?? (() => true);
     this.maxChats = options.maxChatsPerAccount ?? 30;
     this.baseIntervalMs = options.baseIntervalMs ?? 60_000;
     this.maxIntervalMs = options.maxIntervalMs ?? 15 * 60_000;
@@ -126,6 +130,12 @@ export class Watcher {
       return 0;
     }
 
+    // Доступ могли закрыть после того, как чат добавили в наблюдение: такие наблюдения снимаются.
+    for (const userId of this.store.watchersOf(accountId, chatKey)) {
+      if (!this.allowed(userId, accountId, chat)) this.store.removeWatch(userId, accountId, chatKey);
+    }
+    if (this.store.watchersOf(accountId, chatKey).length === 0) return 0;
+
     try {
       const fresh: MessageDto[] = [];
       let offsetId = 0;
@@ -163,7 +173,7 @@ export class Watcher {
               date: message.date,
               preview: oneLine(message.text, PREVIEW_CHARS),
               media: message.media?.kind ?? null,
-              chat: chat.username ? `@${chat.username}` : (chat.title ?? chatKey),
+              chat: chat.username ? `@${chat.username}` : safeLabel(chat.title, 60) || chatKey,
             },
           });
         }

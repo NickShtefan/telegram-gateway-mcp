@@ -29,8 +29,8 @@ export interface GlobalSearchParams {
   limit: number;
   minDate?: number;
   maxDate?: number;
-  /** Где искать: везде, только в каналах или только в группах. */
-  where?: 'all' | 'channels' | 'groups';
+  /** Где искать: в каналах или в группах. Личные чаты не ищутся никогда: Telegram не должен отдавать их текст в общий поиск. */
+  where: 'channels' | 'groups';
   position?: GlobalPosition;
 }
 

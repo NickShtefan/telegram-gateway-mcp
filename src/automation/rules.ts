@@ -35,6 +35,20 @@ export function isAdvertisement(text: string): boolean {
   return AD_RE.test(text);
 }
 
+/**
+ * Ключ правила в базе: имена правил у каждого пользователя свои. Чужое
+ * правило с тем же именем не видно и не мешает.
+ */
+export function ruleKey(userId: string, name: string): string {
+  return `${userId}:${name}`;
+}
+
+/** Имя правила, как его задал пользователь. */
+export function ruleName(key: string): string {
+  const i = key.indexOf(':');
+  return i === -1 ? key : key.slice(i + 1);
+}
+
 export function assertRuleId(id: string): string {
   if (!ID_RE.test(id)) {
     throw new GatewayError('INVALID_ARGUMENT', 'Rule id: 1-40 characters, lowercase letters, digits, "-" or "_".');
@@ -69,6 +83,7 @@ export function normalizeRuleConfig(input: {
     throw new GatewayError('INVALID_ARGUMENT', 'Delay must be between 0 and 3600 seconds, minimum not above maximum.');
   }
   const keywords = [...new Set((input.keywords ?? []).map(k => k.trim().toLowerCase()).filter(Boolean))].slice(0, 20);
+  if (keywords.some(k => k.length > 40)) throw new GatewayError('INVALID_ARGUMENT', 'Each keyword is limited to 40 characters.');
 
   return { prompt, keywords, skipAds: input.skipAds ?? true, perDay, quietHours, delaySec: [minDelay, maxDelay], sendAs: input.sendAs ?? 'account' };
 }
@@ -88,7 +103,7 @@ export function inQuietHours(quietHours: string | null, nowMs: number): boolean 
 export function describeRule(rule: Pick<RuleRecord, 'id' | 'config'>, chatLabel: string): string {
   const c = rule.config;
   return [
-    `Правило «${rule.id}»: следить за ${chatLabel} и готовить ответ на новые посты.`,
+    `Правило «${ruleName(rule.id)}»: следить за ${chatLabel} и готовить ответ на новые посты.`,
     `Режим: черновик на согласование. Не больше ${c.perDay} в день, один ответ на пост.`,
     c.keywords.length > 0 ? `Только посты со словами: ${c.keywords.join(', ')}.` : 'Все посты.',
     c.skipAds ? 'Рекламные посты пропускаются.' : '',
@@ -160,10 +175,12 @@ export class RuleEngine {
           ruleId: rule.id,
           accountId: rule.accountId,
           chatKey: event.chat.peerKey,
-          chatLabel: event.chat.username ? `@${event.chat.username}` : (event.chat.title ?? event.chat.peerKey),
+          // Название чата пишут его владельцы: в промпт агента идёт только username или id.
+          chatLabel: event.chat.username ? `@${event.chat.username}` : `chat ${event.chat.peerKey}`,
           postId: event.message.id,
           link: event.link,
           prompt: rule.config.prompt,
+          sendAs: rule.config.sendAs,
         },
       });
       queued++;
@@ -173,12 +190,12 @@ export class RuleEngine {
 }
 
 /** Права агента, запущенного по правилу: один пост, один ответ. */
-export function ruleGrant(payload: { accountId: string; chatKey: string; postId: number; ruleId: string }, jobId: string): ScopedGrant {
+export function ruleGrant(payload: { accountId: string; chatKey: string; postId: number; ruleId: string; sendAs?: 'account' | 'channel' }, jobId: string): ScopedGrant {
   return {
     accountId: payload.accountId,
     chatKeys: [payload.chatKey],
     tools: RULE_TOOLS,
-    reply: { chatKey: payload.chatKey, postId: payload.postId },
+    reply: { chatKey: payload.chatKey, postId: payload.postId, sendAs: payload.sendAs ?? 'account' },
     ruleId: payload.ruleId,
     jobId,
   };

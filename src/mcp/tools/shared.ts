@@ -45,8 +45,8 @@ export interface MessageLocation {
   chat: EntityRecord;
   messageId: number;
   topicId?: number;
-  /** Если запрошен комментарий: канал и пост, под которым он оставлен. */
-  commentOf?: { chat: EntityRecord; postId: number };
+  /** Если запрошен комментарий: канал, пост и корень его ветки в группе обсуждений. */
+  commentOf?: { chat: EntityRecord; postId: number; rootId: number };
 }
 
 /**
@@ -58,6 +58,12 @@ export async function locateMessage(
   args: { link?: string; chat?: string; id?: number; account?: string },
 ): Promise<MessageLocation> {
   const accountId = context.account(args.account);
+  const floor = context.principal.grant?.minMessageId;
+  const assertNotOlder = (messageId: number): void => {
+    if (floor !== undefined && messageId < floor) {
+      throw new GatewayError('ACCESS_DENIED', 'This run may read only messages of its own task, not the earlier conversation.');
+    }
+  };
 
   if (args.link) {
     const parsed = parseRef(args.link);
@@ -66,9 +72,26 @@ export async function locateMessage(
     }
     const { chat } = await context.openChat(args.link, accountId);
     if (parsed.commentId !== undefined) {
-      const root = await context.services.comments.root(accountId, chat, parsed.messageId);
-      return { accountId, chat: root.discussion, messageId: parsed.commentId, commentOf: { chat, postId: parsed.messageId } };
+      const { services, principal } = context;
+      const root = await services.comments.root(accountId, chat, parsed.messageId);
+      // Группа обсуждений это отдельный чат: владелец мог закрыть её.
+      services.scopes.assertAllowed(principal.userId, accountId, root.discussion);
+      // Комментарий должен быть из ветки этого поста, а не любым сообщением группы.
+      const found = await services.history.byIds(accountId, root.discussion, [parsed.commentId]);
+      const reply = (found.raw[0] as { replyTo?: { replyToMsgId?: number; replyToTopId?: number } } | undefined)?.replyTo;
+      if (found.raw.length === 0 || (reply?.replyToTopId ?? reply?.replyToMsgId) !== root.rootId) {
+        throw new GatewayError('MESSAGE_NOT_FOUND', `Comment ${parsed.commentId} not found under post ${parsed.messageId}.`);
+      }
+      return {
+        accountId,
+        chat: root.discussion,
+        messageId: parsed.commentId,
+        // Контекст вокруг комментария читается внутри его ветки.
+        topicId: root.rootId,
+        commentOf: { chat, postId: parsed.messageId, rootId: root.rootId },
+      };
     }
+    assertNotOlder(parsed.messageId);
     return { accountId, chat, messageId: parsed.messageId, topicId: parsed.topicId };
   }
 
@@ -76,6 +99,7 @@ export async function locateMessage(
     throw new GatewayError('INVALID_ARGUMENT', 'Pass either "link" (a t.me message link) or both "chat" and "id".');
   }
   const { chat, parsed } = await context.openChat(args.chat, accountId);
+  assertNotOlder(args.id);
   return { accountId, chat, messageId: args.id, topicId: parsed.topicId };
 }
 

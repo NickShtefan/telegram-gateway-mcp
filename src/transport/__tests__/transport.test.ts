@@ -161,6 +161,16 @@ describe('stdio-прокладка', () => {
 });
 
 describe('serve', () => {
+  it('не слушает наружу без явного разрешения владельца', async () => {
+    const io = { out: () => undefined, err: () => undefined, prompt: async () => '' };
+    delete process.env.TG_MCP_ALLOW_REMOTE;
+    await expect(runServe({ config: { ...gw.config, host: '0.0.0.0', port: 0 }, io, version: 'test', overrides: { storage: new SqliteStorage({ path: ':memory:' }) }, log: silent })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      message: expect.stringContaining('plain HTTP'),
+    });
+    expect(await isLockHeld(gw.config.home)).toBe(false);
+  });
+
   it('поднимает демон под блокировкой и освобождает её при остановке', async () => {
     const storage = new SqliteStorage({ path: ':memory:' });
     const controller = new AbortController();

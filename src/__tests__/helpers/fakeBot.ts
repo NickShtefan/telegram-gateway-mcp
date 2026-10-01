@@ -71,10 +71,17 @@ export class FakeBot implements BotApi {
   }
 
   /** Обновление «человек написал боту». */
-  text(fromId: string | number, text: string): BotUpdate {
+  text(fromId: string | number, text: string, replyTo?: number): BotUpdate {
     return {
       update_id: this.nextUpdateId++,
-      message: { message_id: this.nextMessageId++, date: 0, chat: { id: Number(fromId), type: 'private' }, from: { id: Number(fromId) }, text },
+      message: {
+        message_id: this.nextMessageId++,
+        date: 0,
+        chat: { id: Number(fromId), type: 'private' },
+        from: { id: Number(fromId) },
+        text,
+        reply_to_message: replyTo !== undefined ? { message_id: replyTo } : undefined,
+      },
     };
   }
 }

@@ -102,7 +102,10 @@ export function createToolContext(options: RegisterOptions): ToolContext {
       if (principal.grant && !principal.grant.chatKeys.includes(found.chat.peerKey)) {
         throw new GatewayError('ACCESS_DENIED', 'This run may only work with the chat it was started for.');
       }
-      services.scopes.assertAllowed(principal.userId, accountId, found.chat);
+      const decision = services.scopes.decide(principal.userId, accountId, found.chat);
+      // Личный диалог поручения открыт только токену его запуска: общего правила для пользователя нет.
+      const ownDialog = principal.grant !== undefined && !decision.allowed && decision.code === 'private';
+      if (!decision.allowed && !ownDialog) throw new GatewayError('ACCESS_DENIED', decision.reason);
       return found;
     },
   };

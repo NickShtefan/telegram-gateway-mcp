@@ -10,7 +10,7 @@
  */
 import { randomToken, sha256Hex } from '../core/crypto.js';
 import { createLogger, type Logger } from '../core/log.js';
-import { ruleGrant, rulePrompt } from './rules.js';
+import { ruleGrant, ruleName, rulePrompt } from './rules.js';
 import type { AutomationStore, RunnerJob, ScopedGrant } from './store.js';
 
 export interface ClaimedJob {
@@ -55,7 +55,7 @@ export class RunnerQueue {
     this.register(
       'rule',
       job => {
-        const p = job.payload as { ruleId: string; accountId: string; chatKey: string; chatLabel: string; postId: number; link: string | null; prompt: string };
+        const p = job.payload as { ruleId: string; accountId: string; chatKey: string; chatLabel: string; postId: number; link: string | null; prompt: string; sendAs?: 'account' | 'channel' };
         return { prompt: rulePrompt(p), grant: ruleGrant(p, job.id) };
       },
       (job, exitCode) => {
@@ -100,7 +100,7 @@ export class RunnerQueue {
       accountId: typeof job.payload.accountId === 'string' ? job.payload.accountId : null,
       chatKey: typeof job.payload.chatKey === 'string' ? job.payload.chatKey : null,
       messageId: typeof job.payload.postId === 'number' ? job.payload.postId : null,
-      payload: { job_id: jobId, job_kind: job.kind, exit_code: exitCode, rule: job.payload.ruleId ?? null, task: job.payload.taskId ?? null },
+      payload: { job_id: jobId, job_kind: job.kind, exit_code: exitCode, rule: typeof job.payload.ruleId === 'string' ? ruleName(job.payload.ruleId) : null, task: job.payload.taskId ?? null },
     });
     return true;
   }
