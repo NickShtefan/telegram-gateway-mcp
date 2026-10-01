@@ -37,6 +37,12 @@ owner_uid() { stat -f %u "$1"; }
 [ "$(id -u)" -eq 0 ] || fail "нужен root: sudo GH_TOKEN=... $PREFIX/install.sh <sha>"
 [ "$(uname -s)" = "Darwin" ] || fail "скрипт рассчитан на macOS"
 
+# sudo может оставить HOME и окружение того, кто его вызвал: тогда npm, curl и git прочитали бы
+# настройки из папки, куда пишет агент. Дальше всё работает только с настройками root.
+export HOME=/var/root
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+unset NODE_OPTIONS NODE_PATH npm_config_prefix npm_config_registry CURL_HOME
+
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 [ "$(owner_uid "$SELF")" -eq 0 ] || fail "скрипт должен принадлежать root: скопируй его в $PREFIX/install.sh (см. начало файла) и запускай оттуда"
 [ "$(owner_uid "$(dirname "$SELF")")" -eq 0 ] || fail "папка скрипта должна принадлежать root"
@@ -61,8 +67,12 @@ if id -u "$SVC_USER" >/dev/null 2>&1; then
 else
   # Служебный пользователь без пароля и без входа: команды от его имени идут через sudo -u.
   NEW_UID=""
+  # Список занятых UID читается один раз и целиком: проверка через grep -q в конвейере
+  # под pipefail могла бы принять занятый UID за свободный.
+  USED_UIDS="$(dscl . -list /Users UniqueID | awk '{print $2}')"
+  [ -n "$USED_UIDS" ] || fail "не удалось прочитать список пользователей"
   for candidate in $(seq 401 499); do
-    if ! dscl . -list /Users UniqueID | awk '{print $2}' | grep -qx "$candidate"; then
+    if ! printf '%s\n' "$USED_UIDS" | awk -v u="$candidate" '$1 == u { found = 1 } END { exit !found }'; then
       NEW_UID="$candidate"
       break
     fi
@@ -76,6 +86,12 @@ else
   dscl . -create "/Users/$SVC_USER" UserShell /usr/bin/false
   dscl . -create "/Users/$SVC_USER" Password '*'
   dscl . -create "/Users/$SVC_USER" IsHidden 1
+  # Служба каталогов отдаёт нового пользователя не сразу.
+  for _ in $(seq 1 20); do
+    id -u "$SVC_USER" >/dev/null 2>&1 && break
+    sleep 0.5
+  done
+  id -u "$SVC_USER" >/dev/null 2>&1 || fail "пользователь $SVC_USER создан, но система его ещё не видит: запусти установку ещё раз"
   echo "создан, UID $NEW_UID"
 fi
 mkdir -p "$GATEWAY_HOME"
@@ -94,8 +110,9 @@ if [ "$NODE_OK" -eq 1 ]; then
   echo "уже установлен"
 else
   NAME="node-v$NODE_VERSION-darwin-$NODE_ARCH"
-  curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/$NAME.tar.gz" -o "$WORK/$NAME.tar.gz"
-  curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt" -o "$WORK/SHASUMS256.txt"
+  # -q первым аргументом: curl не читает .curlrc.
+  curl -q -fsSL --proto '=https' --tlsv1.2 "https://nodejs.org/dist/v$NODE_VERSION/$NAME.tar.gz" -o "$WORK/$NAME.tar.gz"
+  curl -q -fsSL --proto '=https' --tlsv1.2 "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt" -o "$WORK/SHASUMS256.txt"
   EXPECTED="$(grep " $NAME.tar.gz\$" "$WORK/SHASUMS256.txt" | awk '{print $1}')"
   ACTUAL="$(shasum -a 256 "$WORK/$NAME.tar.gz" | awk '{print $1}')"
   [ -n "$EXPECTED" ] && [ "$EXPECTED" = "$ACTUAL" ] || fail "контрольная сумма Node не совпала"
@@ -109,31 +126,33 @@ fi
 export PATH="$PREFIX/node/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 step "3. Код коммита $SHA"
-# Токен передаётся git через переменные окружения и не попадает ни в аргументы, ни в конфиг.
+# Токен передаётся git через переменные окружения: его нет ни в аргументах (их видно в ps), ни в конфиге.
 export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
 git init -q "$WORK/src"
-git -C "$WORK/src" -c "http.extraHeader=Authorization: Basic $AUTH" fetch -q --depth 1 "https://github.com/$REPO.git" "$SHA"
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.extraHeader" GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH" \
+  git -C "$WORK/src" fetch -q --depth 1 "https://github.com/$REPO.git" "$SHA"
+unset GH_TOKEN AUTH
 git -C "$WORK/src" checkout -q --detach FETCH_HEAD
 [ "$(git -C "$WORK/src" rev-parse HEAD)" = "$SHA" ] || fail "получен не тот коммит"
-unset GH_TOKEN AUTH
 
-# Скрипты установки пакетов не выполняются: сборке они не нужны.
+# Скрипты установки пакетов не выполняются: сборке они не нужны. Настройки и кэш npm свои,
+# чужой .npmrc (другой реестр, свои скрипты) на сборку не влияет.
+export npm_config_userconfig=/dev/null npm_config_cache="$WORK/npm-cache" npm_config_update_notifier=false
 (cd "$WORK/src" && npm ci --ignore-scripts --no-audit --no-fund >/dev/null && npm run build >/dev/null && npm prune --omit=dev --ignore-scripts --no-audit --no-fund >/dev/null)
 [ -f "$WORK/src/dist/cli/index.js" ] || fail "сборка не удалась"
 
+# Ссылок в установленном коде быть не должно: демону они не нужны, а ссылка наружу
+# дала бы подменить исполняемый код. Каталоги .bin состоят только из ссылок.
+find "$WORK/src/node_modules" -type d -name .bin -prune -exec rm -rf {} +
+LINKS="$(find "$WORK/src/dist" "$WORK/src/node_modules" -type l -print -quit)"
+[ -z "$LINKS" ] || fail "в сборке есть символические ссылки, установка остановлена: $LINKS"
+
 mkdir -p "$PREFIX/app" "$PREFIX/bin"
-rsync -rt --delete --safe-links "$WORK/src/dist" "$WORK/src/node_modules" "$WORK/src/package.json" "$PREFIX/app/"
+rsync -rt --delete "$WORK/src/dist" "$WORK/src/node_modules" "$WORK/src/package.json" "$PREFIX/app/"
 chown -R root:wheel "$PREFIX/app"
 chmod -R go-w "$PREFIX/app"
-# Ни одна ссылка в коде не должна вести за пределы папки установки.
-while IFS= read -r link; do
-  target="$(cd "$(dirname "$link")" && realpath "$(readlink "$link")" 2>/dev/null || true)"
-  case "$target" in
-    "$PREFIX"/*) ;;
-    *) fail "ссылка $link ведёт за пределы $PREFIX" ;;
-  esac
-done < <(find "$PREFIX/app" -type l)
+[ -z "$(find "$PREFIX/app" -type l -print -quit)" ] || fail "в $PREFIX/app оказалась символическая ссылка"
 echo "$SHA" > "$PREFIX/app/COMMIT"
 echo "собран и установлен"
 
@@ -194,6 +213,13 @@ EOF
   echo "создан шаблон: впиши TG_API_ID и TG_API_HASH"
 fi
 
+# Порт для проверки берётся из действующего .env: владелец мог его поменять.
+ENV_PORT="$(awk -F= '$1 == "TG_MCP_PORT" { v = $2 } END { print v }' "$GATEWAY_HOME/.env" | tr -d '[:space:]')"
+case "$ENV_PORT" in
+  ''|*[!0-9]*) ;;
+  *) PORT="$ENV_PORT" ;;
+esac
+
 step "7. LaunchDaemon $LABEL"
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -227,18 +253,48 @@ EOF
 chown root:wheel "$PLIST"
 chmod 644 "$PLIST"
 
-cat > /etc/newsyslog.d/tg-mcp.conf <<EOF
-# logfilename                 [owner:group]   mode count size(KB) when flags
-$LOG_DIR/daemon.log           $SVC_USER:wheel 640  5     10240    *    J
-EOF
-
+# Останов старого демона. bootout возвращается раньше, чем процесс вышел: ждём, иначе
+# bootstrap упадёт с «Input/output error», а новый процесс не получит блокировку сессий.
 launchctl bootout "system/$LABEL" 2>/dev/null || true
-launchctl bootstrap system "$PLIST"
+for _ in $(seq 1 60); do
+  launchctl print "system/$LABEL" >/dev/null 2>&1 || break
+  sleep 0.5
+done
+launchctl print "system/$LABEL" >/dev/null 2>&1 && fail "старый демон не остановился за 30 секунд: sudo launchctl bootout system/$LABEL и запусти установку ещё раз"
+
+# Лог ротируется здесь, пока демон остановлен. newsyslog не подходит: launchd держит файл
+# открытым и после ротации писал бы в уже удалённый файл.
+rm -f /etc/newsyslog.d/tg-mcp.conf
+LOG_FILE="$LOG_DIR/daemon.log"
+if [ -f "$LOG_FILE" ] && [ ! -L "$LOG_FILE" ] && [ "$(stat -f %z "$LOG_FILE")" -gt 10485760 ]; then
+  rm -f "$LOG_FILE.3"
+  [ -f "$LOG_FILE.2" ] && mv "$LOG_FILE.2" "$LOG_FILE.3"
+  [ -f "$LOG_FILE.1" ] && mv "$LOG_FILE.1" "$LOG_FILE.2"
+  mv "$LOG_FILE" "$LOG_FILE.1"
+  echo "лог перенесён в $LOG_FILE.1"
+fi
+
+# enable до bootstrap: если службу когда-то отключали, bootstrap иначе не запустит её.
 launchctl enable "system/$LABEL"
+launchctl bootstrap system "$PLIST"
+
+# Демон должен ответить сам: иначе «Готово» ничего бы не значило.
+STARTED=0
+for _ in $(seq 1 30); do
+  if curl -q -fsS --max-time 2 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
+    STARTED=1
+    break
+  fi
+  sleep 1
+done
 
 step "Готово"
+if [ "$STARTED" -eq 1 ]; then
+  echo "Демон отвечает: http://127.0.0.1:$PORT/mcp"
+else
+  echo "ВНИМАНИЕ: демон не ответил на http://127.0.0.1:$PORT/healthz за 30 секунд. Посмотри лог ниже."
+fi
 cat <<EOF
-Демон запущен: http://127.0.0.1:$PORT/mcp
 Лог: sudo tail -f $LOG_DIR/daemon.log
 Выгрузки и картинки для агентов: $FILES_DIR
 
