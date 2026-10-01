@@ -21,12 +21,19 @@ import {
 import { runDoctor } from './doctor.js';
 import { terminalIo, type CliIo } from './io.js';
 import { runLogin } from './login.js';
+import { runServe } from './serve.js';
+import { createLogger } from '../core/log.js';
+import { DEFAULT_HOST, DEFAULT_PORT } from '../core/config.js';
+import { runStdioProxy } from '../transport/stdio.js';
 
 export const VERSION = '0.1.0';
 
 const HELP = `tg-mcp ${VERSION}: Telegram MCP gateway
 
 Usage:
+  tg-mcp serve [--host <h>] [--port <n>] [--toolsets core,...] [--files-dir <path>]
+                                                   run the daemon that owns the Telegram sessions
+  tg-mcp stdio [--url <http://127.0.0.1:7777/mcp>] stdio MCP server for agents: proxies to the daemon, token in TG_MCP_TOKEN
   tg-mcp login --account <id> [--phone <number>]   log in to a Telegram account (code and 2FA are asked interactively)
   tg-mcp doctor [--connect]                        check the installation; --connect also opens the sessions
   tg-mcp user add <id> [--telegram-id <n>] [--account <id>]... [--default-account <id>]
@@ -67,6 +74,22 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 0;
   }
 
+  if (command === 'stdio') {
+    // Прокладка работает под пользователем агента: домашнюю папку шлюза она не трогает.
+    const env = deps.env ?? process.env;
+    try {
+      const { values } = parseArgs({ args: rest, options: { url: { type: 'string' } } });
+      const token = env.TG_MCP_TOKEN?.trim();
+      if (!token) throw new GatewayError('INVALID_ARGUMENT', 'TG_MCP_TOKEN is not set: the stdio proxy needs your gateway token.');
+      const url = values.url ?? env.TG_MCP_URL?.trim() ?? `http://${DEFAULT_HOST}:${env.TG_MCP_PORT?.trim() || DEFAULT_PORT}/mcp`;
+      await runStdioProxy({ url, token, input: process.stdin, output: process.stdout, log: createLogger('stdio') });
+      return 0;
+    } catch (err) {
+      io.err(`error: ${(err as Error).message}`);
+      return 1;
+    }
+  }
+
   let storage: Storage | null = null;
   const ownsStorage = deps.storage === undefined;
   try {
@@ -77,6 +100,33 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     };
 
     switch (command) {
+      case 'serve': {
+        const { values } = parseArgs({
+          args: rest,
+          options: {
+            host: { type: 'string' },
+            port: { type: 'string' },
+            toolsets: { type: 'string' },
+            'files-dir': { type: 'string' },
+            'allow-origin': { type: 'string', multiple: true },
+          },
+        });
+        const port = values.port !== undefined ? Number(values.port) : undefined;
+        if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+          throw new GatewayError('INVALID_ARGUMENT', '--port must be a number between 1 and 65535.');
+        }
+        return await runServe({
+          config,
+          io,
+          version: VERSION,
+          host: values.host,
+          port,
+          toolsets: values.toolsets,
+          filesDir: values['files-dir'],
+          allowedOrigins: values['allow-origin'],
+        });
+      }
+
       case 'login': {
         const { values } = parseArgs({
           args: rest,

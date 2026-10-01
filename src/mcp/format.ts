@@ -21,6 +21,8 @@ export interface FormatOptions {
   linkFor?: (message: MessageDto) => string | null;
   /** Показывать ли автора: в ленте канала он у всех постов один. */
   showAuthor?: boolean;
+  /** Подпись чата для выдачи из нескольких чатов (глобальный поиск). */
+  chatLabel?: (message: MessageDto) => string | null;
 }
 
 export const DEFAULT_MAX_TEXT_CHARS = 1500;
@@ -108,6 +110,8 @@ export function formatMediaTag(media: MediaDto | null, grouped: boolean): string
 /** Строка заголовка сообщения: всё, кроме текста. */
 export function formatHeader(m: MessageDto, options: FormatOptions): string {
   const parts: string[] = [`#${m.id}`, formatDate(m.date)];
+  const chat = options.chatLabel?.(m);
+  if (chat) parts.push(`in ${chat}`);
   if (options.showAuthor !== false) parts.push(formatAuthor(m.author));
   if (m.topicId !== null) parts.push(`topic ${m.topicId}`);
   if (m.replyToId !== null && m.replyToId !== m.topicId) parts.push(`re #${m.replyToId}`);
