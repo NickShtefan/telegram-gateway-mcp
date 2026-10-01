@@ -40,45 +40,39 @@ sudo install -o root -g wheel -m 755 ~/tg-mcp-dev/scripts/lab-install.sh /opt/te
 
 2. Sha коммита, который ставим. Возьми его со страницы репозитория на GitHub (или с основного Mac: `git rev-parse origin/main`), а не из клона на лабораторной машине.
 
-3. Установка:
+3. Установка. `API_ID` и `API_HASH` приложения Telegram установщик может взять из `.env` соседнего проекта, чтобы не переписывать их руками. На лабораторной машине они есть у channel-scope:
 
 ```bash
-sudo GH_TOKEN="$(gh auth token)" /opt/telegram-gateway-mcp/install.sh <полный sha коммита>
+sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=/Users/nick/WORKSPACE/projects/channel-scope/repo/.env /opt/telegram-gateway-mcp/install.sh <полный sha коммита>
 ```
+
+Из файла читаются только `API_ID`, `API_HASH` и `PHONE_NUMBER`. Сам файл не исполняется, значения проверяются по формату и на экран не выводятся. Номер нужен только для подсказки: установщик напечатает готовую команду входа с ним. Без `TG_MCP_API_ENV` установщик создаст шаблон, и учётные данные нужно будет вписать руками: `sudo -u tgmcp nano /var/tgmcp/.tg-mcp/.env`, затем `sudo launchctl kickstart -k system/com.tg-mcp.gateway`.
 
 Токен GitHub нужен, пока репозиторий приватный. Он передаётся git через окружение и никуда не записывается.
 
-Скрипт создаёт пользователя `tgmcp`, ставит свою копию Node, собирает код, ставит LaunchDaemon, ждёт ответа демона и печатает дальнейшие шаги. Их пять.
+Скрипт создаёт пользователя `tgmcp`, ставит свою копию Node, собирает код, ставит LaunchDaemon, ждёт ответа демона и печатает дальнейшие шаги. Их три.
 
-1. Вписать учётные данные приложения с my.telegram.org:
-
-```bash
-sudo -u tgmcp nano /var/tgmcp/.tg-mcp/.env
-```
-
-2. Войти в аккаунт Telegram. Код и пароль 2FA вводит хозяин аккаунта:
+1. Войти в аккаунт Telegram. Код и пароль 2FA вводит хозяин аккаунта; команду с номером печатает установщик:
 
 ```bash
-sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin login --account agent
+sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin login --account agent --phone <номер>
 ```
 
-3. Завести пользователей шлюза и выдать им аккаунты. Токен печатается один раз, шлюз хранит только его хэш:
+Это новый вход, то есть отдельная сессия. Сессии этого же аккаунта в других проектах (channel-scope хранит свою в MongoDB) не затрагиваются, но лимиты Telegram у аккаунта общие на все сессии.
+
+2. Завести пользователей шлюза и выдать им аккаунты. Токен печатается один раз, шлюз хранит только его хэш:
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add nick --account agent
 ```
 
-4. Проверить установку:
+3. Проверить установку:
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin doctor
 ```
 
-5. Перезапустить демон, чтобы он прочитал `.env`:
-
-```bash
-sudo launchctl kickstart -k system/com.tg-mcp.gateway
-```
+Перезапуск демона после входа не нужен: сессию он берёт из базы при первом вызове. Перезапускать нужно после правки `.env`.
 
 Сессия создаётся входом на этой машине и никуда не копируется (решение 12).
 

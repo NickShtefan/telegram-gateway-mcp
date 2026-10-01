@@ -13,6 +13,11 @@
 # Установка и обновление, всегда из копии под root:
 #   sudo GH_TOKEN="$(gh auth token)" /opt/telegram-gateway-mcp/install.sh <полный sha коммита>
 #
+# Учётные данные приложения Telegram можно взять из .env соседнего проекта,
+# чтобы не переписывать их руками (значения на экран не выводятся):
+#   sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=/путь/к/.env /opt/telegram-gateway-mcp/install.sh <sha>
+# Из файла берутся только API_ID, API_HASH и PHONE_NUMBER (номер нужен для подсказки команды входа).
+#
 # Повторный запуск безопасен: обновляет код и перезапускает демон.
 # База, .env и сессии не трогаются.
 set -euo pipefail
@@ -48,6 +53,7 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 [ "$(owner_uid "$(dirname "$SELF")")" -eq 0 ] || fail "папка скрипта должна принадлежать root"
 
 SHA="${1:-}"
+API_ENV="${TG_MCP_API_ENV:-}"
 echo "$SHA" | grep -Eq '^[0-9a-f]{40}$' || fail "укажи полный sha коммита (40 символов), который ты видишь на GitHub"
 [ -n "${GH_TOKEN:-}" ] || fail "нужен GH_TOKEN для приватного репозитория: sudo GH_TOKEN=\"\$(gh auth token)\" $SELF $SHA"
 
@@ -60,6 +66,27 @@ esac
 umask 022
 WORK="$(mktemp -d /var/root/tg-mcp-build.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
+
+# Значение ключа из чужого .env. Файл не исполняется: из него читается одна строка,
+# а формат значения проверяется ниже. Кавычки и пробелы вокруг значения убираются.
+env_value() {
+  awk -F= -v key="$1" '$1 == key { v = substr($0, length(key) + 2) } END { print v }' "$2" | tr -d " \t\r\"'"
+}
+
+SEED_ID=""
+SEED_HASH=""
+SEED_PHONE=""
+if [ -n "$API_ENV" ]; then
+  [ -f "$API_ENV" ] || fail "TG_MCP_API_ENV: файла $API_ENV нет"
+  SEED_ID="$(env_value TG_API_ID "$API_ENV")"
+  [ -n "$SEED_ID" ] || SEED_ID="$(env_value API_ID "$API_ENV")"
+  SEED_HASH="$(env_value TG_API_HASH "$API_ENV")"
+  [ -n "$SEED_HASH" ] || SEED_HASH="$(env_value API_HASH "$API_ENV")"
+  SEED_PHONE="$(env_value PHONE_NUMBER "$API_ENV")"
+  [[ "$SEED_ID" =~ ^[0-9]{4,12}$ ]] || fail "в $API_ENV нет API_ID (ожидается число)"
+  [[ "$SEED_HASH" =~ ^[0-9a-f]{32}$ ]] || fail "в $API_ENV нет API_HASH (ожидается 32 символа 0-9a-f)"
+  [[ "$SEED_PHONE" =~ ^\+[0-9]{7,15}$ ]] || SEED_PHONE=""
+fi
 
 step "1. Пользователь $SVC_USER"
 if id -u "$SVC_USER" >/dev/null 2>&1; then
@@ -191,26 +218,50 @@ chown "$SVC_USER":wheel "$LOG_DIR"
 chmod 750 "$LOG_DIR"
 
 step "6. Настройки $GATEWAY_HOME/.env"
-if [ -f "$GATEWAY_HOME/.env" ]; then
-  echo "уже есть, не трогаю"
-  if grep -q '^TG_MCP_FILES_DIR=/Users/Shared' "$GATEWAY_HOME/.env"; then
+ENV_FILE="$GATEWAY_HOME/.env"
+# Папка принадлежит пользователю демона: по ссылке root писать не станет.
+[ ! -L "$ENV_FILE" ] || fail "$ENV_FILE это ссылка: удали её и запусти установку заново"
+# Новое содержимое собирается у root и кладётся на место заменой файла, с правами только для демона.
+put_env() {
+  install -S -o "$SVC_USER" -g staff -m 600 "$1" "$ENV_FILE"
+}
+if [ -f "$ENV_FILE" ]; then
+  echo "уже есть"
+  if grep -q '^TG_MCP_FILES_DIR=/Users/Shared' "$ENV_FILE"; then
     echo "ВНИМАНИЕ: в .env старая общая папка в /Users/Shared. Замени строку на TG_MCP_FILES_DIR=$FILES_DIR"
   fi
+  HAVE_ID="$(env_value TG_API_ID "$ENV_FILE")"
+  HAVE_HASH="$(env_value TG_API_HASH "$ENV_FILE")"
+  if [ -n "$SEED_ID" ] && { [ -z "$HAVE_ID" ] || [ -z "$HAVE_HASH" ]; }; then
+    # Заполняются только пустые учётные данные, остальные строки остаются как были.
+    grep -v -E '^(TG_API_ID|TG_API_HASH)=' "$ENV_FILE" > "$WORK/env.new" || true
+    printf 'TG_API_ID=%s\nTG_API_HASH=%s\n' "$SEED_ID" "$SEED_HASH" >> "$WORK/env.new"
+    put_env "$WORK/env.new"
+    echo "TG_API_ID и TG_API_HASH взяты из $API_ENV"
+  elif [ -n "$SEED_ID" ]; then
+    echo "TG_API_ID и TG_API_HASH уже заданы, не трогаю"
+  fi
 else
-  cat > "$GATEWAY_HOME/.env" <<EOF
-# Учётные данные приложения с my.telegram.org. Заполняет владелец.
-TG_API_ID=
-TG_API_HASH=
+  cat > "$WORK/env.new" <<EOF
+# Учётные данные приложения с my.telegram.org.
+TG_API_ID=$SEED_ID
+TG_API_HASH=$SEED_HASH
 TG_MCP_FILES_DIR=$FILES_DIR
 TG_MCP_PORT=$PORT
 # Наборы инструментов: core (чтение), write (запись в два шага: предпросмотр и tg_confirm),
 # automate (наблюдение, правила, поручения).
 TG_MCP_TOOLSETS=core
 EOF
-  chown "$SVC_USER":staff "$GATEWAY_HOME/.env"
-  chmod 600 "$GATEWAY_HOME/.env"
-  echo "создан шаблон: впиши TG_API_ID и TG_API_HASH"
+  put_env "$WORK/env.new"
+  if [ -n "$SEED_ID" ]; then
+    echo "создан, TG_API_ID и TG_API_HASH взяты из $API_ENV"
+  else
+    echo "создан шаблон: впиши TG_API_ID и TG_API_HASH"
+  fi
 fi
+rm -f "$WORK/env.new"
+HAVE_CREDS=0
+[ -n "$(env_value TG_API_ID "$ENV_FILE")" ] && [ -n "$(env_value TG_API_HASH "$ENV_FILE")" ] && HAVE_CREDS=1
 
 # Порт для проверки берётся из действующего .env: владелец мог его поменять.
 ENV_PORT="$(awk -F= '$1 == "TG_MCP_PORT" { v = $2 } END { print v }' "$GATEWAY_HOME/.env" | tr -d '[:space:]')"
@@ -293,19 +344,26 @@ if [ "$STARTED" -eq 1 ]; then
 else
   echo "ВНИМАНИЕ: демон не ответил на http://127.0.0.1:$PORT/healthz за 30 секунд. Посмотри лог ниже."
 fi
-cat <<EOF
-Лог: sudo tail -f $LOG_DIR/daemon.log
-Выгрузки и картинки для агентов: $FILES_DIR
-
-Если это первая установка, дальше по порядку:
-  1. Впиши TG_API_ID и TG_API_HASH:
-       sudo -u $SVC_USER nano $GATEWAY_HOME/.env
-  2. Войди в аккаунт Telegram (код и пароль 2FA вводишь сам):
-       sudo $PREFIX/bin/tg-mcp-admin login --account agent
-  3. Заведи пользователей и выдай доступ (токен печатается один раз):
-       sudo $PREFIX/bin/tg-mcp-admin user add nick --account agent
-  4. Проверь:
-       sudo $PREFIX/bin/tg-mcp-admin doctor
-  5. Перезапусти демон, чтобы он увидел .env:
-       sudo launchctl kickstart -k system/$LABEL
-EOF
+echo "Лог: sudo tail -f $LOG_DIR/daemon.log"
+echo "Выгрузки и картинки для агентов: $FILES_DIR"
+echo
+echo "Если это первая установка, дальше по порядку:"
+N=1
+if [ "$HAVE_CREDS" -eq 0 ]; then
+  echo "  $N. Впиши TG_API_ID и TG_API_HASH и перезапусти демон:"
+  echo "       sudo -u $SVC_USER nano $ENV_FILE"
+  echo "       sudo launchctl kickstart -k system/$LABEL"
+  N=$((N + 1))
+fi
+echo "  $N. Войди в аккаунт Telegram (код и пароль 2FA вводишь сам):"
+if [ -n "$SEED_PHONE" ]; then
+  echo "       sudo $PREFIX/bin/tg-mcp-admin login --account agent --phone $SEED_PHONE"
+else
+  echo "       sudo $PREFIX/bin/tg-mcp-admin login --account agent"
+fi
+N=$((N + 1))
+echo "  $N. Заведи пользователя и выдай доступ (токен печатается один раз):"
+echo "       sudo $PREFIX/bin/tg-mcp-admin user add nick --account agent"
+N=$((N + 1))
+echo "  $N. Проверь:"
+echo "       sudo $PREFIX/bin/tg-mcp-admin doctor"
