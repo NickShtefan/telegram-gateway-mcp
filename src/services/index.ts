@@ -9,6 +9,7 @@ import { ScopePolicy } from '../policy/scopes.js';
 import type { Runtime } from '../runtime.js';
 import { CommentsService } from './comments.js';
 import { DialogsService } from './dialogs.js';
+import { DiscoverService } from './discover.js';
 import { ExportService } from './export.js';
 import { HistoryService } from './history.js';
 import { JobManager } from './jobs.js';
@@ -27,6 +28,7 @@ export interface GatewayServices {
   search: SearchService;
   comments: CommentsService;
   dialogs: DialogsService;
+  discover: DiscoverService;
   topics: TopicsService;
   media: MediaService;
   exporter: ExportService;
@@ -61,6 +63,7 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
     search,
     comments,
     dialogs: new DialogsService(tg, storage.entities),
+    discover: new DiscoverService(tg, storage.entities, history),
     topics: new TopicsService(tg),
     media,
     exporter,

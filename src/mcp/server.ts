@@ -11,6 +11,7 @@ import { registerTools, type ToolDef } from './tool.js';
 import { AUTOMATE_TOOLS, WRITE_TOOLS } from './tools/automate.js';
 import { CONFIRM_TOOLS } from './tools/confirm.js';
 import { CORE_TOOLS } from './tools/core.js';
+import { DISCOVER_TOOLS } from './tools/discover.js';
 import { TASK_TOOLS_AUTOMATE, TASK_TOOLS_WRITE } from './tools/tasks.js';
 
 export const SERVER_NAME = 'telegram-gateway';
@@ -32,7 +33,7 @@ How to work:
 - tg_inbox may list drafts prepared by unattended runs (rules, tasks) and questions of tasks to the owner: bring them to the owner, then use tg_confirm or tg_task_update.
 - All times are UTC.`;
 
-export const ALL_TOOLS: ToolDef[] = [...CORE_TOOLS, ...AUTOMATE_TOOLS, ...TASK_TOOLS_AUTOMATE, ...WRITE_TOOLS, ...TASK_TOOLS_WRITE, ...CONFIRM_TOOLS];
+export const ALL_TOOLS: ToolDef[] = [...CORE_TOOLS, ...DISCOVER_TOOLS, ...AUTOMATE_TOOLS, ...TASK_TOOLS_AUTOMATE, ...WRITE_TOOLS, ...TASK_TOOLS_WRITE, ...CONFIRM_TOOLS];
 
 export interface McpServerOptions {
   services: GatewayServices;
