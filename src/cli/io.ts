@@ -25,8 +25,9 @@ export const terminalIo: CliIo = {
       if (options.hidden) {
         const masked = rl as unknown as { _writeToOutput: (text: string) => void };
         masked._writeToOutput = (text: string) => {
-          // Сам вопрос показываем, набранные символы нет.
-          if (text.includes(question)) process.stderr.write(text);
+          // Показывается только сам вопрос. При Backspace readline перерисовывает строку
+          // целиком (вопрос и набранное): набранное на экран попасть не должно.
+          if (text.includes(question)) process.stderr.write(question);
         };
       }
       rl.question(question, answer => {

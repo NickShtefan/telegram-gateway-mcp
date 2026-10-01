@@ -7,7 +7,7 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ClientFactory } from '../core/clientPool.js';
 import { loadSessionSecret, type GatewayConfig } from '../core/config.js';
-import { isLockHeld } from '../core/lock.js';
+import { acquireLock, isLockHeld } from '../core/lock.js';
 import { createLogger } from '../core/log.js';
 import { createRuntime } from '../runtime.js';
 import type { Storage } from '../storage/port.js';
@@ -109,6 +109,8 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
         // Проверка не должна ронять процесс: зависание покажем как ошибку.
         exit: () => undefined,
       });
+      // Пока идёт проверка, сессии заняты: демон не должен стартовать параллельно.
+      const lock = await acquireLock(config.home);
       try {
         for (const a of accounts.filter(x => x.hasSession)) {
           try {
@@ -121,6 +123,7 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
       } finally {
         runtime.limiter.shutdown();
         await runtime.pool.destroyAll();
+        await lock.release();
       }
     }
   }

@@ -114,6 +114,25 @@ describe('SqliteStorage: кэш сущностей', () => {
     expect(storage.entities.get('a1', '77')).toMatchObject({ accessHash: '555', username: 'seller', title: 'Seller New', meta: { bot: false } });
   });
 
+  it('username, перешедший к другому чату, у прежнего убирается', () => {
+    storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: '1', username: 'shop', title: 'Old shop', meta: { broadcast: true } });
+    storage.entities.put({ accountId: 'a2', peerKey: '-1005', kind: 'channel', accessHash: '2', username: 'shop', title: 'Old shop', meta: { broadcast: true } });
+    storage.entities.put({ accountId: 'a1', peerKey: '-1009', kind: 'channel', accessHash: '3', username: 'Shop', title: 'New shop', meta: { broadcast: true } });
+    expect(storage.entities.getByUsername('a1', 'shop')?.peerKey).toBe('-1009');
+    expect(storage.entities.get('a1', '-1005')?.username).toBeNull();
+    // кэш другого аккаунта не трогаем: он узнает о смене сам
+    expect(storage.entities.get('a2', '-1005')?.username).toBe('shop');
+  });
+
+  it('полный объект без username снимает имя, неполный его не трогает', () => {
+    storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: '1', username: 'shop', title: 'Shop', meta: { broadcast: true } });
+    storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: null, username: null, title: 'Shop', meta: {} });
+    expect(storage.entities.get('a1', '-1005')?.username).toBe('shop');
+    storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: '1', username: null, title: 'Shop', meta: { broadcast: true } });
+    expect(storage.entities.get('a1', '-1005')?.username).toBeNull();
+    expect(storage.entities.getByUsername('a1', 'shop')).toBeNull();
+  });
+
   it('putMany пишет пачкой', () => {
     storage.entities.putMany(
       Array.from({ length: 50 }, (_, i) => ({ accountId: 'a1', peerKey: String(i + 1), kind: 'user' as const, accessHash: String(i), username: null, title: null, meta: {} })),
@@ -142,6 +161,21 @@ describe('SqliteStorage: аудит, задачи, kv, транзакции', ()
     storage.jobs.update('j1', { state: 'done', result: { path: '/tmp/x.jsonl', rows: 400 } });
     expect(storage.jobs.list({ userId: 'nick', state: 'done' })).toHaveLength(1);
     expect(storage.jobs.list({ userId: 'partner' })).toHaveLength(0);
+  });
+
+  it('очередь задач читается от старых к новым', () => {
+    for (let i = 1; i <= 60; i++) {
+      clock += 10;
+      storage.jobs.create({ id: `job_${i}`, userId: 'nick', kind: 'export', params: {} });
+    }
+    expect(storage.jobs.list({ state: 'queued', limit: 1, oldestFirst: true })[0]!.id).toBe('job_1');
+    expect(storage.jobs.list({ state: 'queued', limit: 1 })[0]!.id).toBe('job_60');
+  });
+
+  it('повторный close не падает', () => {
+    const other = new SqliteStorage({ path: ':memory:' });
+    other.close();
+    expect(() => other.close()).not.toThrow();
   });
 
   it('kv хранит и перезаписывает значения', () => {

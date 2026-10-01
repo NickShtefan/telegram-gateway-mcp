@@ -29,6 +29,9 @@ export interface JobManagerOptions {
   log?: Logger;
 }
 
+/** Сколько раз задачу продолжают после рестарта. */
+const MAX_RESUMES = 2;
+
 export class JobManager {
   private readonly storage: Storage;
   private readonly concurrency: number;
@@ -85,12 +88,16 @@ export class JobManager {
     const current = this.get(id, userId);
     if (done(current) || ms <= 0) return current;
     await new Promise<void>(resolve => {
-      const timer = setTimeout(finish, ms);
       const list = this.waiters.get(id) ?? [];
-      function finish(): void {
+      const finish = (): void => {
         clearTimeout(timer);
+        // Ожидание по таймауту тоже снимается: иначе список рос бы на каждый опрос долгой задачи.
+        const rest = (this.waiters.get(id) ?? []).filter(w => w !== finish);
+        if (rest.length > 0) this.waiters.set(id, rest);
+        else this.waiters.delete(id);
         resolve();
-      }
+      };
+      const timer = setTimeout(finish, ms);
       list.push(finish);
       this.waiters.set(id, list);
     });
@@ -99,6 +106,16 @@ export class JobManager {
 
   /** После рестарта: прерванные задачи возвращаются в очередь и запускаются снова. */
   resume(): number {
+    // Если задача была «выполняемой» при падении уже несколько раз, виновата, скорее всего, она сама:
+    // её вызов зависает и роняет процесс. Такая задача закрывается, а не запускается снова.
+    for (const job of this.storage.jobs.list({ state: 'running', limit: 500 })) {
+      const resumes = Number(job.progress._resumes ?? 0) + 1;
+      if (resumes > MAX_RESUMES) {
+        this.storage.jobs.update(job.id, { state: 'failed', error: `interrupted by ${resumes} gateway restarts in a row, not resumed again` });
+      } else {
+        this.storage.jobs.update(job.id, { progress: { ...job.progress, _resumes: resumes } });
+      }
+    }
     const requeued = this.storage.jobs.requeueRunning();
     this.pump();
     return requeued;
@@ -112,10 +129,8 @@ export class JobManager {
   private pump(): void {
     if (this.stopped) return;
     while (this.active < this.concurrency) {
-      const next = this.storage.jobs
-        .list({ state: 'queued', limit: 50 })
-        .reverse()
-        .find(j => this.runners.has(j.kind));
+      // Самая старая задача первой, сколько бы их ни накопилось.
+      const next = this.storage.jobs.list({ state: 'queued', limit: 50, oldestFirst: true }).find(j => this.runners.has(j.kind));
       if (!next) return;
       this.active++;
       this.storage.jobs.update(next.id, { state: 'running' });

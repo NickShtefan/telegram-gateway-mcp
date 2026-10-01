@@ -131,7 +131,8 @@ export interface JobsRepo {
   create(job: { id: string; userId: string; accountId?: string | null; kind: string; params: Record<string, unknown> }): JobRecord;
   get(id: string): JobRecord | null;
   update(id: string, patch: { state?: JobState; progress?: Record<string, unknown>; result?: Record<string, unknown> | null; error?: string | null }): void;
-  list(filter?: { userId?: string; state?: JobState; limit?: number }): JobRecord[];
+  /** По умолчанию новые сверху; oldestFirst нужен очереди. */
+  list(filter?: { userId?: string; state?: JobState; limit?: number; oldestFirst?: boolean }): JobRecord[];
   /** После рестарта: всё, что «выполнялось», возвращается в очередь. */
   requeueRunning(): number;
 }

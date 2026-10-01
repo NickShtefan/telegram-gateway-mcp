@@ -66,7 +66,7 @@ export class FakeTg implements Tg {
   }
 
   laneStatus(): LaneStatus {
-    return { queued: 0, running: false, callsInWindow: this.calls.length, perMinute: 60, lastCallAt: null, floodWaitSeconds: 0 };
+    return { queued: 0, running: false, callsInWindow: this.calls.length, perMinute: 60, lastCallAt: null, floodWaitSeconds: 0, pausedMethods: [] };
   }
 }
 

@@ -1,3 +1,4 @@
+import { RPCMessageToError } from 'telegram/errors/index.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError } from '../errors.js';
 import { AccountLimiter } from '../limiter.js';
@@ -187,6 +188,71 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
   });
 });
 
+describe('AccountLimiter: настоящие ошибки GramJS', () => {
+  const real = (message: string, method: string): Error =>
+    RPCMessageToError({ errorCode: 420, errorMessage: message } as never, { className: method } as never) as Error;
+
+  it('короткий FLOOD_WAIT от GramJS пережидается и вызов повторяется', async () => {
+    const { limiter } = makeLimiter();
+    let calls = 0;
+    const p = limiter.run('a', async () => {
+      calls++;
+      if (calls === 1) throw real('FLOOD_WAIT_5', 'messages.GetHistory');
+      return 'ok';
+    }, { label: 'messages.GetHistory' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(limiter.status('a').floodWaitSeconds).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(6_000);
+    await expect(p).resolves.toBe('ok');
+    expect(calls).toBe(2);
+  });
+
+  it('долгая пауза закрывает только тот метод, который её получил', async () => {
+    const { limiter } = makeLimiter({ floodCapSeconds: 300 });
+    const first = limiter.run('a', async () => {
+      throw real('FLOOD_WAIT_3600', 'contacts.ResolveUsername');
+    }, { label: 'contacts.ResolveUsername' });
+    const rejected = expect(first).rejects.toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 3600 });
+    await vi.advanceTimersByTimeAsync(10);
+    await rejected;
+
+    const op = vi.fn(async () => 'never');
+    const again = (await limiter.run('a', op, { label: 'contacts.ResolveUsername' }).catch((e: unknown) => e)) as GatewayError;
+    expect(again.code).toBe('FLOOD_WAIT');
+    expect(again.message).toContain('Other kinds of requests still work');
+    expect(op).not.toHaveBeenCalled();
+
+    const other = limiter.run('a', async () => 'history', { label: 'messages.GetHistory' });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(other).resolves.toBe('history');
+
+    const status = limiter.status('a');
+    expect(status.floodWaitSeconds).toBe(0);
+    expect(status.pausedMethods).toHaveLength(1);
+    expect(status.pausedMethods[0]).toMatchObject({ label: 'contacts.ResolveUsername' });
+
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    await expect(limiter.run('a', async () => 'resolved', { label: 'contacts.ResolveUsername' })).resolves.toBe('resolved');
+    expect(limiter.status('a').pausedMethods).toEqual([]);
+  });
+
+  it('медленный режим чата не ставит аккаунт на паузу и не повторяется', async () => {
+    const { limiter } = makeLimiter();
+    const op = vi.fn(async () => {
+      throw real('SLOWMODE_WAIT_30', 'messages.SendMessage');
+    });
+    const p = limiter.run('a', op, { label: 'messages.SendMessage', write: true });
+    const rejected = expect(p).rejects.toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 30 });
+    await vi.advanceTimersByTimeAsync(10);
+    await rejected;
+    expect(op).toHaveBeenCalledTimes(1);
+    expect(limiter.status('a').floodWaitSeconds).toBe(0);
+    const other = limiter.run('a', async () => 'ok', { label: 'messages.GetHistory' });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(other).resolves.toBe('ok');
+  });
+});
+
 describe('AccountLimiter: дедлайны и зависания', () => {
   it('зависший вызов отдаёт TIMEOUT, требует перезапуск и освобождает полосу', async () => {
     const { limiter, onFatal } = makeLimiter({ defaultDeadlineMs: 20_000 });
@@ -263,6 +329,18 @@ describe('recovery', () => {
     expect(exit).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(1);
     expect(beforeExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('перед выходом ждущие вызовы получают ошибку и успевают её записать', async () => {
+    const exit = vi.fn();
+    const order: string[] = [];
+    const fatal = createFatalHandler({ exit, log: silent, graceMs: 300, prepare: () => order.push('prepare'), beforeExit: () => order.push('beforeExit') });
+    fatal('hung call');
+    expect(order).toEqual(['prepare']);
+    expect(exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(order).toEqual(['prepare', 'beforeExit']);
+    expect(exit).toHaveBeenCalledWith(1);
   });
 
   it('watchdog считает пропущенные тики и поднимает тревогу', () => {

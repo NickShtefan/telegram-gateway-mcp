@@ -13,6 +13,13 @@ export interface FatalHandlerOptions {
   log?: Logger;
   /** Выполняется перед выходом, например закрытие базы. Ошибки игнорируются. */
   beforeExit?: () => void;
+  /** Выполняется сразу: отклонить всё, что ждёт в очередях, чтобы вызывающие узнали об ошибке. */
+  prepare?: () => void;
+  /**
+   * Сколько ждать между `prepare` и выходом. За это время обработчики ошибок
+   * успевают записать исход: иначе согласование осталось бы «выполняется» навсегда.
+   */
+  graceMs?: number;
 }
 
 export type FatalHandler = (reason: string) => void;
@@ -26,11 +33,20 @@ export function createFatalHandler(options: FatalHandlerOptions = {}): FatalHand
     requested = true;
     log.error(`fatal MTProto failure: ${reason}; exiting for supervisor restart`);
     try {
-      options.beforeExit?.();
+      options.prepare?.();
     } catch {
-      // выход важнее аккуратного закрытия
+      // выход важнее аккуратной остановки
     }
-    exit(1);
+    const finish = (): void => {
+      try {
+        options.beforeExit?.();
+      } catch {
+        // выход важнее аккуратного закрытия
+      }
+      exit(1);
+    };
+    if (options.graceMs && options.graceMs > 0) setTimeout(finish, options.graceMs);
+    else finish();
   };
 }
 

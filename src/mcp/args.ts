@@ -75,3 +75,9 @@ export function parseDuration(value: string, argName: string, maxMs: number): nu
   }
   return ms;
 }
+
+/** Число от 0 до max: для «сколько сообщений добавить», где ноль это осмысленное значение. */
+export function clampCount(value: number | undefined, max: number): number {
+  if (value === undefined || !Number.isFinite(value)) return 0;
+  return Math.min(Math.max(0, Math.trunc(value)), max);
+}

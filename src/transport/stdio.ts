@@ -101,12 +101,23 @@ export async function runStdioProxy(options: StdioProxyOptions): Promise<void> {
       return;
     }
 
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (err) {
+      options.log.warn('daemon closed the connection mid-response', { error: (err as Error).message });
+      fail(message, 'The tg-mcp daemon closed the connection before answering. It may be restarting: repeat the call.');
+      return;
+    }
     if (response.status === 401) {
       fail(message, 'The tg-mcp daemon rejected the token. Check TG_MCP_TOKEN.');
       return;
     }
-    if (response.status === 202 || text.trim() === '') return;
+    if (response.status === 202) return;
+    if (text.trim() === '') {
+      if (!response.ok) fail(message, `The tg-mcp daemon answered HTTP ${response.status}.`);
+      return;
+    }
 
     let replies: unknown[];
     try {

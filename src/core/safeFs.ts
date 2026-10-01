@@ -32,6 +32,8 @@ export function ensureTrustedDir(path: string, root: string): void {
     if (current === root) break;
   }
   if (chain[0] !== root) throw untrusted(path, 'is outside the files directory');
+  // Саму общую папку создаём вместе с родителями: при разработке её может ещё не быть.
+  mkdirSync(root, { recursive: true, mode: 0o755 });
   for (const dir of chain) {
     try {
       mkdirSync(dir, { mode: 0o755 });

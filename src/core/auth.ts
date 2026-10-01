@@ -60,18 +60,33 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
 
   let errors = 0;
   let lastError: Error | null = null;
+  // Человек прервал ввод (Ctrl-C, таймаут): GramJS проглатывает такую ошибку и спрашивает заново.
+  let aborted: Error | null = null;
+  const ask = async (label: string, prompt: () => Promise<string>): Promise<string> => {
+    try {
+      return await withTimeout(prompt(), inputTimeoutMs, label);
+    } catch (err) {
+      aborted = err instanceof GatewayError ? err : new GatewayError('UNAVAILABLE', `Login cancelled: ${(err as Error).message}`);
+      throw aborted;
+    }
+  };
 
   try {
     await client.start({
       phoneNumber: phone,
-      phoneCode: () => withTimeout(options.prompts.code(), inputTimeoutMs, 'phone code input'),
-      password: (hint?: string) => withTimeout(options.prompts.password(hint), inputTimeoutMs, '2FA password input'),
+      phoneCode: () => ask('phone code input', () => options.prompts.code()),
+      password: (hint?: string) => ask('2FA password input', () => options.prompts.password(hint)),
+      // Без этого GramJS для незарегистрированного номера молча создаёт новый аккаунт и принимает условия Telegram.
+      firstAndLastNames: async () => {
+        aborted = new GatewayError('INVALID_ARGUMENT', 'This phone number has no Telegram account. The gateway does not register new accounts.');
+        throw aborted;
+      },
       onError: async (err: Error) => {
         errors++;
-        lastError = err;
-        options.log.warn('login step failed', { error: err.message, attempt: errors });
+        lastError = aborted ?? err;
+        options.log.warn('login step failed', { error: lastError.message, attempt: errors });
         // true останавливает вход: иначе GramJS спрашивает код заново без конца.
-        return errors >= maxAttempts;
+        return aborted !== null || errors >= maxAttempts;
       },
     });
 
@@ -94,7 +109,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
       },
     };
   } catch (err) {
-    throw classifyError(lastError ?? err);
+    throw classifyError(aborted ?? lastError ?? err);
   } finally {
     // Клиент входа закрывается всегда: демон откроет своего с той же сессией.
     try {

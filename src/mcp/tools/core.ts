@@ -11,7 +11,7 @@ import { EXPORT_MAX_ROWS, type ExportParams, type ExportResult } from '../../ser
 import { messageLink, parseRef } from '../../services/links.js';
 import type { MessageDto } from '../../services/messages.js';
 import type { JobRecord } from '../../storage/port.js';
-import { clampLimit, describeWindow, parseWindow } from '../args.js';
+import { clampCount, clampLimit, describeWindow, parseWindow } from '../args.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import { compactNumber, formatCard, formatDate, formatMessageList } from '../format.js';
 import { defineTool, type ToolDef, type ToolImage } from '../tool.js';
@@ -64,6 +64,7 @@ const tgStatus = defineTool({
         `calls this minute ${lane.callsInWindow}/${lane.perMinute}`,
       ];
       if (lane.floodWaitSeconds > 0) parts.push(`PAUSED by Telegram for ${lane.floodWaitSeconds}s (FLOOD_WAIT)`);
+      for (const method of lane.pausedMethods) parts.push(`${method.label} paused for ${method.seconds}s`);
       if (lane.queued > 0) parts.push(`queued ${lane.queued}`);
       lines.push(parts.join(' | '));
     }
@@ -332,8 +333,8 @@ const tgGetMessage = defineTool({
   input: {
     link: z.string().optional().describe('t.me link to the message.'),
     chat: z.string().optional().describe('Chat, when "link" is not given.'),
-    id: z.number().int().positive().optional().describe('Message id, when "link" is not given.'),
-    ids: z.array(z.number().int().positive()).optional().describe('Several message ids of the same chat (with "chat"), max 100.'),
+    id: z.number().int().positive().max(2_147_483_647).optional().describe('Message id, when "link" is not given.'),
+    ids: z.array(z.number().int().positive().max(2_147_483_647)).optional().describe('Several message ids of the same chat (with "chat"), max 100.'),
     before: z.number().int().optional().describe('How many older messages to add, 0-20.'),
     after: z.number().int().optional().describe('How many newer messages to add, 0-20.'),
     account: accountArg,
@@ -368,9 +369,9 @@ const tgGetMessage = defineTool({
     }
 
     const where = await locateMessage(ctx, args);
-    const before = clampLimit(args.before ?? 0, 0, 20);
-    const after = clampLimit(args.after ?? 0, 0, 20);
-    const wantContext = (args.before ?? 0) > 0 || (args.after ?? 0) > 0;
+    const before = clampCount(args.before, 20);
+    const after = clampCount(args.after, 20);
+    const wantContext = before > 0 || after > 0;
     const page = wantContext
       ? await services.history.around(where.accountId, where.chat, where.messageId, before, after, where.topicId)
       : await services.history.byIds(where.accountId, where.chat, [where.messageId]);
@@ -414,7 +415,7 @@ const tgGetComments = defineTool({
   input: {
     link: z.string().optional().describe('t.me link to the post.'),
     chat: z.string().optional().describe('Channel, when "link" is not given.'),
-    id: z.number().int().positive().optional().describe('Post id, when "link" is not given.'),
+    id: z.number().int().positive().max(2_147_483_647).optional().describe('Post id, when "link" is not given.'),
     sort: z.enum(['recent', 'top']).optional().describe('recent (default, newest first) or top (most reactions).'),
     query: z.string().optional().describe('Search for these words inside the comments.'),
     limit: z.number().int().optional().describe('Comments per page: default 30, max 100.'),
@@ -602,7 +603,7 @@ const tgGetMedia = defineTool({
   input: {
     link: z.string().optional().describe('t.me link to the message.'),
     chat: z.string().optional().describe('Chat, when "link" is not given.'),
-    id: z.number().int().positive().optional().describe('Message id, when "link" is not given.'),
+    id: z.number().int().positive().max(2_147_483_647).optional().describe('Message id, when "link" is not given.'),
     album: z.boolean().optional().describe('Download every item of the album the message belongs to. Default true.'),
     size: z.enum(['thumb', 'full']).optional().describe('thumb (default) or full.'),
     inline: z.boolean().optional().describe('Return previews as images in the answer (thumb only, up to 4). Default false.'),

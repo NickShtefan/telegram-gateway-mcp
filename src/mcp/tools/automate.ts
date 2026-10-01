@@ -140,7 +140,8 @@ const tgInbox = defineTool({
     const after = args.cursor ? decodeCursor<{ o: number }>('inbox', args.cursor).o : Math.max(0, latest - limit);
 
     const { scopes, runtime } = ctx.services;
-    const events = store.inboxAfter(userId, after, limit).filter(e => {
+    const scanned = store.inboxAfter(userId, after, limit);
+    const events = scanned.filter(e => {
       if (e.accountId !== null && !ctx.principal.accounts.includes(e.accountId)) return false;
       if (e.kind !== 'new_post') return true;
       // Доступ к чату могли закрыть уже после события: такие посты не показываются.
@@ -153,7 +154,8 @@ const tgInbox = defineTool({
     for (const event of events) lines.push(...formatEvent(event, ctx, env));
     if (events.length === 0) lines.push('Nothing new.');
 
-    const lastId = events.length > 0 ? events[events.length - 1]!.id : after;
+    // Курсор двигается по всем просмотренным событиям, включая отфильтрованные: иначе он застрял бы на них.
+    const lastId = scanned.length > 0 ? scanned[scanned.length - 1]!.id : after;
     lines.push('', `next_cursor: ${encodeCursor('inbox', { o: lastId })}`);
     if (lastId < latest) lines.push('There are more events: call tg_inbox again with this cursor.');
     return { text: lines.join('\n'), count: events.length };
@@ -274,8 +276,8 @@ const tgReply = defineTool({
   input: {
     link: z.string().optional().describe('t.me link to the post.'),
     chat: z.string().optional().describe('Channel, when "link" is not given.'),
-    id: z.number().int().positive().optional().describe('Post id, when "link" is not given.'),
-    text: z.string().describe('Reply text, plain text, up to 4096 characters.'),
+    id: z.number().int().positive().max(2_147_483_647).optional().describe('Post id, when "link" is not given.'),
+    text: z.string().describe('Reply text, plain text, up to 2800 characters.'),
     send_as: z.enum(['account', 'channel']).optional().describe('Reply as the account (default) or as the channel, if the account is its admin.'),
     account: accountArg,
   },

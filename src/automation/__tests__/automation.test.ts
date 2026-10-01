@@ -1,12 +1,15 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { RPCMessageToError } from 'telegram/errors/index.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeTestGateway, type TestClient, type TestGateway } from '../../__tests__/helpers/gateway.js';
 import { rawChannel, rawMessage, rawUser } from '../../__tests__/helpers/fakeTg.js';
 import { buildArgv, runAgent, runRunner, splitCommand } from '../../cli/runner.js';
-import { GatewayError } from '../../core/errors.js';
+import { classifyError, GatewayError } from '../../core/errors.js';
 import { createLogger } from '../../core/log.js';
 import { sentMessageId } from '../../services/write.js';
 import { startHttpServer } from '../../transport/http.js';
-import { HttpBotApi } from '../botApi.js';
+import { BOT_TEXT_MAX, clipBotText, HttpBotApi } from '../botApi.js';
 import { inQuietHours, isAdvertisement, normalizeRuleConfig } from '../rules.js';
 
 const silent = createLogger('test', { level: 'silent' });
@@ -45,6 +48,9 @@ afterEach(async () => {
 });
 
 const approvals = () => gw.services.automation.approvals;
+/** Ошибка Telegram в том виде, в каком её отдаёт шлюз после GramJS. */
+const telegramError = (message: string, method: string): GatewayError =>
+  classifyError(RPCMessageToError({ errorCode: 400, errorMessage: message } as never, { className: method } as never));
 const store = () => gw.services.automation.store;
 
 describe('запись только через согласование', () => {
@@ -223,7 +229,101 @@ describe('запись только через согласование', () => 
   });
 });
 
+describe('исходы записи, которые Telegram сообщает ошибкой', () => {
+  const requestJoin = async (): Promise<void> => {
+    gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: 900 }, chats: [channel({ left: true })] }));
+    await nick.call('tg_join', { ref: '@stonksnws' });
+    await approvals().handleUpdate(gw.bot.press(gw.bot.lastCard(), 'Вступить', NICK_TG));
+  };
+
+  it('заявка на вступление это исход, а не сбой: она идёт в дневной лимит', async () => {
+    gw.tg.on('channels.JoinChannel', () => {
+      throw telegramError('INVITE_REQUEST_SENT', 'channels.JoinChannel');
+    });
+    await requestJoin();
+    expect(gw.bot.edits.at(-1)!.text).toMatch(/✅ Заявка на вступление в @stonksnws .* отправлена: её должен одобрить админ чата/);
+    expect(store().writesSince('agent', 'join', 0)).toBe(1);
+    expect((await nick.call('tg_inbox')).text).toContain('join executed');
+  });
+
+  it('аккаунт уже в чате: согласование закрывается успехом, лимит не тратится', async () => {
+    gw.tg.on('channels.JoinChannel', () => {
+      throw telegramError('USER_ALREADY_PARTICIPANT', 'channels.JoinChannel');
+    });
+    await requestJoin();
+    expect(gw.bot.edits.at(-1)!.text).toContain('✅ Аккаунт уже состоит в @stonksnws');
+    expect(store().writesSince('agent', 'join', 0)).toBe(0);
+  });
+
+  it('настоящая ошибка вступления остаётся ошибкой', async () => {
+    gw.tg.on('channels.JoinChannel', () => {
+      throw telegramError('CHANNELS_TOO_MUCH', 'channels.JoinChannel');
+    });
+    await requestJoin();
+    expect(gw.bot.edits.at(-1)!.text).toContain('CHANNELS_TOO_MUCH');
+    expect(store().writesSince('agent', 'join', 0)).toBe(0);
+  });
+
+  it('RANDOM_ID_DUPLICATE значит, что сообщение уже доставлено: второй раз оно не уходит', async () => {
+    gw.tg.on('messages.SendMessage', () => {
+      throw telegramError('RANDOM_ID_DUPLICATE', 'messages.SendMessage');
+    });
+    await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' });
+    await approvals().handleUpdate(gw.bot.press(gw.bot.lastCard(), 'Отправить', NICK_TG));
+    expect(gw.bot.edits.at(-1)!.text).toContain('✅ Отправлено');
+    expect(store().hasReply('agent', '-1000000000500', 10)).toBe(true);
+    expect((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'ещё раз' })).text).toContain('already replied');
+  });
+
+  it('сбой журнала после отправки не превращает отправленное в ошибку', async () => {
+    const record = vi.spyOn(store(), 'recordWrite').mockImplementationOnce(() => {
+      throw new Error('database is locked');
+    });
+    await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' });
+    await approvals().handleUpdate(gw.bot.press(gw.bot.lastCard(), 'Отправить', NICK_TG));
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(1);
+    expect(gw.bot.edits.at(-1)!.text).toContain('✅ Отправлено: https://t.me/stonksnws/10?comment=7777');
+  });
+
+  it('действие, прерванное рестартом, не повторяется: человеку сообщается, что исход неизвестен', async () => {
+    const reply = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' });
+    const approvalId = reply.text.match(/approval_id (ap_[0-9a-f]+)/)![1]!;
+    const card = gw.bot.lastCard();
+    // шлюз упал между «человек нажал» и «Telegram ответил»
+    expect(store().transitionApproval(approvalId, ['pending'], 'executing')).toBe(true);
+
+    expect(await approvals().recover()).toBe(1);
+    expect(store().getApproval(approvalId)!.state).toBe('failed');
+    expect(gw.bot.edits.at(-1)!.text).toContain('Исход неизвестен');
+    await approvals().handleUpdate(gw.bot.press(card, 'Отправить', NICK_TG));
+    expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
+    expect((await nick.call('tg_inbox')).text).toContain('reply failed');
+    expect(await approvals().recover()).toBe(0);
+  });
+});
+
 describe('наблюдение и входящие', () => {
+  it('курсор входящих не застревает на событиях, которые агенту не показываются', async () => {
+    await nick.call('tg_watch', { action: 'add', chat: '@stonksnws' });
+    const start = (await nick.call('tg_inbox')).text.match(/next_cursor: (\S+)/)![1]!;
+    // события чата, доступ к которому уже закрыт
+    for (const id of [1, 2]) store().addInbox({ userId: 'nick', kind: 'new_post', accountId: 'agent', chatKey: '-1000000000999', messageId: id, payload: {} });
+    const watcher = gw.services.automation.watcher;
+    gw.tg.on('messages.GetHistory', () => ({ messages: [post(30)], chats: [channel()] }));
+    await watcher.tick();
+    clock += 61_000;
+    gw.tg.on('messages.GetHistory', () => ({ messages: [post(31, 'Видимый пост'), post(30)], chats: [channel()] }));
+    await watcher.tick();
+
+    const first = await nick.call('tg_inbox', { cursor: start, limit: 2 });
+    expect(first.text).toContain('Nothing new.');
+    expect(first.text).toContain('There are more events');
+    const next = first.text.match(/next_cursor: (\S+)/)![1]!;
+    expect(next).not.toBe(start);
+    expect((await nick.call('tg_inbox', { cursor: next, limit: 2 })).text).toContain('> Видимый пост');
+  });
+
   it('агент сам добавляет канал; старые посты не приходят, новые приходят один раз', async () => {
     const added = await nick.call('tg_watch', { action: 'add', chat: '@stonksnws' });
     expect(added.text).toContain('Now watching @stonksnws with account agent');
@@ -528,6 +628,16 @@ describe('запуск агента по правилу', () => {
     }
   });
 
+  it('задание, которое никто не забрал за два часа, снимается: агент не ответит на старый пост', async () => {
+    store().enqueueRunnerJob({ id: 'run_old', userId: 'nick', kind: 'rule', runAfter: clock, payload: { ruleId: 'nick:reply-posts', accountId: 'agent', chatKey: '-1000000000500', chatLabel: '@stonksnws', postId: 11, link: null, prompt: 'Ответь.' } });
+    clock += 60 * 60_000;
+    expect(gw.services.automation.runner.sweep()).toBe(0);
+    clock += 61 * 60_000;
+    expect(gw.services.automation.runner.sweep()).toBe(1);
+    expect(store().getRunnerJob('run_old')).toMatchObject({ state: 'failed', exitCode: -3 });
+    expect(gw.services.automation.runner.claim('nick')).toBeNull();
+  });
+
   it('брошенные задания закрываются уборкой', async () => {
     const job = await ruleJob();
     clock += 20 * 60_000;
@@ -563,6 +673,23 @@ describe('команда runner', () => {
     const slow = await runAgent({ ...base, agent: 'node -e "setTimeout(()=>{},60000)"' }, { ...job, timeoutSec: 0.2 });
     expect(slow.exitCode).toBe(124);
     expect(slow.output).toContain('timed out');
+  });
+
+  it('в аргументах команды ~/ раскрывается, в промпте нет', () => {
+    expect(buildArgv('claude -p {prompt} --mcp-config ~/tg-mcp/agent.mcp.json', 'look at ~/notes')).toEqual([
+      'claude', '-p', 'look at ~/notes', '--mcp-config', join(homedir(), 'tg-mcp/agent.mcp.json'),
+    ]);
+    expect(buildArgv('codex exec --cd ~', 'x')).toEqual(['codex', 'exec', '--cd', homedir(), 'x']);
+  });
+
+  it('агент вышел, но оставил фоновый процесс с открытым выводом: задание не висит до таймаута', async () => {
+    const job = { id: 'run_bg', kind: 'rule', prompt: 'p', token: 't', timeoutSec: 30 };
+    const script = `require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},4000)'],{stdio:'inherit',detached:true}).unref();console.log('agent done')`;
+    const started = Date.now();
+    const result = await runAgent({ baseUrl: 'http://127.0.0.1:7777', token: 'u', log: silent, agent: `node -e "${script}"` }, job);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain('agent done');
+    expect(Date.now() - started).toBeLessThan(3_800);
   });
 
   it('цикл: забирает задание, запускает агента, сообщает исход', async () => {
@@ -616,6 +743,14 @@ describe('мелочи', () => {
     expect(err.message).toContain('409');
     expect(err.message).not.toContain(token);
     expect(err.isConflict).toBe(true);
+  });
+
+  it('длинный текст для бота режется без половинки эмодзи', () => {
+    const text = 'a'.repeat(BOT_TEXT_MAX - 2) + '😀' + 'tail';
+    const clipped = clipBotText(text);
+    expect(clipped).toBe('a'.repeat(BOT_TEXT_MAX - 2) + '…');
+    expect(clipped.length).toBeLessThanOrEqual(BOT_TEXT_MAX);
+    expect(clipBotText('короткий')).toBe('короткий');
   });
 
   it('личные сообщения незнакомым: лимит новых диалогов в день', () => {

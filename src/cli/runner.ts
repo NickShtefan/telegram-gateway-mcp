@@ -9,6 +9,8 @@
  * кода: channel-scope `web/routes/research.ts:131`, без `--dangerously-skip-permissions`.
  */
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { ClaimedJob } from '../automation/runner.js';
 import { GatewayError } from '../core/errors.js';
 import type { Logger } from '../core/log.js';
@@ -57,7 +59,8 @@ export function buildArgv(template: string, prompt: string): string[] {
   if (parts.length === 0) throw new GatewayError('INVALID_ARGUMENT', 'The --agent command is empty.');
   let used = false;
   const argv = parts.map(part => {
-    if (!part.includes('{prompt}')) return part;
+    // Оболочки здесь нет, поэтому `~/` раскрываем сами. В промпте `~` не трогаем.
+    if (!part.includes('{prompt}')) return part === '~' || part.startsWith('~/') ? join(homedir(), part.slice(1)) : part;
     used = true;
     return part.split('{prompt}').join(prompt);
   });
@@ -81,6 +84,7 @@ export interface RunnerOptions {
 }
 
 const OUTPUT_TAIL = 8_000;
+const EXIT_GRACE_MS = 2_000;
 
 /** Запускает агента для одного задания. Возвращает код выхода (124 при таймауте) и хвост вывода. */
 export function runAgent(options: RunnerOptions, job: ClaimedJob): Promise<{ exitCode: number; output: string }> {
@@ -113,9 +117,15 @@ export function runAgent(options: RunnerOptions, job: ClaimedJob): Promise<{ exi
       clearTimeout(timer);
       resolve({ exitCode: 127, output: `could not start the agent: ${err.message}` });
     });
-    child.on('close', code => {
+    const finish = (code: number | null): void => {
       clearTimeout(timer);
       resolve({ exitCode: timedOut ? 124 : (code ?? 1), output: timedOut ? `${output}\n[timed out after ${job.timeoutSec}s]` : output });
+    };
+    child.on('close', finish);
+    // Агент мог оставить фоновый процесс, который держит stdout открытым: тогда close не придёт.
+    // После выхода самого агента ждём остаток вывода недолго.
+    child.on('exit', code => {
+      setTimeout(() => finish(code), EXIT_GRACE_MS).unref();
     });
   });
 }

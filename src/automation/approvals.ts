@@ -201,20 +201,32 @@ export class Approvals {
     if (update.message) return this.handleMessage(update.message);
   }
 
+  /**
+   * Ответ на нажатие кнопки это только всплывающая подсказка. Bot API отклоняет
+   * его для старых нажатий («query is too old»), и это не должно отменять решение.
+   */
+  private async answer(queryId: string, text?: string): Promise<void> {
+    try {
+      await this.bot!.answerCallbackQuery(queryId, text);
+    } catch (err) {
+      this.log.debug('answerCallbackQuery failed', { error: (err as Error).message });
+    }
+  }
+
   private async handleCallback(query: BotCallbackQuery): Promise<void> {
     const bot = this.bot!;
     const m = (query.data ?? '').match(/^ap:(ap_[0-9a-f]+):(ok|edit|no)$/);
-    if (!m) return bot.answerCallbackQuery(query.id);
+    if (!m) return this.answer(query.id);
     const approval = this.store.getApproval(m[1]!);
     const action = m[2]!;
     const user = approval ? this.storage.users.get(approval.userId) : null;
 
     // Решает только тот, чьё это действие. Чужое нажатие ничего не меняет.
     if (!approval || !user?.telegramId || String(query.from.id) !== user.telegramId) {
-      return bot.answerCallbackQuery(query.id, 'Это согласование не для вас.');
+      return this.answer(query.id, 'Это согласование не для вас.');
     }
     if (approval.state !== 'pending' && approval.state !== 'awaiting_edit') {
-      return bot.answerCallbackQuery(query.id, `Уже решено: ${this.stateLabel(approval.state)}.`);
+      return this.answer(query.id, `Уже решено: ${this.stateLabel(approval.state)}.`);
     }
     // Уборка просроченных идёт раз в минуту: срок проверяется и в момент нажатия.
     if (approval.expiresAt <= this.now()) {
@@ -222,31 +234,36 @@ export class Approvals {
         await this.finishCard(approval.id, '⌛ Истекло без решения');
         this.notify(approval.id);
       }
-      return bot.answerCallbackQuery(query.id, 'Срок согласования истёк.');
+      return this.answer(query.id, 'Срок согласования истёк.');
     }
 
     if (action === 'no') {
-      if (!this.store.transitionApproval(approval.id, ['pending', 'awaiting_edit'], 'rejected')) return bot.answerCallbackQuery(query.id);
-      await bot.answerCallbackQuery(query.id, 'Пропущено');
+      if (!this.store.transitionApproval(approval.id, ['pending', 'awaiting_edit'], 'rejected')) return this.answer(query.id);
       await this.finishCard(approval.id, '🚫 Пропущено');
       this.notify(approval.id);
-      return;
+      return this.answer(query.id, 'Пропущено');
     }
 
     if (action === 'edit') {
       const entry = this.executors.get(approval.kind);
-      if (!entry?.editable) return bot.answerCallbackQuery(query.id, 'Этот запрос нельзя изменить.');
-      if (!this.store.transitionApproval(approval.id, ['pending'], 'awaiting_edit')) return bot.answerCallbackQuery(query.id);
-      await bot.answerCallbackQuery(query.id);
-      const prompt = await bot.sendMessage(user.telegramId, `Ответь на это сообщение новым текстом для ${approval.id}. Он уйдёт сразу.`, {
-        replyTo: approval.botMessageId ?? undefined,
-        forceReply: true,
-      });
-      this.storage.kv.set(this.editPromptKey(approval.id), String(prompt.message_id));
-      return;
+      if (!entry?.editable) return this.answer(query.id, 'Этот запрос нельзя изменить.');
+      if (!this.store.transitionApproval(approval.id, ['pending'], 'awaiting_edit')) return this.answer(query.id);
+      try {
+        const prompt = await bot.sendMessage(user.telegramId, `Ответь на это сообщение новым текстом для ${approval.id}. Он уйдёт сразу.`, {
+          replyTo: approval.botMessageId ?? undefined,
+          forceReply: true,
+        });
+        this.storage.kv.set(this.editPromptKey(approval.id), String(prompt.message_id));
+      } catch (err) {
+        // Просьба о новом тексте не дошла: возвращаем запрос в ожидание, кнопки снова работают.
+        this.store.transitionApproval(approval.id, ['awaiting_edit'], 'pending');
+        this.log.warn('could not ask for the new text', { approval: approval.id, error: (err as Error).message });
+        return this.answer(query.id, 'Не получилось, попробуй ещё раз.');
+      }
+      return this.answer(query.id);
     }
 
-    await bot.answerCallbackQuery(query.id, 'Выполняю');
+    await this.answer(query.id, 'Выполняю');
     await this.execute(approval.id);
   }
 
@@ -350,6 +367,23 @@ export class Approvals {
       failed: 'не выполнено',
     };
     return labels[state];
+  }
+
+  /**
+   * После рестарта: действия, которые выполнялись в момент остановки. Дошло ли
+   * сообщение до Telegram, неизвестно, поэтому повторять его шлюз не станет.
+   */
+  async recover(): Promise<number> {
+    const stuck = this.store.approvalsInState('executing');
+    for (const approval of stuck) {
+      this.store.updateApproval(approval.id, {
+        state: 'failed',
+        result: { error: 'The gateway restarted while this action was being executed. The outcome is unknown: check in Telegram before repeating it.' },
+      });
+      await this.finishCard(approval.id, '⚠️ Шлюз перезапустился во время выполнения. Исход неизвестен: проверь в Telegram, прежде чем повторять.');
+      this.notify(approval.id);
+    }
+    return stuck.length;
   }
 
   /** Закрывает просроченные согласования. */

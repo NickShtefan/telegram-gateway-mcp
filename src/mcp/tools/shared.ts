@@ -21,7 +21,7 @@ export const chatArg = z.string().describe('Chat: @username, t.me link, invite l
 export const sinceArg = z.string().optional().describe('Start of the time window: 30d, 12h, 2w (that long ago), 2026-09-01, or ISO date-time (UTC).');
 export const untilArg = z.string().optional().describe('End of the time window, same formats as "since". Default: now.');
 export const cursorArg = z.string().optional().describe('next_cursor from the previous call of this tool, to get the next page.');
-export const topicArg = z.number().int().positive().optional().describe('Forum topic id from tg_list_topics.');
+export const topicArg = z.number().int().positive().max(2_147_483_647).optional().describe('Forum topic id from tg_list_topics.');
 
 /** Подпись чата для заголовков: `@username` или название в кавычках. */
 export function chatLabel(chat: Pick<EntityRecord, 'username' | 'title' | 'peerKey'>): string {

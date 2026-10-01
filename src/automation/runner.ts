@@ -13,6 +13,9 @@ import { createLogger, type Logger } from '../core/log.js';
 import { ruleGrant, ruleName, rulePrompt } from './rules.js';
 import type { AutomationStore, RunnerJob, ScopedGrant } from './store.js';
 
+/** Сколько задание ждёт runner, прежде чем считается просроченным. */
+const PENDING_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
 export interface ClaimedJob {
   id: string;
   kind: string;
@@ -107,7 +110,7 @@ export class RunnerQueue {
 
   /** Уборка: задания, о которых runner не отчитался, и истёкшие токены. */
   sweep(): number {
-    const stale = this.store.failStaleRunnerJobs(this.timeoutSec * 3 * 1000);
+    const stale = [...this.store.failStaleRunnerJobs(this.timeoutSec * 3 * 1000), ...this.store.expirePendingRunnerJobs(PENDING_MAX_AGE_MS)];
     for (const job of stale) {
       this.store.revokeScopedTokensForJob(job.id);
       this.finishers.get(job.kind)?.(job, -1);

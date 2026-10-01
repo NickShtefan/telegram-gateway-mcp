@@ -48,7 +48,7 @@ const tgTaskStart = defineTool({
       .array(z.enum(ASK_ME_BEFORE))
       .optional()
       .describe('What only the owner decides. money_transfer is always included.'),
-    first_message: z.string().describe('First message to the person. By default say that you write as an assistant.'),
+    first_message: z.string().describe('First message to the person, up to 2800 characters. By default say that you write as an assistant.'),
     deadline: z.string().optional().describe('How long the task lives: 3d (default), 12h, 2w. Max 30d.'),
     max_messages: z.number().int().optional().describe(`Maximum messages to the person: default 20, max ${TASK_MAX_MESSAGES}.`),
     reminder_after: z.string().optional().describe('Allow one reminder if the person is silent this long: 24h by default.'),
@@ -196,7 +196,7 @@ const tgSend = defineTool({
   input: {
     task_id: z.string().optional().describe('Task whose person receives the message.'),
     chat: z.string().optional().describe('Chat, when no task is given.'),
-    text: z.string().describe('Message text, plain text, up to 4096 characters.'),
+    text: z.string().describe('Message text, plain text, up to 2800 characters.'),
     account: accountArg,
   },
   readOnly: false,

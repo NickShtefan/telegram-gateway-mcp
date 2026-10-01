@@ -31,6 +31,8 @@ export interface RuntimeOverrides {
   sessionSecret?: string;
   exit?: ExitProcess;
   limiter?: Partial<LimiterOptions>;
+  /** Пауза между отказом ждущим вызовам и выходом процесса при зависании. */
+  fatalGraceMs?: number;
   log?: Logger;
 }
 
@@ -43,13 +45,22 @@ export function createRuntime(config: GatewayConfig, overrides: RuntimeOverrides
   }
   const store = storage;
 
+  // Чужое хранилище (передано снаружи) закрывает тот, кто его открыл.
+  const ownsStorage = overrides.storage === undefined;
+  let limiterRef: AccountLimiter | null = null;
   const fatal = createFatalHandler({
     exit: overrides.exit,
     log: log.child('recovery'),
-    beforeExit: () => store.close(),
+    // Сначала все ждущие вызовы получают ошибку и успевают записать исход, потом процесс выходит.
+    prepare: () => limiterRef?.shutdown(),
+    graceMs: overrides.fatalGraceMs ?? 300,
+    beforeExit: () => {
+      if (ownsStorage) store.close();
+    },
   });
 
   const limiter = new AccountLimiter({ onFatal: fatal, log: log.child('limiter'), ...overrides.limiter });
+  limiterRef = limiter;
 
   const pool = new ClientPool({
     storage: store,
@@ -75,7 +86,7 @@ export function createRuntime(config: GatewayConfig, overrides: RuntimeOverrides
     close: async () => {
       limiter.shutdown();
       await pool.destroyAll();
-      store.close();
+      if (ownsStorage) store.close();
     },
   };
 }

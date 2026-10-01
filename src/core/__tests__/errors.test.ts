@@ -1,5 +1,6 @@
+import { RPCMessageToError } from 'telegram/errors/index.js';
 import { describe, expect, it } from 'vitest';
-import { classifyError, GatewayError, getFloodWaitSeconds, telegramErrorCode } from '../errors.js';
+import { classifyError, floodInfo, GatewayError, getFloodWaitSeconds, telegramErrorCode } from '../errors.js';
 import { DeadlineError } from '../time.js';
 
 describe('getFloodWaitSeconds', () => {
@@ -66,5 +67,46 @@ describe('classifyError', () => {
   it('telegramErrorCode достаёт код из текста', () => {
     expect(telegramErrorCode(new Error('400: CHANNEL_INVALID (caused by channels.GetFullChannel)'))).toBe('CHANNEL_INVALID');
     expect(telegramErrorCode(new Error('socket hang up'))).toBeUndefined();
+  });
+});
+
+/** Ошибка ровно в том виде, в каком её создаёт GramJS из ответа Telegram. */
+function realTelegramError(code: number, message: string, method = 'messages.Search'): Error {
+  return RPCMessageToError({ errorCode: code, errorMessage: message } as never, { className: method } as never) as Error;
+}
+
+describe('ошибки в том виде, в каком их создаёт GramJS', () => {
+  it('FLOOD_WAIT: у настоящей ошибки errorMessage «FLOOD», а секунды в поле seconds', () => {
+    const err = realTelegramError(420, 'FLOOD_WAIT_42');
+    expect((err as { errorMessage?: string }).errorMessage).toBe('FLOOD');
+    expect(floodInfo(err)).toEqual({ seconds: 42, scope: 'account' });
+    expect(classifyError(err)).toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 42 });
+    expect(floodInfo(realTelegramError(420, 'FLOOD_PREMIUM_WAIT_7'))).toEqual({ seconds: 7, scope: 'account' });
+  });
+
+  it('медленный режим это пауза одного чата, а не аккаунта', () => {
+    const err = realTelegramError(420, 'SLOWMODE_WAIT_30', 'messages.SendMessage');
+    expect(floodInfo(err)).toEqual({ seconds: 30, scope: 'chat' });
+    const classified = classifyError(err);
+    expect(classified).toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 30 });
+    expect(classified.message).toContain('Slow mode in this chat');
+  });
+
+  it('MSG_WAIT_FAILED не считается паузой', () => {
+    const err = realTelegramError(420, 'MSG_WAIT_FAILED');
+    expect(floodInfo(err)).toBeNull();
+    expect(classifyError(err).code).toBe('TELEGRAM_ERROR');
+  });
+
+  it('удалённый собеседник не выглядит как потеря сессии', () => {
+    expect(classifyError(realTelegramError(400, 'INPUT_USER_DEACTIVATED')).code).toBe('CHAT_NOT_FOUND');
+    expect(classifyError(realTelegramError(401, 'USER_DEACTIVATED')).code).toBe('ACCOUNT_UNAUTHORIZED');
+    expect(classifyError(realTelegramError(401, 'AUTH_KEY_UNREGISTERED')).code).toBe('ACCOUNT_UNAUTHORIZED');
+  });
+
+  it('код Telegram сохраняется для тех, кто разбирает исход записи', () => {
+    expect(classifyError(realTelegramError(400, 'USER_ALREADY_PARTICIPANT')).telegramCode).toBe('USER_ALREADY_PARTICIPANT');
+    expect(classifyError(realTelegramError(400, 'INVITE_REQUEST_SENT')).telegramCode).toBe('INVITE_REQUEST_SENT');
+    expect(classifyError(realTelegramError(400, 'CHANNEL_PRIVATE')).code).toBe('CHAT_PRIVATE');
   });
 });

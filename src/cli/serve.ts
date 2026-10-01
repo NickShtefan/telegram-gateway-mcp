@@ -28,6 +28,11 @@ export interface ServeOptions {
   log?: Logger;
 }
 
+/** Как долго хранятся события входящих и записи аудита. */
+const INBOX_KEEP_MS = 30 * 86_400_000;
+const AUDIT_KEEP_MS = 90 * 86_400_000;
+const PRUNE_EVERY_MS = 6 * 3_600_000;
+
 /** Известный шум GramJS: цикл обновлений бросает TIMEOUT мимо всех обработчиков. */
 function isGramUpdateNoise(reason: unknown): boolean {
   const text = reason instanceof Error ? `${reason.message}\n${reason.stack ?? ''}` : String(reason);
@@ -70,6 +75,9 @@ export async function runServe(options: ServeOptions): Promise<number> {
   try {
     const resumed = services.jobs.resume();
     if (resumed > 0) log.info('resumed interrupted jobs', { count: resumed });
+    // Действия, которые выполнялись в момент падения: исход неизвестен, человеку об этом сообщается.
+    const interrupted = await services.automation.approvals.recover();
+    if (interrupted > 0) log.warn('approvals interrupted by a restart', { count: interrupted });
     http = await startHttpServer({
       services,
       host: config.host,
@@ -88,7 +96,8 @@ export async function runServe(options: ServeOptions): Promise<number> {
 
   // Фоновая работа: бот согласований, наблюдатель, уборка.
   const background = new AbortController();
-  const { approvals, watcher, runner, tasks } = services.automation;
+  const { approvals, watcher, runner, tasks, store } = services.automation;
+  let lastPrune = 0;
   const loops: Array<Promise<void>> = [watcher.run(background.signal)];
   if (approvals.enabled) loops.push(approvals.poll(background.signal));
   else log.warn('approval bot is not configured (TG_MCP_APPROVAL_BOT_TOKEN): write tools and rules will answer UNAVAILABLE');
@@ -104,6 +113,17 @@ export async function runServe(options: ServeOptions): Promise<number> {
       runner.sweep();
     } catch (err) {
       log.warn('runner sweep failed', { error: (err as Error).message });
+    }
+    if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
+      lastPrune = Date.now();
+      try {
+        const inbox = store.pruneInbox(Date.now() - INBOX_KEEP_MS);
+        const audit = runtime.storage.audit.prune(Date.now() - AUDIT_KEEP_MS);
+        const tokens = store.pruneScopedTokens();
+        if (inbox + audit + tokens > 0) log.info('pruned old records', { inbox, audit, tokens });
+      } catch (err) {
+        log.warn('prune failed', { error: (err as Error).message });
+      }
     }
   }, 60_000);
   sweeper.unref();

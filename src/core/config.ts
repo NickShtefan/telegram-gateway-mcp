@@ -118,7 +118,13 @@ export function loadSessionSecret(home: string, env: NodeJS.ProcessEnv = process
     return value;
   }
   const secret = randomToken(32);
-  writeFileSync(path, secret + '\n', { mode: 0o600 });
+  try {
+    // wx: если ключ успел создать другой процесс, берём его, а не перезаписываем.
+    writeFileSync(path, secret + '\n', { mode: 0o600, flag: 'wx' });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    return readFileSync(path, 'utf8').trim();
+  }
   chmodSync(path, 0o600);
   return secret;
 }

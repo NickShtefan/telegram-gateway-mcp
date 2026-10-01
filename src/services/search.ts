@@ -146,12 +146,13 @@ export class SearchService {
     return entity && (entity.kind === 'chat' || entity.accessHash !== null) ? toInputPeer(entity) : new Api.InputPeerEmpty();
   }
 
-  private globalPage(result: unknown, limit: number): GlobalSearchPage {
+  private globalPage(result: unknown, _limit: number): GlobalSearchPage {
     const slice = result as SliceLike;
     const messages = normalizeMessages(result);
     const rawCount = Array.isArray(slice.messages) ? slice.messages.length : 0;
     const last = messages[messages.length - 1];
-    const hasMore = rawCount >= limit && last !== undefined && typeof slice.nextRate === 'number';
+    // Telegram может вернуть неполную страницу и при этом иметь продолжение: признак конца это отсутствие nextRate.
+    const hasMore = rawCount > 0 && last !== undefined && typeof slice.nextRate === 'number';
     return {
       messages,
       total: totalCount(result),

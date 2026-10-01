@@ -13,7 +13,8 @@ import bigInt from 'big-integer';
 import { Api } from 'telegram';
 import type { AutomationStore } from '../automation/store.js';
 import { toInputChannel, toInputPeer } from '../core/entities.js';
-import { GatewayError } from '../core/errors.js';
+import { GatewayError, isGatewayError } from '../core/errors.js';
+import { createLogger, type Logger } from '../core/log.js';
 import type { Tg } from '../core/tg.js';
 import type { EntityRecord } from '../storage/port.js';
 import type { CommentsService } from './comments.js';
@@ -34,6 +35,9 @@ export interface WriteContext {
   /** tool, rule:<id> или task:<id>. */
   source: string;
 }
+
+/** joined: вступил; requested: заявка ждёт админа чата; already: аккаунт уже был участником. */
+export type JoinOutcome = 'joined' | 'requested' | 'already';
 
 export interface SentMessage {
   messageId: number | null;
@@ -87,15 +91,44 @@ export interface WriteServiceDeps {
   comments: CommentsService;
   limits?: Partial<WriteLimits>;
   now?: () => number;
+  log?: Logger;
+}
+
+/** Telegram уже принял сообщение с этим random_id: повтор после обрыва связи, сообщение доставлено. */
+function isDuplicateSend(err: unknown): boolean {
+  return isGatewayError(err) && err.telegramCode === 'RANDOM_ID_DUPLICATE';
 }
 
 export class WriteService {
   private readonly limits: WriteLimits;
   private readonly now: () => number;
+  private readonly log: Logger;
 
   constructor(private readonly deps: WriteServiceDeps) {
     this.limits = { ...DEFAULT_WRITE_LIMITS, ...deps.limits };
     this.now = deps.now ?? (() => Date.now());
+    this.log = deps.log ?? createLogger('write');
+  }
+
+  /**
+   * Запись в журнал после того, как действие уже выполнено. Сбой базы здесь не должен
+   * превращать отправленное сообщение в «ошибку»: агент повторил бы отправку.
+   */
+  private record(entry: Parameters<AutomationStore['recordWrite']>[0]): void {
+    try {
+      this.deps.store.recordWrite(entry);
+    } catch (err) {
+      this.log.error('could not record a completed write', { kind: entry.kind, chat: entry.chatKey, error: (err as Error).message });
+    }
+  }
+
+  private async sendMessage(accountId: string, request: Api.messages.SendMessage): Promise<number | null> {
+    try {
+      return sentMessageId(await this.deps.tg.invoke(accountId, request, { write: true }));
+    } catch (err) {
+      if (isDuplicateSend(err)) return null;
+      throw err;
+    }
   }
 
   /** Можно ли ещё ответить на этот пост с этого аккаунта: один ответ на пост, чьё бы правило ни сработало. */
@@ -114,7 +147,7 @@ export class WriteService {
     this.assertCanReply(context.accountId, channel.peerKey, postId);
     const root = await this.deps.comments.root(context.accountId, channel, postId);
 
-    const result = await this.deps.tg.invoke(
+    const messageId = await this.sendMessage(
       context.accountId,
       new Api.messages.SendMessage({
         peer: toInputPeer(root.discussion),
@@ -124,11 +157,9 @@ export class WriteService {
         noWebpage: true,
         sendAs: sendAs === 'channel' ? toInputPeer(channel) : undefined,
       }),
-      { write: true },
     );
 
-    const messageId = sentMessageId(result);
-    this.deps.store.recordWrite({
+    this.record({
       ts: this.now(),
       userId: context.userId,
       accountId: context.accountId,
@@ -161,7 +192,7 @@ export class WriteService {
   async send(context: WriteContext, peer: EntityRecord, text: string, replyToId?: number): Promise<SentMessage> {
     const message = assertMessageText(text);
     this.assertCanMessage(context.accountId, peer);
-    const result = await this.deps.tg.invoke(
+    const messageId = await this.sendMessage(
       context.accountId,
       new Api.messages.SendMessage({
         peer: toInputPeer(peer),
@@ -170,10 +201,8 @@ export class WriteService {
         noWebpage: true,
         replyTo: replyToId ? new Api.InputReplyToMessage({ replyToMsgId: replyToId }) : undefined,
       }),
-      { write: true },
     );
-    const messageId = sentMessageId(result);
-    this.deps.store.recordWrite({
+    this.record({
       ts: this.now(),
       userId: context.userId,
       accountId: context.accountId,
@@ -190,20 +219,29 @@ export class WriteService {
   }
 
   /** Вступление в публичный чат или по инвайту. Капчу привратника шлюз не проходит. */
-  async join(context: WriteContext, target: { chat?: EntityRecord; inviteHash?: string }): Promise<{ chatKey: string | null }> {
+  async join(context: WriteContext, target: { chat?: EntityRecord; inviteHash?: string }): Promise<{ chatKey: string | null; outcome: JoinOutcome }> {
     if (this.deps.store.writesSince(context.accountId, 'join', dayStart(this.now())) >= this.limits.joinsPerDay) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.joinsPerDay} joins for this account is reached.`);
     }
     let chatKey: string | null = null;
-    if (target.inviteHash) {
-      await this.deps.tg.invoke(context.accountId, new Api.messages.ImportChatInvite({ hash: target.inviteHash }), { write: true });
-    } else if (target.chat && target.chat.kind === 'channel') {
-      await this.deps.tg.invoke(context.accountId, new Api.channels.JoinChannel({ channel: toInputChannel(target.chat) }), { write: true });
-      chatKey = target.chat.peerKey;
-    } else {
-      throw new GatewayError('INVALID_ARGUMENT', 'Only channels, supergroups and invite links can be joined.');
+    let outcome: JoinOutcome = 'joined';
+    try {
+      if (target.inviteHash) {
+        await this.deps.tg.invoke(context.accountId, new Api.messages.ImportChatInvite({ hash: target.inviteHash }), { write: true });
+      } else if (target.chat && target.chat.kind === 'channel') {
+        chatKey = target.chat.peerKey;
+        await this.deps.tg.invoke(context.accountId, new Api.channels.JoinChannel({ channel: toInputChannel(target.chat) }), { write: true });
+      } else {
+        throw new GatewayError('INVALID_ARGUMENT', 'Only channels, supergroups and invite links can be joined.');
+      }
+    } catch (err) {
+      // Telegram сообщает эти исходы ошибкой, хотя действие состоялось.
+      const code = isGatewayError(err) ? err.telegramCode : undefined;
+      if (code === 'INVITE_REQUEST_SENT') outcome = 'requested';
+      else if (code === 'USER_ALREADY_PARTICIPANT') return { chatKey, outcome: 'already' };
+      else throw err;
     }
-    this.deps.store.recordWrite({
+    this.record({
       ts: this.now(),
       userId: context.userId,
       accountId: context.accountId,
@@ -213,6 +251,6 @@ export class WriteService {
       sentMessageId: null,
       source: context.source,
     });
-    return { chatKey };
+    return { chatKey, outcome };
   }
 }

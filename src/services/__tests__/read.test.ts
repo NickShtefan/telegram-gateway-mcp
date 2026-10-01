@@ -229,9 +229,15 @@ describe('SearchService', () => {
     expect(second.offsetPeer.className).toBe('InputPeerChannel');
   });
 
-  it('короткая страница означает конец выдачи', async () => {
-    tg.on('messages.SearchGlobal', () => ({ messages: [rawMessage(500, 9)], chats: [rawChannel(500)], nextRate: 5 }));
-    expect((await new SearchService(tg, storage.entities).global(ACC, { query: 'x', limit: 20, where: 'channels' })).next).toBeNull();
+  it('конец выдачи определяется по отсутствию nextRate, а не по длине страницы', async () => {
+    const search = new SearchService(tg, storage.entities);
+    // Telegram вправе вернуть неполную страницу и при этом иметь продолжение
+    tg.on('messages.SearchGlobal', () => ({ className: 'messages.MessagesSlice', messages: [rawMessage(500, 9)], chats: [rawChannel(500)], nextRate: 5 }));
+    expect((await search.global(ACC, { query: 'x', limit: 20, where: 'channels' })).next).toEqual({ offsetRate: 5, offsetPeerKey: '-1000000000500', offsetId: 9 });
+    tg.on('messages.SearchGlobal', () => ({ className: 'messages.Messages', messages: [rawMessage(500, 9)], chats: [rawChannel(500)] }));
+    expect((await search.global(ACC, { query: 'x', limit: 20, where: 'channels' })).next).toBeNull();
+    tg.on('messages.SearchGlobal', () => ({ className: 'messages.MessagesSlice', messages: [], chats: [], nextRate: 5 }));
+    expect((await search.global(ACC, { query: 'x', limit: 20, where: 'channels' })).next).toBeNull();
   });
 
   it('хэштег ищется без решётки', async () => {

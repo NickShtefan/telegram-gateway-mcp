@@ -13,7 +13,7 @@
  *   получает ошибку с retry_after, а не висит;
  * - приоритет: вызовы агента идут раньше фоновых (наблюдатель, индекс).
  */
-import { classifyError, GatewayError, getFloodWaitSeconds } from './errors.js';
+import { classifyError, floodInfo, GatewayError } from './errors.js';
 import { createLogger, type Logger } from './log.js';
 import { DeadlineError, MAX_TIMER_MS, withTimeout } from './time.js';
 
@@ -59,6 +59,8 @@ export interface LaneStatus {
   lastCallAt: number | null;
   /** Секунды до конца паузы FLOOD_WAIT, 0 если паузы нет. */
   floodWaitSeconds: number;
+  /** Методы на долгой паузе: Telegram считает лимиты по методам, остальные вызовы работают. */
+  pausedMethods: Array<{ label: string; seconds: number }>;
 }
 
 interface Item {
@@ -83,6 +85,8 @@ interface Lane {
   windowStart: number;
   windowCount: number;
   floodWaitUntil: number;
+  /** Долгие паузы отдельных методов: имя вызова -> момент окончания. */
+  methodPausedUntil: Map<string, number>;
   /** Будит спящий цикл полосы: пришёл новый вызов или пора остановиться. */
   wake: (() => void) | null;
 }
@@ -146,6 +150,13 @@ export class AccountLimiter {
         expiryTimer: null,
       };
 
+      // Этот метод на долгой паузе: отвечаем сразу, остальные вызовы аккаунта не страдают.
+      const methodLeft = (lane.methodPausedUntil.get(options.label) ?? 0) - now;
+      if (methodLeft > 0) {
+        reject(this.pausedError(methodLeft, options.label));
+        return;
+      }
+
       // Пауза уже длиннее бюджета: отвечаем сразу, очередь не занимаем.
       const floodLeft = lane.floodWaitUntil - now;
       if (floodLeft > budget) {
@@ -161,7 +172,12 @@ export class AccountLimiter {
     const lane = this.lanes.get(accountId);
     const now = this.now();
     if (!lane) {
-      return { queued: 0, running: false, callsInWindow: 0, perMinute: this.perMinute, lastCallAt: null, floodWaitSeconds: 0 };
+      return { queued: 0, running: false, callsInWindow: 0, perMinute: this.perMinute, lastCallAt: null, floodWaitSeconds: 0, pausedMethods: [] };
+    }
+    const pausedMethods: Array<{ label: string; seconds: number }> = [];
+    for (const [label, until] of lane.methodPausedUntil) {
+      if (until > now) pausedMethods.push({ label, seconds: Math.ceil((until - now) / 1000) });
+      else lane.methodPausedUntil.delete(label);
     }
     return {
       queued: lane.queue.length,
@@ -170,6 +186,7 @@ export class AccountLimiter {
       perMinute: this.perMinute,
       lastCallAt: lane.lastCallAt > 0 ? lane.lastCallAt : null,
       floodWaitSeconds: Math.max(0, Math.ceil((lane.floodWaitUntil - now) / 1000)),
+      pausedMethods,
     };
   }
 
@@ -228,7 +245,7 @@ export class AccountLimiter {
   private lane(accountId: string): Lane {
     let lane = this.lanes.get(accountId);
     if (!lane) {
-      lane = { queue: [], running: false, lastCallAt: 0, windowStart: this.now(), windowCount: 0, floodWaitUntil: 0, wake: null };
+      lane = { queue: [], running: false, lastCallAt: 0, windowStart: this.now(), windowCount: 0, floodWaitUntil: 0, methodPausedUntil: new Map(), wake: null };
       this.lanes.set(accountId, lane);
     }
     return lane;
@@ -362,12 +379,30 @@ export class AccountLimiter {
         return;
       }
 
-      const flood = getFloodWaitSeconds(err);
+      const flood = floodInfo(err);
       if (flood !== null) {
-        const seconds = flood > 0 ? flood : this.unknownFloodSeconds;
+        const seconds = flood.seconds > 0 ? flood.seconds : this.unknownFloodSeconds;
         const now = this.now();
+        this.log.warn('FLOOD_WAIT', { account: accountId, label: item.label, seconds, scope: flood.scope });
+
+        // Медленный режим одного чата: аккаунт не на паузе, повторять вызов не нужно.
+        if (flood.scope === 'chat') {
+          item.reject(classifyError(err, { write: item.write }));
+          return;
+        }
+        // Долгая пауза относится к методу (например, ResolveUsername на сутки): остальные
+        // вызовы аккаунта продолжают работать, а этот метод отвечает ошибкой до конца паузы.
+        if (seconds > this.floodCapSeconds) {
+          lane.methodPausedUntil.set(item.label, now + seconds * 1000);
+          item.reject(
+            new GatewayError('FLOOD_WAIT', `Telegram rate limit for ${item.label}: wait ${seconds} seconds. Do NOT retry before retry_after. Other kinds of requests still work.`, {
+              retryAfter: seconds,
+              cause: err,
+            }),
+          );
+          return;
+        }
         lane.floodWaitUntil = Math.max(lane.floodWaitUntil, now + seconds * 1000);
-        this.log.warn('FLOOD_WAIT', { account: accountId, label: item.label, seconds });
 
         const fitsBudget = seconds * 1000 <= item.startBy - now;
         if (seconds <= this.floodCapSeconds && fitsBudget && item.retries < this.maxFloodRetries) {
@@ -389,11 +424,13 @@ export class AccountLimiter {
     }
   }
 
-  private pausedError(floodLeftMs: number): GatewayError {
+  private pausedError(floodLeftMs: number, label?: string): GatewayError {
     const seconds = Math.ceil(floodLeftMs / 1000);
     return new GatewayError(
       'FLOOD_WAIT',
-      `This account is paused by a Telegram rate limit for ${seconds} more seconds. Do NOT retry before retry_after.`,
+      label
+        ? `Telegram rate limit for ${label}: ${seconds} more seconds. Do NOT retry before retry_after. Other kinds of requests still work.`
+        : `This account is paused by a Telegram rate limit for ${seconds} more seconds. Do NOT retry before retry_after.`,
       { retryAfter: seconds },
     );
   }

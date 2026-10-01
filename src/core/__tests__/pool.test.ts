@@ -198,6 +198,39 @@ describe('loginAccount', () => {
     ).rejects.toMatchObject({ telegramCode: 'PHONE_CODE_INVALID' });
   });
 
+  it('незарегистрированный номер: вход прерывается, новый аккаунт не создаётся', async () => {
+    const { factory, created } = makeFactory(c => {
+      c.start.mockImplementation(async (params: { firstAndLastNames: () => Promise<[string, string]>; onError: (e: Error) => Promise<boolean> }) => {
+        const refused = (await params.firstAndLastNames().catch((e: unknown) => e)) as Error;
+        expect(refused).toBeInstanceOf(Error);
+        // GramJS спрашивает, прекращать ли: с первой же ошибки да
+        expect(await params.onError(refused)).toBe(true);
+        throw new Error('AUTH_USER_CANCEL');
+      });
+    });
+    await expect(
+      loginAccount({ factory, apiId: 1, apiHash: 'h', phone: '+79991234567', prompts: { code: async () => '1', password: async () => '' }, log: silent }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('does not register new accounts') });
+    expect(created[0]!.destroy).toHaveBeenCalled();
+  });
+
+  it('прерванный ввод кода останавливает вход, а не спрашивает код заново', async () => {
+    const code = vi.fn(async () => {
+      throw new Error('Cancelled.');
+    });
+    const { factory } = makeFactory(c => {
+      c.start.mockImplementation(async (params: { phoneCode: () => Promise<string>; onError: (e: Error) => Promise<boolean> }) => {
+        const failed = (await params.phoneCode().catch((e: unknown) => e)) as Error;
+        expect(await params.onError(failed)).toBe(true);
+        throw new Error('AUTH_USER_CANCEL');
+      });
+    });
+    await expect(
+      loginAccount({ factory, apiId: 1, apiHash: 'h', phone: '+79991234567', prompts: { code, password: async () => '' }, log: silent }),
+    ).rejects.toMatchObject({ code: 'UNAVAILABLE', message: 'Login cancelled: Cancelled.' });
+    expect(code).toHaveBeenCalledTimes(1);
+  });
+
   it('проверяет формат телефона', () => {
     expect(normalizePhone('79991234567')).toBe('+79991234567');
     expect(() => normalizePhone('abc')).toThrow(/international format/);
@@ -233,6 +266,12 @@ describe('config', () => {
     expect(parseToolsets('core, automate')).toEqual(['core', 'automate']);
     expect(parseToolsets(undefined)).toEqual(['core']);
     expect(() => parseToolsets('core,wirte')).toThrow(/Unknown toolset/);
+  });
+
+  it('ключ сессий, созданный другим процессом, не перезаписывается', () => {
+    const first = loadSessionSecret(home);
+    expect(loadSessionSecret(home)).toBe(first);
+    expect(readFileSync(join(home, 'session.key'), 'utf8').trim()).toBe(first);
   });
 
   it('ключ сессий создаётся один раз с правами 0600', () => {

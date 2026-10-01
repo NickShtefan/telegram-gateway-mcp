@@ -80,6 +80,21 @@ describe('HTTP: вход демона', () => {
     expect((await fetch(`http://127.0.0.1:${http.port}/other`, { headers: auth })).status).toBe(404);
   });
 
+  it('слишком большое тело получает 413, а не обрыв соединения', async () => {
+    const small = await startHttpServer({ services: gw.services, host: '127.0.0.1', port: 0, toolsets: ['core'], version: 'test', log: silent, maxBodyBytes: 2_000 });
+    try {
+      const response = await fetch(`http://127.0.0.1:${small.port}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gw.tokens.nick}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { text: 'x'.repeat(300_000) } }),
+      });
+      expect(response.status).toBe(413);
+      expect(await response.text()).toContain('too large');
+    } finally {
+      await small.close();
+    }
+  });
+
   it('клиент MCP по HTTP: токен определяет пользователя', async () => {
     const connect = async (token: string) => {
       const client = new Client({ name: 'agent', version: '1' });
@@ -151,6 +166,31 @@ describe('stdio-прокладка', () => {
     expect(JSON.stringify(denied[0])).toContain('rejected the token');
     const garbage = await run(['{not json']);
     expect(garbage[0]).toMatchObject({ id: null, error: { code: -32700 } });
+  });
+
+  it('ошибка демона без тела и обрыв ответа доходят до агента как ошибка запроса', async () => {
+    const proxy = async (fetchImpl: typeof fetch): Promise<Array<Record<string, unknown>>> => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const chunks: Buffer[] = [];
+      output.on('data', c => chunks.push(c as Buffer));
+      const done = runStdioProxy({ url, token: gw.tokens.nick, input, output, log: silent, fetch: fetchImpl });
+      input.write(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list' }) + '\n');
+      input.end();
+      await done;
+      return Buffer.concat(chunks).toString('utf8').split('\n').filter(Boolean).map(l => JSON.parse(l) as Record<string, unknown>);
+    };
+
+    const empty = await proxy((async () => new Response('', { status: 502 })) as never);
+    expect(empty).toHaveLength(1);
+    expect(empty[0]).toMatchObject({ id: 7, error: { code: -32000 } });
+    expect(JSON.stringify(empty[0])).toContain('HTTP 502');
+
+    const broken = await proxy(
+      (async () => ({ status: 200, ok: true, headers: new Headers(), text: async () => Promise.reject(new Error('terminated')) })) as never,
+    );
+    expect(broken[0]).toMatchObject({ id: 7, error: { code: -32000 } });
+    expect(JSON.stringify(broken[0])).toContain('closed the connection');
   });
 
   it('разбирает ответ потоком событий', () => {

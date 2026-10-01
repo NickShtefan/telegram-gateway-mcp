@@ -42,30 +42,43 @@ export interface DaemonLock {
  */
 export async function acquireLock(home: string): Promise<DaemonLock> {
   const path = lockPath(home);
-
-  if (await isLockHeld(home)) {
-    throw new GatewayError(
+  const held = (): GatewayError =>
+    new GatewayError(
       'UNAVAILABLE',
       `Another tg-mcp process already owns the Telegram sessions in ${home}. Only one process may open them (AUTH_KEY_DUPLICATED otherwise).`,
     );
-  }
-  if (existsSync(path)) unlinkSync(path);
 
-  const server: Server = createServer(socket => {
-    // Сокет нужен только как признак жизни: соединение сразу закрывается.
-    socket.end();
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', (err: NodeJS.ErrnoException) => {
-      reject(
-        err.code === 'EADDRINUSE'
-          ? new GatewayError('UNAVAILABLE', `Another tg-mcp process took the lock in ${home} at the same moment.`)
-          : err,
-      );
+  const listen = (): Promise<Server> =>
+    new Promise<Server>((resolve, reject) => {
+      const server: Server = createServer(socket => {
+        // Сокет нужен только как признак жизни: соединение сразу закрывается.
+        socket.end();
+      });
+      server.once('error', reject);
+      server.listen(path, () => resolve(server));
     });
-    server.listen(path, () => resolve());
-  });
+
+  // Сначала пробуем занять сокет: bind атомарен, два процесса одновременно его не получат.
+  // Проверка «жив ли владелец» нужна, только когда файл сокета уже есть.
+  let server: Server;
+  try {
+    server = await listen();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
+    if (await isLockHeld(home)) throw held();
+    // Сокет остался от умершего процесса.
+    try {
+      unlinkSync(path);
+    } catch {
+      // файл уже убрал другой процесс
+    }
+    try {
+      server = await listen();
+    } catch (again) {
+      if ((again as NodeJS.ErrnoException).code === 'EADDRINUSE') throw held();
+      throw again;
+    }
+  }
   server.unref();
 
   let released = false;

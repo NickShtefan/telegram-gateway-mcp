@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { RPCMessageToError } from 'telegram/errors/index.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeTg } from '../../__tests__/helpers/fakeTg.js';
 import { GatewayError } from '../../core/errors.js';
@@ -117,6 +118,8 @@ describe('MediaService', () => {
       expect((await p).files).toHaveLength(1);
       expect(downloadMedia).toHaveBeenCalledTimes(2);
       expect(isDcRedirectError(new Error('socket hang up'))).toBe(false);
+      // настоящая ошибка GramJS: в её тексте нет слова FILE_MIGRATE
+      expect(isDcRedirectError(RPCMessageToError({ errorCode: 303, errorMessage: 'FILE_MIGRATE_4' } as never, { className: 'upload.GetFile' } as never))).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -286,6 +289,52 @@ describe('JobManager', () => {
     const done = await jobs.waitFor(running.id, 'nick', 1_000);
     expect(sawCancel).toBe(true);
     expect(done).toMatchObject({ state: 'cancelled', result: { rows: 10 } });
+  });
+
+  it('очередь длиннее полусотни: первой идёт самая старая задача', async () => {
+    let clock = 1_000;
+    const ordered = new SqliteStorage({ path: ':memory:', now: () => (clock += 10) });
+    try {
+      for (let i = 1; i <= 60; i++) ordered.jobs.create({ id: `job_${i}`, userId: 'nick', kind: 'export', params: { n: i } });
+      const jobs = new JobManager({ storage: ordered, log: silent, concurrency: 1 });
+      const order: number[] = [];
+      jobs.register('export', async ctx => {
+        order.push(ctx.job.params.n as number);
+        return {};
+      });
+      expect(jobs.resume()).toBe(0);
+      await jobs.waitFor('job_3', 'nick', 1_000);
+      expect(order.slice(0, 3)).toEqual([1, 2, 3]);
+      jobs.stop();
+    } finally {
+      ordered.close();
+    }
+  });
+
+  it('ожидание по таймауту не копится в памяти', async () => {
+    const jobs = new JobManager({ storage, log: silent });
+    let release!: () => void;
+    jobs.register('export', () => new Promise(r => (release = () => r({}))));
+    const job = jobs.start({ userId: 'nick', kind: 'export', params: {} });
+    for (let i = 0; i < 5; i++) await jobs.waitFor(job.id, 'nick', 5);
+    expect((jobs as unknown as { waiters: Map<string, unknown[]> }).waiters.size).toBe(0);
+    release();
+    expect((await jobs.waitFor(job.id, 'nick', 1_000)).state).toBe('done');
+  });
+
+  it('задача, которая раз за разом роняет шлюз, перестаёт возобновляться', async () => {
+    storage.jobs.create({ id: 'job_bad', userId: 'nick', kind: 'export', params: {} });
+    const run = vi.fn(async () => ({}));
+    for (let restart = 1; restart <= 3; restart++) {
+      // процесс упал, пока задача выполнялась
+      storage.jobs.update('job_bad', { state: 'running' });
+      const jobs = new JobManager({ storage, log: silent });
+      jobs.register('export', run);
+      jobs.stop();
+      expect(jobs.resume()).toBe(restart <= 2 ? 1 : 0);
+    }
+    expect(storage.jobs.get('job_bad')).toMatchObject({ state: 'failed', error: expect.stringContaining('not resumed again') });
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('после рестарта прерванная задача возвращается в очередь и выполняется', async () => {

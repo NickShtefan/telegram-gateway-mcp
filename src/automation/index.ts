@@ -51,7 +51,7 @@ export function buildAutomation(deps: AutomationDeps): Automation {
 
   const bot = deps.bot !== undefined ? deps.bot : runtime.config.approvalBotToken ? new HttpBotApi(runtime.config.approvalBotToken) : null;
   const approvals = new Approvals({ store, storage, bot, log: log.child('approvals'), now });
-  const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, now });
+  const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, now, log: log.child('write') });
   const rules = new RuleEngine({ store, log: log.child('rules'), now });
   const scopes = new ScopePolicy(storage);
   const runner = new RunnerQueue({ store, log: log.child('runner'), now });
@@ -86,11 +86,13 @@ export function buildAutomation(deps: AutomationDeps): Automation {
     'join',
     async approval => {
       const p = approval.payload as { accountId: string; chatKey?: string; inviteHash?: string; label: string };
-      await write.join(
+      const joined = await write.join(
         { userId: approval.userId, accountId: p.accountId, source: approval.source },
         { chat: p.chatKey ? chatOf(p.accountId, p.chatKey) : undefined, inviteHash: p.inviteHash },
       );
-      return { summary: `Аккаунт вступил в ${p.label}. Если чат просит пройти проверку, её проходит человек.` };
+      if (joined.outcome === 'requested') return { summary: `Заявка на вступление в ${p.label} отправлена: её должен одобрить админ чата.`, data: { outcome: joined.outcome } };
+      if (joined.outcome === 'already') return { summary: `Аккаунт уже состоит в ${p.label}.`, data: { outcome: joined.outcome } };
+      return { summary: `Аккаунт вступил в ${p.label}. Если чат просит пройти проверку, её проходит человек.`, data: { outcome: joined.outcome } };
     },
     { approveLabel: '✅ Вступить', rejectLabel: '🚫 Отклонить' },
   );

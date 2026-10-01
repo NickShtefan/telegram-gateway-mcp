@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TelegramClient } from 'telegram';
@@ -6,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientFactory } from '../../core/clientPool.js';
 import { loadConfig, type GatewayConfig } from '../../core/config.js';
 import { sha256Hex, unseal } from '../../core/crypto.js';
-import { acquireLock, isLockHeld } from '../../core/lock.js';
+import { acquireLock, isLockHeld, lockPath } from '../../core/lock.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
 import { addUser, describeAccounts, grantAccount, removeAccount, revokeAccount, rotateToken } from '../admin.js';
 import { collectChecks } from '../doctor.js';
@@ -142,6 +143,55 @@ describe('lock', () => {
     expect(await isLockHeld(home)).toBe(false);
     const again = await acquireLock(home);
     await again.release();
+  });
+});
+
+describe('lock: гонки и мусор', () => {
+  it('из двух одновременных стартов блокировку получает один', async () => {
+    const results = await Promise.allSettled([acquireLock(home), acquireLock(home), acquireLock(home)]);
+    const won = results.filter(r => r.status === 'fulfilled');
+    expect(won).toHaveLength(1);
+    for (const lost of results.filter(r => r.status === 'rejected')) {
+      expect((lost as PromiseRejectedResult).reason).toMatchObject({ code: 'UNAVAILABLE' });
+    }
+    await (won[0] as PromiseFulfilledResult<{ release(): Promise<void> }>).value.release();
+  });
+
+  it('сокет умершего процесса занимается заново', async () => {
+    // сервер закрыт без удаления файла: так выглядит сокет после kill -9
+    const dead = createServer();
+    await new Promise<void>(resolve => dead.listen(lockPath(home), resolve));
+    const handle = (dead as unknown as { _handle: { close(): void } })._handle;
+    handle.close();
+    expect(await isLockHeld(home)).toBe(false);
+    const lock = await acquireLock(home);
+    expect(await isLockHeld(home)).toBe(true);
+    await lock.release();
+  });
+
+  it('обычный файл на месте сокета не считается живым процессом', async () => {
+    writeFileSync(lockPath(home), 'stale');
+    const lock = await acquireLock(home);
+    await lock.release();
+  });
+
+  it('doctor --connect держит блокировку, пока открыты сессии', async () => {
+    io.prompt = vi.fn(async () => '1');
+    await runLogin({ config, storage, io, account: 'agent', phone: '+79991234567', factory: fakeFactory() });
+    let heldDuringConnect = false;
+    const base = fakeFactory();
+    const factory: ClientFactory = options => {
+      const client = base(options);
+      const connect = client.connect.bind(client);
+      client.connect = (async () => {
+        heldDuringConnect = await isLockHeld(home);
+        return connect();
+      }) as typeof client.connect;
+      return client;
+    };
+    await collectChecks({ config, storage, io, connect: true, factory });
+    expect(heldDuringConnect).toBe(true);
+    expect(await isLockHeld(home)).toBe(false);
   });
 });
 

@@ -65,6 +65,7 @@ export class SqliteStorage implements Storage {
   private readonly now: () => number;
   private readonly statements = new Map<string, StatementSync>();
   private txDepth = 0;
+  private closed = false;
 
   readonly users: UsersRepo;
   readonly accounts: AccountsRepo;
@@ -80,8 +81,9 @@ export class SqliteStorage implements Storage {
     this.now = options.now ?? (() => Date.now());
     this.db.exec('PRAGMA foreign_keys = ON');
     if (options.path !== ':memory:') {
-      this.db.exec('PRAGMA journal_mode = WAL');
+      // Сначала таймаут ожидания: демон и команды владельца открывают базу одновременно.
       this.db.exec('PRAGMA busy_timeout = 5000');
+      this.db.exec('PRAGMA journal_mode = WAL');
     }
     this.migrate();
 
@@ -104,8 +106,13 @@ export class SqliteStorage implements Storage {
   private migrate(): void {
     const current = this.schemaVersion();
     for (let version = current; version < MIGRATIONS.length; version++) {
-      this.db.exec('BEGIN');
+      this.db.exec('BEGIN IMMEDIATE');
       try {
+        // Пока ждали блокировку, миграцию мог применить другой процесс.
+        if (this.schemaVersion() > version) {
+          this.db.exec('COMMIT');
+          continue;
+        }
         this.db.exec(MIGRATIONS[version]!);
         this.db.exec(`PRAGMA user_version = ${version + 1}`);
         this.db.exec('COMMIT');
@@ -146,6 +153,8 @@ export class SqliteStorage implements Storage {
   }
 
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     this.statements.clear();
     this.db.close();
   }
@@ -303,6 +312,15 @@ export class SqliteStorage implements Storage {
       updatedAt: num(row.updated_at),
     });
     const put = (entity: Omit<EntityRecord, 'updatedAt'>): void => {
+      // Username принадлежит одному чату: когда его занял другой, у прежнего он убирается.
+      // Иначе запросы и одобренные сообщения уходили бы в старый чат.
+      if (entity.username) {
+        this.prepare('UPDATE entities SET username = NULL WHERE account_id = ? AND username = ? AND peer_key != ?').run(
+          entity.accountId,
+          entity.username.toLowerCase(),
+          entity.peerKey,
+        );
+      }
       // accessHash и username не затираются пустыми значениями: частичные
       // объекты (min) приходят без них и не должны портить кэш.
       this.prepare(
@@ -311,7 +329,9 @@ export class SqliteStorage implements Storage {
          ON CONFLICT(account_id, peer_key) DO UPDATE SET
            kind = excluded.kind,
            access_hash = COALESCE(excluded.access_hash, entities.access_hash),
-           username = COALESCE(excluded.username, entities.username),
+           -- Неполный объект (min) username не несёт и чужое значение не затирает. Полный
+           -- объект записывает username как есть: снятое имя должно исчезнуть из кэша.
+           username = CASE WHEN excluded.meta = '{}' THEN COALESCE(excluded.username, entities.username) ELSE excluded.username END,
            title = COALESCE(excluded.title, entities.title),
            meta = CASE WHEN excluded.meta = '{}' THEN entities.meta ELSE excluded.meta END,
            updated_at = excluded.updated_at`,
@@ -477,7 +497,8 @@ export class SqliteStorage implements Storage {
           where.push('state = ?');
           params.push(filter.state);
         }
-        const sql = `SELECT * FROM jobs ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC LIMIT ?`;
+        const order = filter.oldestFirst ? 'created_at ASC, rowid ASC' : 'created_at DESC, rowid DESC';
+        const sql = `SELECT * FROM jobs ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${order} LIMIT ?`;
         params.push(Math.min(Math.max(1, filter.limit ?? 50), 500));
         return (this.prepare(sql).all(...params) as Row[]).map(map);
       },

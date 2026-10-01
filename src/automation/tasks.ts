@@ -83,6 +83,7 @@ export class TaskEngine {
   private readonly approvals: Approvals;
   private readonly log: Logger;
   private readonly now: () => number;
+  private ticking = false;
 
   constructor(options: TaskEngineOptions) {
     this.tasks = options.tasks;
@@ -265,6 +266,18 @@ export class TaskEngine {
 
   /** Опрашивает диалоги активных поручений в режиме `account`. Возвращает число новых сообщений. */
   async tick(): Promise<number> {
+    // Тик вызывается по таймеру. Пока прошлый не закончился (очередь аккаунта занята),
+    // новый не начинается: иначе на один диалог копились бы повторные запросы.
+    if (this.ticking) return 0;
+    this.ticking = true;
+    try {
+      return await this.pollDue();
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  private async pollDue(): Promise<number> {
     let found = 0;
     const active = this.tasks.active().filter(t => t.via === 'account' && t.nextPollAt <= this.now());
     const interval = Math.max(POLL_BASE_MS, this.tasks.active().length * 6_000);

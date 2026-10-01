@@ -348,6 +348,10 @@ export class AutomationStore {
     );
   }
 
+  approvalsInState(state: ApprovalState): ApprovalRecord[] {
+    return (this.db.prepare('SELECT * FROM approvals WHERE state = ? ORDER BY created_at').all(state) as Row[]).map(r => this.mapApproval(r));
+  }
+
   /** Просроченные согласования: переводятся в `expired` и возвращаются для уведомления. */
   expireApprovals(): ApprovalRecord[] {
     const rows = this.db.prepare("SELECT * FROM approvals WHERE state IN ('pending', 'awaiting_edit') AND expires_at <= ?").all(this.now()) as Row[];
@@ -476,7 +480,7 @@ export class AutomationStore {
         this.db
           .prepare(
             `SELECT COUNT(*) AS n FROM (
-               SELECT chat_key, MIN(ts) AS first_ts FROM writes WHERE account_id = ? AND kind = 'send' GROUP BY chat_key
+               SELECT chat_key, MIN(ts) AS first_ts FROM writes WHERE account_id = ? AND kind = 'send' AND chat_key NOT LIKE '-%' GROUP BY chat_key
              ) WHERE first_ts >= ?`,
           )
           .get(accountId, sinceTs) as Row
@@ -532,6 +536,20 @@ export class AutomationStore {
       .prepare("UPDATE runner_jobs SET state = ?, finished_at = ?, exit_code = ?, output = ? WHERE id = ? AND user_id = ? AND state = 'claimed'")
       .run(exitCode === 0 ? 'done' : 'failed', this.now(), exitCode, output.slice(-4000), id, userId);
     return num(result.changes) > 0;
+  }
+
+  /**
+   * Задания, которые никто не забрал за отведённое время: runner не работал.
+   * Запускать агента на пост вчерашней давности уже незачем.
+   */
+  expirePendingRunnerJobs(maxAgeMs: number): RunnerJob[] {
+    const rows = this.db.prepare("SELECT * FROM runner_jobs WHERE state = 'pending' AND run_after <= ?").all(this.now() - maxAgeMs) as Row[];
+    for (const row of rows) {
+      this.db
+        .prepare("UPDATE runner_jobs SET state = 'failed', finished_at = ?, exit_code = -3, output = 'expired: the runner was not running' WHERE id = ? AND state = 'pending'")
+        .run(this.now(), str(row.id));
+    }
+    return rows.map(r => this.mapJob(r));
   }
 
   /** Задания, которые забрали и не закрыли (runner упал): помечаются неудачными. */

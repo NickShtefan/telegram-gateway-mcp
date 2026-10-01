@@ -66,24 +66,55 @@ function errorText(err: unknown): string {
   return parts.join(' ');
 }
 
-const WAIT_RE = /(?:FLOOD_PREMIUM_WAIT|FLOOD_TEST_PHONE_WAIT|FLOOD_WAIT|SLOWMODE_WAIT)[_ ]?(\d+)/;
+export interface FloodInfo {
+  seconds: number;
+  /**
+   * account: Telegram ограничил аккаунт (или метод); chat: медленный режим
+   * одного чата, остальным вызовам аккаунта он не мешает.
+   */
+  scope: 'account' | 'chat';
+}
+
+const SLOWMODE_TEXT = /A wait of (\d+) seconds is required before sending another message in this chat/;
+const WAIT_TEXT = /A wait of (\d+) seconds is required/;
+const WAIT_CODE = /(?:FLOOD_PREMIUM_WAIT|FLOOD_TEST_PHONE_WAIT|FLOOD_WAIT)[_ ]?(\d+)/;
+const SLOWMODE_CODE = /SLOWMODE_WAIT[_ ]?(\d+)/;
 
 /**
- * Секунды ожидания из ошибки FLOOD_WAIT (и родственных). null, если это не
- * FLOOD_WAIT; 0, если тип ошибки понятен, а число не разобрать.
+ * Разбор ошибки ожидания. Важно, как её отдаёт GramJS: у `FloodWaitError`
+ * поле `errorMessage` равно просто `FLOOD`, число лежит в `seconds`, а текст
+ * выглядит как «A wait of 17 seconds is required (caused by ...)». Исходный код
+ * `FLOOD_WAIT_17` до нас в таком случае не доходит. Формы с кодом в тексте
+ * тоже разбираются: так ошибки выглядят у других библиотек и в логах.
  */
-export function getFloodWaitSeconds(err: unknown): number | null {
+export function floodInfo(err: unknown): FloodInfo | null {
   const e = err as TelegramErrorLike | null;
   if (!e || typeof e !== 'object') return null;
   const text = errorText(err);
-  const isWait = /FLOOD_PREMIUM_WAIT|FLOOD_TEST_PHONE_WAIT|FLOOD_WAIT|SLOWMODE_WAIT/.test(text);
-  if (typeof e.seconds === 'number' && Number.isFinite(e.seconds) && e.seconds >= 0) {
-    // GramJS кладёт seconds и в FloodWaitError, и в ошибки миграции: без текста не доверяем.
-    if (isWait || text === '') return e.seconds;
-  }
-  if (!isWait) return null;
-  const m = text.match(WAIT_RE);
-  return m ? parseInt(m[1]!, 10) : 0;
+
+  const slowText = text.match(SLOWMODE_TEXT);
+  if (slowText) return { seconds: parseInt(slowText[1]!, 10), scope: 'chat' };
+  const slowCode = text.match(SLOWMODE_CODE);
+  if (slowCode) return { seconds: parseInt(slowCode[1]!, 10), scope: 'chat' };
+
+  const hasSeconds = typeof e.seconds === 'number' && Number.isFinite(e.seconds) && e.seconds >= 0;
+  // MSG_WAIT тоже приходит с errorMessage FLOOD, но без seconds: это не ожидание.
+  if (e.errorMessage === 'FLOOD' && hasSeconds) return { seconds: e.seconds!, scope: 'account' };
+
+  const waitCode = text.match(WAIT_CODE);
+  if (waitCode) return { seconds: parseInt(waitCode[1]!, 10), scope: 'account' };
+  const waitText = text.match(WAIT_TEXT);
+  if (waitText) return { seconds: parseInt(waitText[1]!, 10), scope: 'account' };
+  if (/FLOOD_PREMIUM_WAIT|FLOOD_TEST_PHONE_WAIT|FLOOD_WAIT/.test(text)) return { seconds: hasSeconds ? e.seconds! : 0, scope: 'account' };
+  return null;
+}
+
+/**
+ * Секунды ожидания из ошибки FLOOD_WAIT (и родственных). null, если это не
+ * ошибка ожидания; 0, если тип ошибки понятен, а число не разобрать.
+ */
+export function getFloodWaitSeconds(err: unknown): number | null {
+  return floodInfo(err)?.seconds ?? null;
 }
 
 /** Код ошибки Telegram в верхнем регистре, если он есть в тексте. */
@@ -110,7 +141,7 @@ const RULES: Rule[] = [
       'This chat is private or the account is not a member. The owner has to join it first (joining goes through tg_join with confirmation).',
   },
   {
-    match: /USERNAME_NOT_OCCUPIED|USERNAME_INVALID|CHANNEL_INVALID|PEER_ID_INVALID|CHAT_ID_INVALID|USER_ID_INVALID/,
+    match: /USERNAME_NOT_OCCUPIED|USERNAME_INVALID|CHANNEL_INVALID|PEER_ID_INVALID|CHAT_ID_INVALID|USER_ID_INVALID|INPUT_USER_DEACTIVATED/,
     code: 'CHAT_NOT_FOUND',
     message: 'Chat or user not found. Check the username or link, then resolve it again with tg_resolve.',
   },
@@ -147,7 +178,8 @@ const RULES: Rule[] = [
     message: 'The account is not allowed to write here.',
   },
   {
-    match: /AUTH_KEY_UNREGISTERED|AUTH_KEY_DUPLICATED|SESSION_REVOKED|SESSION_EXPIRED|USER_DEACTIVATED|AUTH_KEY_INVALID/,
+    // INPUT_USER_DEACTIVATED это удалённый собеседник, а не наш аккаунт: его сюда не относим.
+    match: /AUTH_KEY_UNREGISTERED|AUTH_KEY_DUPLICATED|SESSION_REVOKED|SESSION_EXPIRED|(?<!INPUT_)USER_DEACTIVATED|AUTH_KEY_INVALID/,
     code: 'ACCOUNT_UNAUTHORIZED',
     message: 'The Telegram session of this account is no longer valid. The owner has to log in again (tg-mcp login).',
   },
@@ -172,12 +204,14 @@ export function classifyError(err: unknown, context: { write?: boolean } = {}): 
     );
   }
 
-  const wait = getFloodWaitSeconds(err);
-  if (wait !== null) {
+  const flood = floodInfo(err);
+  if (flood) {
     return new GatewayError(
       'FLOOD_WAIT',
-      `Telegram rate limit: wait ${wait} seconds. Do NOT retry before retry_after.`,
-      { retryAfter: wait, telegramCode: telegramErrorCode(err), cause: err },
+      flood.scope === 'chat'
+        ? `Slow mode in this chat: wait ${flood.seconds} seconds before sending another message here. Other chats are not affected.`
+        : `Telegram rate limit: wait ${flood.seconds} seconds. Do NOT retry before retry_after.`,
+      { retryAfter: flood.seconds, telegramCode: telegramErrorCode(err), cause: err },
     );
   }
 

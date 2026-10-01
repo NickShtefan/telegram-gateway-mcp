@@ -70,8 +70,9 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
+        // Соединение закрывает обработчик после ответа 413: иначе клиент увидит обрыв вместо причины.
+        req.pause();
         reject(new Error('body too large'));
-        req.destroy();
         return;
       }
       chunks.push(chunk);
@@ -121,11 +122,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       body = JSON.parse((await readBody(req, maxBody)).toString('utf8'));
     } catch (err) {
       const tooLarge = (err as Error).message === 'body too large';
+      if (tooLarge) res.once('finish', () => req.destroy());
       return sendJson(res, tooLarge ? 413 : 400, {
         jsonrpc: '2.0',
         error: { code: tooLarge ? -32000 : -32700, message: tooLarge ? 'Request body is too large.' : 'Parse error: body is not valid JSON.' },
         id: null,
-      });
+      }, tooLarge ? { Connection: 'close' } : {});
     }
 
     if (isRunner) {

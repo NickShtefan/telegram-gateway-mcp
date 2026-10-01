@@ -87,7 +87,12 @@ export interface BotApi {
 export const BOT_TEXT_MAX = 4096;
 
 export function clipBotText(text: string): string {
-  return text.length <= BOT_TEXT_MAX ? text : text.slice(0, BOT_TEXT_MAX - 1) + '…';
+  if (text.length <= BOT_TEXT_MAX) return text;
+  let end = BOT_TEXT_MAX - 1;
+  // Не режем суррогатную пару пополам: Bot API отклонит такой текст.
+  const code = text.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return text.slice(0, end) + '…';
 }
 
 function keyboard(buttons?: InlineButton[][]): Record<string, unknown> | undefined {

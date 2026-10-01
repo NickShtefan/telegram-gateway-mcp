@@ -57,7 +57,8 @@ const QUOTA_CHECK_EVERY = 50;
 /** Файл лежит в другом дата-центре: GramJS иногда бросает это вместо того, чтобы перейти сам. */
 export function isDcRedirectError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /file.*(another|different)\s*dc/i.test(msg) || /dc.*redirect/i.test(msg) || /FILE_MIGRATE/i.test(msg) || /NETWORK_MIGRATE/i.test(msg);
+  // Так выглядит настоящий FileMigrateError в GramJS: «The file to be accessed is currently stored in DC N».
+  return /stored in DC/i.test(msg) || /file.*(another|different)\s*dc/i.test(msg) || /dc.*redirect/i.test(msg) || /FILE_MIGRATE/i.test(msg) || /NETWORK_MIGRATE/i.test(msg);
 }
 
 interface RawSize {
