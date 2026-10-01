@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 const approvals = () => gw.services.writeGate.approvals;
-/** Ошибка Telegram в том виде, в каком её отдаёт шлюз после GramJS. */
+/** Ошибка Telegram в том виде, в каком её отдаёт шлюз после teleproto. */
 const telegramError = (message: string, method: string): GatewayError =>
   classifyError(RPCMessageToError({ errorCode: 400, errorMessage: message } as never, { className: method } as never));
 const store = () => gw.services.writeGate.store;
@@ -254,7 +254,7 @@ describe('реакции', () => {
     expect(call.request.msgId).toBe(10);
     expect(call.request.reaction.map((r: { emoticon: string }) => r.emoticon)).toEqual(['👍']);
     expect(call.options).toMatchObject({ write: true });
-    // запрос собран настоящими классами GramJS и сериализуется
+    // запрос собран настоящими классами teleproto и сериализуется
     expect(() => call.request.getBytes()).not.toThrow();
     expect(store().writesSince('agent', 'react', 0)).toBe(1);
   });

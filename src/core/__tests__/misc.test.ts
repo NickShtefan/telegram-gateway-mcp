@@ -53,7 +53,7 @@ describe('log', () => {
 });
 
 describe('reactions', () => {
-  it('даёт единый ключ для GramJS и Bot API', () => {
+  it('даёт единый ключ для teleproto и Bot API', () => {
     expect(reactionKey({ emoticon: '👍' })).toBe('👍');
     expect(reactionKey({ type: 'emoji', emoji: '👍' })).toBe('👍');
     expect(reactionKey({ documentId: 5368324170671202286n })).toBe('custom:5368324170671202286');

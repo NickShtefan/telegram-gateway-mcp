@@ -74,7 +74,7 @@ export function createLogger(tag: string, options: LoggerOptions = {}): Logger {
 
 /**
  * Переводит `console.log/info/debug` в stderr. Вызывается первой строкой
- * точки входа, до импорта GramJS: чужой код не должен попасть в stdout.
+ * точки входа, до импорта teleproto: чужой код не должен попасть в stdout.
  */
 export function redirectConsoleToStderr(): void {
   const toStderr = (...args: unknown[]): void => {

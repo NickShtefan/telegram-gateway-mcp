@@ -188,11 +188,11 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
   });
 });
 
-describe('AccountLimiter: настоящие ошибки GramJS', () => {
+describe('AccountLimiter: настоящие ошибки teleproto', () => {
   const real = (message: string, method: string): Error =>
     RPCMessageToError({ errorCode: 420, errorMessage: message } as never, { className: method } as never) as Error;
 
-  it('короткий FLOOD_WAIT от GramJS пережидается и вызов повторяется', async () => {
+  it('короткий FLOOD_WAIT от teleproto пережидается и вызов повторяется', async () => {
     const { limiter } = makeLimiter();
     let calls = 0;
     const p = limiter.run('a', async () => {

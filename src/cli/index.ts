@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Точка входа `tg-mcp`. Первым делом console.log уводится в stderr, и только
- * потом загружается остальной код вместе с GramJS: в stdio-режиме любая чужая
+ * потом загружается остальной код вместе с teleproto: в stdio-режиме любая чужая
  * строка в stdout ломает JSON-RPC.
  */
 import { redirectConsoleToStderr } from '../core/log.js';

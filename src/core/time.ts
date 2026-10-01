@@ -1,6 +1,6 @@
 /**
  * Дедлайны и паузы. Перенесено из helper `refreshShared.ts` (withTimeout,
- * StageTimeoutError): промис GramJS при сбое сети может не завершиться никогда,
+ * StageTimeoutError): промис teleproto при сбое сети может не завершиться никогда,
  * поэтому каждый внешний await ограничен по времени.
  */
 

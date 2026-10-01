@@ -1,5 +1,5 @@
 /**
- * Нормализация реакций. Ключ реакции един для GramJS и Bot API:
+ * Нормализация реакций. Ключ реакции един для MTProto и Bot API:
  * обычный эмодзи это сам эмодзи, кастомный `custom:<id>`, платная `paid`.
  * Перенесено из helper `processors/reactionKey.ts` и `refreshShared.ts`.
  */
@@ -9,7 +9,7 @@ interface ReactionLike {
   type?: string;
   emoji?: string;
   custom_emoji_id?: string;
-  // GramJS Api.Reaction*
+  // teleproto Api.Reaction*
   className?: string;
   emoticon?: string;
   documentId?: unknown;
@@ -43,7 +43,7 @@ interface MessageReactionsLike {
   results?: Array<{ reaction?: unknown; count?: unknown } | null | undefined>;
 }
 
-/** `message.reactions` из GramJS -> список счётчиков, по убыванию. */
+/** `message.reactions` из teleproto -> список счётчиков, по убыванию. */
 export function normalizeReactions(messageReactions: unknown): ReactionCount[] {
   const mr = messageReactions as MessageReactionsLike | null | undefined;
   if (!mr || !Array.isArray(mr.results) || mr.results.length === 0) return [];

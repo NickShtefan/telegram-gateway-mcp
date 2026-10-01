@@ -118,7 +118,7 @@ describe('MediaService', () => {
       expect((await p).files).toHaveLength(1);
       expect(downloadMedia).toHaveBeenCalledTimes(2);
       expect(isDcRedirectError(new Error('socket hang up'))).toBe(false);
-      // настоящая ошибка GramJS: в её тексте нет слова FILE_MIGRATE
+      // настоящая ошибка teleproto: в её тексте нет слова FILE_MIGRATE
       expect(isDcRedirectError(RPCMessageToError({ errorCode: 303, errorMessage: 'FILE_MIGRATE_4' } as never, { className: 'upload.GetFile' } as never))).toBe(true);
     } finally {
       vi.useRealTimers();

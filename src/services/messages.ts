@@ -1,5 +1,5 @@
 /**
- * Единый вид сообщения для всех инструментов. Объекты GramJS разбираются по
+ * Единый вид сообщения для всех инструментов. Объекты teleproto разбираются по
  * `className`, поэтому тестам хватает простых объектов.
  *
  * Разбор медиа перенесён из channel-scope `processMediaClient.ts`
@@ -278,7 +278,7 @@ interface RawMessage {
 }
 
 /**
- * Сообщение GramJS -> MessageDto. Возвращает null для MessageEmpty и мусора.
+ * Сообщение teleproto -> MessageDto. Возвращает null для MessageEmpty и мусора.
  * `chatKeyFallback` нужен для личных чатов, где у сообщения может не быть peerId.
  */
 export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallback?: string): MessageDto | null {

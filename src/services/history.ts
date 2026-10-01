@@ -29,7 +29,7 @@ export interface HistoryParams {
 
 export interface HistoryPage {
   messages: MessageDto[];
-  /** Сырые сообщения GramJS в том же порядке: нужны для скачивания медиа. */
+  /** Сырые сообщения teleproto в том же порядке: нужны для скачивания медиа. */
   raw: unknown[];
   total: number | null;
   /** id для следующей страницы; null, если дальше ничего нет. */

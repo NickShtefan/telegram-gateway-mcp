@@ -1,5 +1,5 @@
 /**
- * Пул клиентов GramJS: одно подключение на аккаунт, параллельные попытки
+ * Пул клиентов teleproto: одно подключение на аккаунт, параллельные попытки
  * подключиться склеиваются, connect ограничен по времени.
  * Перенесено из channel-scope `clientManager.ts` (getClient, pendingConnections,
  * connectClient) и helper `gramClient.ts` (connect без интерактива, getMe).
@@ -25,7 +25,7 @@ export interface ClientParams {
 
 export type ClientFactory = (params: ClientParams) => TelegramClient;
 
-/** Логгер GramJS, который пишет в stderr через логгер шлюза. */
+/** Логгер teleproto, который пишет в stderr через логгер шлюза. */
 class StderrGramLogger extends GramLogger {
   constructor(private readonly sink: Logger) {
     super(GramLogLevel.WARN);
@@ -43,7 +43,7 @@ class StderrGramLogger extends GramLogger {
 export const defaultClientFactory: ClientFactory = ({ session, apiId, apiHash, log }) =>
   new TelegramClient(new StringSession(session), apiId, apiHash, {
     connectionRetries: 5,
-    // FLOOD_WAIT шлюз разбирает сам (лимитер): GramJS не должен спать молча.
+    // FLOOD_WAIT шлюз разбирает сам (лимитер): teleproto не должен спать молча.
     floodSleepThreshold: 0,
     baseLogger: new StderrGramLogger(log),
   });
@@ -169,7 +169,7 @@ export class ClientPool {
       session,
       apiId: credentials.apiId,
       apiHash: credentials.apiHash,
-      log: this.log.child(`gramjs:${accountId}`),
+      log: this.log.child(`mtproto:${accountId}`),
     });
 
     let me: MeLike | null;
@@ -217,7 +217,7 @@ export class ClientPool {
     return client;
   }
 
-  /** destroy, а не disconnect: иначе в GramJS остаётся цикл обновлений-зомби. */
+  /** destroy, а не disconnect: иначе в teleproto остаётся цикл обновлений-зомби. */
   private async destroy(client: TelegramClient): Promise<void> {
     try {
       await withTimeout(client.destroy(), 5_000, 'client.destroy');

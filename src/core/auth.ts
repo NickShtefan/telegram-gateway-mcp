@@ -4,7 +4,7 @@
  *
  * Порядок перенесён из channel-scope `clientManager.startAuth`: клиент всегда
  * новый, с пустой сессией, телефон передаётся строкой, а `connect()` перед
- * `start()` не вызывается, чтобы GramJS сам провёл миграцию между дата-центрами.
+ * `start()` не вызывается, чтобы teleproto сам провёл миграцию между дата-центрами.
  */
 import type { ClientFactory, AccountIdentity } from './clientPool.js';
 import { classifyError, GatewayError } from './errors.js';
@@ -60,7 +60,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
 
   let errors = 0;
   let lastError: Error | null = null;
-  // Человек прервал ввод (Ctrl-C, таймаут): GramJS проглатывает такую ошибку и спрашивает заново.
+  // Человек прервал ввод (Ctrl-C, таймаут): teleproto проглатывает такую ошибку и спрашивает заново.
   let aborted: Error | null = null;
   const ask = async (label: string, prompt: () => Promise<string>): Promise<string> => {
     try {
@@ -76,7 +76,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
       phoneNumber: phone,
       phoneCode: () => ask('phone code input', () => options.prompts.code()),
       password: (hint?: string) => ask('2FA password input', () => options.prompts.password(hint)),
-      // Без этого GramJS для незарегистрированного номера молча создаёт новый аккаунт и принимает условия Telegram.
+      // Без этого teleproto для незарегистрированного номера молча создаёт новый аккаунт и принимает условия Telegram.
       firstAndLastNames: async () => {
         aborted = new GatewayError('INVALID_ARGUMENT', 'This phone number has no Telegram account. The gateway does not register new accounts.');
         throw aborted;
@@ -85,7 +85,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
         errors++;
         lastError = aborted ?? err;
         options.log.warn('login step failed', { error: lastError.message, attempt: errors });
-        // true останавливает вход: иначе GramJS спрашивает код заново без конца.
+        // true останавливает вход: иначе teleproto спрашивает код заново без конца.
         return aborted !== null || errors >= maxAttempts;
       },
     });

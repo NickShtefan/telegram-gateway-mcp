@@ -54,10 +54,10 @@ const DEFAULT_MAX_FULL_BYTES = 20 * 1024 * 1024;
 const DEFAULT_QUOTA_BYTES = 2 * 1024 * 1024 * 1024;
 const QUOTA_CHECK_EVERY = 50;
 
-/** Файл лежит в другом дата-центре: GramJS иногда бросает это вместо того, чтобы перейти сам. */
+/** Файл лежит в другом дата-центре: teleproto иногда бросает это вместо того, чтобы перейти сам. */
 export function isDcRedirectError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  // Так выглядит настоящий FileMigrateError в GramJS: «The file to be accessed is currently stored in DC N».
+  // Текст настоящей FileMigrateError: «The file currently being accessed is stored in DC N».
   return /stored in DC/i.test(msg) || /file.*(another|different)\s*dc/i.test(msg) || /dc.*redirect/i.test(msg) || /FILE_MIGRATE/i.test(msg) || /NETWORK_MIGRATE/i.test(msg);
 }
 
@@ -70,7 +70,7 @@ interface RawSize {
 
 /**
  * Тип размера для превью: около 320 px по длинной стороне. Возвращает букву
- * типа (`m`, `x`, ...), которую понимает параметр `thumb` в GramJS, или null.
+ * типа (`m`, `x`, ...), которую понимает параметр `thumb` в teleproto, или null.
  */
 export function pickThumbType(sizes: unknown): string | null {
   if (!Array.isArray(sizes)) return null;
@@ -132,7 +132,7 @@ export class MediaService {
   }
 
   /**
-   * Скачивает медиа сырых сообщений GramJS. По умолчанию превью: картинки
+   * Скачивает медиа сырых сообщений teleproto. По умолчанию превью: картинки
    * дорогие для модели, полный размер только по явному запросу.
    */
   async download(accountId: string, chatKey: string, rawMessages: unknown[], size: MediaSize, options?: TgCallOptions): Promise<MediaResult> {
