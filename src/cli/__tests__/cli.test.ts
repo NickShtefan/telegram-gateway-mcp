@@ -103,6 +103,18 @@ describe('doctor', () => {
     expect(checks.map(c => c.message).join('\n')).toContain('no gateway users');
   });
 
+  it('снятый набор automate в настройках: предупреждение, а не падение', async () => {
+    const before = process.env.TG_MCP_TOOLSETS;
+    process.env.TG_MCP_TOOLSETS = 'core,automate,write';
+    try {
+      const checks = await collectChecks({ config, storage, io });
+      expect(checks.some(c => c.level === 'warn' && c.message.includes('"automate" no longer exists'))).toBe(true);
+    } finally {
+      if (before === undefined) delete process.env.TG_MCP_TOOLSETS;
+      else process.env.TG_MCP_TOOLSETS = before;
+    }
+  });
+
   it('старый Node и аккаунт без сессии это ошибки', async () => {
     storage.accounts.upsert({ id: 'agent' });
     const checks = await collectChecks({ config, storage, io, nodeVersion: 'v20.11.0' });
@@ -201,6 +213,12 @@ describe('lock: гонки и мусор', () => {
 });
 
 describe('main', () => {
+  it('команды runner больше нет: шлюз агентов не запускает', async () => {
+    expect(await main(['runner', '--agent', 'claude -p {prompt}'], { io, config, storage })).not.toBe(0);
+    expect(await main(['help'], { io, config, storage })).toBe(0);
+    expect(out.join('\n')).not.toContain('runner');
+  });
+
   it('help и неизвестная команда', async () => {
     expect(await main(['help'], { io, config, storage })).toBe(0);
     expect(out.join('\n')).toContain('tg-mcp login --account');

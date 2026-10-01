@@ -18,7 +18,7 @@ const tgChannelStats = defineTool({
   toolset: 'analytics',
   title: 'Channel statistics',
   description:
-    'Numbers about a channel over a period, counted from its public counters: subscribers and their change, posts per week, average and median views, reach (views to subscribers), engagement (reactions to views), comments and shares per post, share of reposts and ads, views trend, weekly breakdown, top posts. Subscriber change appears once the gateway has seen the channel on an earlier day.',
+    'Numbers about a channel over a period, counted from its public counters: subscribers and their change, posts per week, average and median views, reach (views to subscribers), engagement (reactions to views), comments and shares per post, share of reposts, views trend, weekly breakdown, top posts. Subscriber change appears once the gateway has seen the channel on an earlier day.',
   input: {
     chat: chatArg,
     days: z.number().int().optional().describe(`Period in days: default 30, max ${STATS_MAX_DAYS}.`),
@@ -61,7 +61,7 @@ const tgChannelStats = defineTool({
     }
 
     lines.push(
-      [`${unit}: ${s.posts} (${s.postsPerWeek} per week)`, isChannel ? `reposts from elsewhere: ${s.forwardedShare}%` : `authors: ${s.authors}`, `marked as ads: ${s.adShare}%`].join(' | '),
+      [`${unit}: ${s.posts} (${s.postsPerWeek} per week)`, isChannel ? `reposts from elsewhere: ${s.forwardedShare}%` : `authors: ${s.authors}`].join(' | '),
     );
     if (s.avgViews !== null) {
       lines.push(

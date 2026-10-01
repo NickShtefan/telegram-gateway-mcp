@@ -20,6 +20,14 @@ describe('SqliteStorage: схема', () => {
     expect(storage.schemaVersion()).toBe(MIGRATIONS.length);
   });
 
+  it('после миграций остаются таблицы записи, таблиц автоматизации нет', () => {
+    const tables = (storage.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map(t => t.name);
+    expect(tables).toEqual(expect.arrayContaining(['approvals', 'writes', 'chat_snapshots', 'indexed_chats', 'indexed_messages']));
+    for (const gone of ['watches', 'watch_state', 'inbox', 'rules', 'rule_fires', 'runner_jobs', 'scoped_tokens', 'tasks', 'task_messages']) {
+      expect(tables, gone).not.toContain(gone);
+    }
+  });
+
   it('FTS5 доступен в node:sqlite', () => {
     storage.db.exec('CREATE VIRTUAL TABLE fts_probe USING fts5(body)');
     storage.db.prepare('INSERT INTO fts_probe (body) VALUES (?)').run('продам велосипед недорого');

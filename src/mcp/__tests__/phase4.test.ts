@@ -332,7 +332,6 @@ describe('набор analytics: статистика канала', () => {
       sharesPerPost: 1,
       reactionKinds: 3,
       forwardedShare: 14,
-      adShare: 14,
       viewsTrend: 100,
     });
     expect(stats.topReactions).toEqual([{ reaction: '👍', share: 71 }, { reaction: '🔥', share: 19 }, { reaction: '❤', share: 10 }]);
@@ -355,7 +354,8 @@ describe('набор analytics: статистика канала', () => {
     expect(first.isError, first.text).toBe(false);
     expect(first.text).toContain('Statistics of @stonksnws [channel] for the last 30 days: 7 posts');
     expect(first.text).toContain('subscribers: 1k (1000) | change: no earlier snapshot yet');
-    expect(first.text).toContain('posts: 7 (1.8 per week) | reposts from elsewhere: 14% | marked as ads: 14%');
+    expect(first.text).toContain('posts: 7 (1.8 per week) | reposts from elsewhere: 14%');
+    expect(first.text).not.toContain('ads');
     expect(first.text).toContain('views per post: avg 225 | median 200 | spread 44%');
     expect(first.text).toContain('reach: an average post is seen by 22.5% of subscribers');
     expect(first.text).toContain('engagement (ERR): 1.48% of views leave a reaction');
@@ -630,7 +630,7 @@ describe('набор index: локальный индекс и поиск по �
 
 describe('контракт всех наборов', () => {
   it('у каждого инструмента плоская схема, короткое описание и верная пометка чтения', async () => {
-    const everything = await gw.client('nick', ['core', 'discover', 'analytics', 'index', 'automate', 'write']);
+    const everything = await gw.client('nick', ['core', 'discover', 'analytics', 'index', 'write']);
     const tools = await everything.tools();
     await everything.close();
     expect(tools.map(t => t.name).sort()).toEqual([
@@ -642,7 +642,6 @@ describe('контракт всех наборов', () => {
       'tg_get_comments',
       'tg_get_media',
       'tg_get_message',
-      'tg_inbox',
       'tg_index',
       'tg_join',
       'tg_list_dialogs',
@@ -652,20 +651,13 @@ describe('контракт всех наборов', () => {
       'tg_read_history',
       'tg_reply',
       'tg_resolve',
-      'tg_rule_set',
-      'tg_rules',
       'tg_search_chat',
       'tg_search_messages',
       'tg_send',
       'tg_similar_channels',
       'tg_status',
-      'tg_task_get',
-      'tg_task_start',
-      'tg_task_update',
-      'tg_tasks',
-      'tg_watch',
     ]);
-    const writes = new Set(['tg_confirm', 'tg_join', 'tg_react', 'tg_reply', 'tg_rule_set', 'tg_send', 'tg_task_start', 'tg_task_update', 'tg_tasks']);
+    const writes = new Set(['tg_confirm', 'tg_join', 'tg_react', 'tg_reply', 'tg_send']);
     for (const tool of tools) {
       expect(tool.annotations?.readOnlyHint, tool.name).toBe(!writes.has(tool.name));
       const schema = JSON.stringify(tool.inputSchema);
@@ -677,5 +669,8 @@ describe('контракт всех наборов', () => {
       }
       expect((tool.description ?? '').length, tool.name).toBeLessThan(520);
     }
+    // шлюз только инструмент: ничего, что запускает агентов, следит за чатами или ведёт поручения
+    expect(tools.map(t => t.name).filter(n => /watch|inbox|rule|task|runner/.test(n))).toEqual([]);
+    expect(tools).toHaveLength(22);
   });
 });

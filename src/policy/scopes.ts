@@ -2,9 +2,9 @@
  * Скоупы доступа: что агенту можно читать и куда писать.
  *
  * По умолчанию открыты каналы и группы (публичные и те, где аккаунт состоит).
- * Личные переписки закрыты и открываются только правилом `allow`: владельцем
- * или поручением, которое открывает ровно один диалог. Служебные чаты Telegram
- * закрыты всегда: туда приходят коды входа.
+ * Личные переписки закрыты и открываются только правилом `allow`, которое
+ * ставит владелец. Служебные чаты Telegram закрыты всегда: туда приходят коды
+ * входа.
  */
 import type { PeerKind } from '../core/chatId.js';
 import { GatewayError } from '../core/errors.js';
@@ -46,7 +46,7 @@ export class ScopePolicy {
         allowed: false,
         code: 'private',
         reason:
-          'Private chats are closed by default. The owner can open one with: tg-mcp scope allow <user> <account> <chat>, or start a task for this person.',
+          'Private chats are closed by default. The owner can open one with: tg-mcp scope allow <user> <account> <chat>.',
       };
     }
     return { allowed: true };

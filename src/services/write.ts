@@ -1,6 +1,6 @@
 /**
- * Действия: ответ в комментариях, сообщение, вступление в чат. Вызываются
- * только исполнителями согласований (`automation/approvals.ts`), то есть после
+ * Действия: ответ в комментариях, сообщение, реакция, вступление в чат. Вызываются
+ * только исполнителями шлюза записи (`writegate/index.ts`), то есть после
  * того, как владелец подтвердил действие через своего агента (`tg_confirm`).
  *
  * Ответ под постом: `GetDiscussionMessage` находит копию поста в группе
@@ -11,7 +11,7 @@
 import { randomBytes } from 'node:crypto';
 import bigInt from 'big-integer';
 import { Api } from 'telegram';
-import type { AutomationStore } from '../automation/store.js';
+import type { WriteStore } from '../writegate/store.js';
 import { toInputChannel, toInputPeer } from '../core/entities.js';
 import { GatewayError, isGatewayError } from '../core/errors.js';
 import { createLogger, type Logger } from '../core/log.js';
@@ -47,8 +47,6 @@ export function normalizeReactionEmoji(raw: unknown): string {
 export interface WriteContext {
   userId: string;
   accountId: string;
-  /** tool, rule:<id> или task:<id>. */
-  source: string;
 }
 
 /** joined: вступил; requested: заявка ждёт админа чата; already: аккаунт уже был участником. */
@@ -102,7 +100,7 @@ function dayStart(now: number): number {
 
 export interface WriteServiceDeps {
   tg: Tg;
-  store: AutomationStore;
+  store: WriteStore;
   comments: CommentsService;
   limits?: Partial<WriteLimits>;
   now?: () => number;
@@ -129,7 +127,7 @@ export class WriteService {
    * Запись в журнал после того, как действие уже выполнено. Сбой базы здесь не должен
    * превращать отправленное сообщение в «ошибку»: агент повторил бы отправку.
    */
-  private record(entry: Parameters<AutomationStore['recordWrite']>[0]): void {
+  private record(entry: Parameters<WriteStore['recordWrite']>[0]): void {
     try {
       this.deps.store.recordWrite(entry);
     } catch (err) {
@@ -146,7 +144,7 @@ export class WriteService {
     }
   }
 
-  /** Можно ли ещё ответить на этот пост с этого аккаунта: один ответ на пост, чьё бы правило ни сработало. */
+  /** Можно ли ещё ответить на этот пост с этого аккаунта: один ответ на пост, кто бы из пользователей ни просил. */
   assertCanReply(accountId: string, chatKey: string, postId: number): void {
     if (this.deps.store.hasReply(accountId, chatKey, postId)) {
       throw new GatewayError('LIMIT_REACHED', 'This account has already replied to this post. Only one reply per post is allowed.');
@@ -182,7 +180,6 @@ export class WriteService {
       chatKey: channel.peerKey,
       postId,
       sentMessageId: messageId,
-      source: context.source,
     });
     return {
       messageId,
@@ -225,7 +222,6 @@ export class WriteService {
       chatKey: peer.peerKey,
       postId: null,
       sentMessageId: messageId,
-      source: context.source,
     });
     return {
       messageId,
@@ -261,7 +257,6 @@ export class WriteService {
       chatKey: chat.peerKey,
       postId: messageId,
       sentMessageId: null,
-      source: context.source,
     });
   }
 
@@ -296,7 +291,6 @@ export class WriteService {
       chatKey: chatKey ?? `invite:${target.inviteHash}`,
       postId: null,
       sentMessageId: null,
-      source: context.source,
     });
     return { chatKey, outcome };
   }

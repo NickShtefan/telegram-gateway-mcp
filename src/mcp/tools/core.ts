@@ -72,13 +72,6 @@ const tgStatus = defineTool({
 
     lines.push('', `Toolsets: ${services.runtime.config.toolsets.join(', ')}`, 'Times in all tools are UTC.');
 
-    // То, что ждёт владельца: черновики запусков без человека и вопросы поручений.
-    if (!principal.grant) {
-      const drafts = services.automation.approvals.pending(principal.userId, 50).length;
-      const questions = services.automation.taskStore.openQuestions(principal.userId).length;
-      if (drafts > 0) lines.push(`Write requests waiting for the owner's decision: ${drafts}. Show them with tg_confirm action=list.`);
-      if (questions > 0) lines.push(`Tasks waiting for the owner's answer: ${questions}. See tg_tasks.`);
-    }
     return { text: lines.join('\n'), count: principal.accounts.length };
   },
 });
@@ -181,7 +174,6 @@ const tgListDialogs = defineTool({
     const accountId = ctx.account(args.account);
     const { dialogs: service, scopes } = ctx.services;
     const userId = ctx.principal.userId;
-    if (ctx.principal.grant) throw new GatewayError('ACCESS_DENIED', 'This run may only work with the chat it was started for.');
     const limit = clampLimit(args.limit, 50, 100);
     const type = args.type ?? 'all';
     const query = (args.query ?? '').trim().toLowerCase();
@@ -632,24 +624,21 @@ function renderExport(job: JobRecord): string {
   const env = createEnvelope();
   if (job.state === 'done' && job.result) {
     const r = job.result as unknown as ExportResult;
-    const share = r.rows > 0 ? Math.round((r.with_price / r.rows) * 100) : 0;
     const lines = [
       `Export finished: ${r.rows} rows`,
       `path: ${r.path}`,
       `format: ${r.format}`,
       `scanned messages: ${r.scanned}`,
-      `rows with a price: ${r.with_price} (${share}%)`,
       r.date_from && r.date_to ? `dates: ${r.date_from.slice(0, 10)} to ${r.date_to.slice(0, 10)}` : '',
       r.photos > 0 ? `photo previews downloaded: ${r.photos} (paths are in the photo_path column)` : '',
       r.truncated ? `TRUNCATED at max_rows=${r.rows}: there are more messages. Narrow the window or raise max_rows (max ${EXPORT_MAX_ROWS}).` : '',
       `columns: ${r.columns.join(', ')}`,
-      'Price fields are extracted from the text by rules: "currency_assumed" marks prices written without a currency.',
       '',
       `First ${r.samples.length} rows (read the file with your own code for analysis):`,
       env.notice(),
     ].filter(line => line !== '');
     for (const s of r.samples) {
-      lines.push(`#${s.id} | ${s.date.slice(0, 16).replace('T', ' ')} | ${s.kind} | ${s.price !== null ? `${s.price} ${s.currency}` : 'no price'}${s.link ? ` | ${s.link}` : ''}`);
+      lines.push(`#${s.id} | ${s.date.slice(0, 16).replace('T', ' ')}${s.link ? ` | ${s.link}` : ''}`);
       lines.push(env.inline(s.text, 200));
     }
     return lines.join('\n');
@@ -670,7 +659,7 @@ const tgExport = defineTool({
   toolset: 'core',
   title: 'Export messages to a file',
   description:
-    'Writes messages of a chat to a JSONL or CSV file and returns its path, row count, columns and 5 sample rows. Extracts price, currency and listing type (sell, buy) from each text. Use it for analysis over hundreds of messages, then compute with your own code. Long exports return a job_id: call again with job_id to check.',
+    'Writes messages of a chat to a JSONL or CSV file and returns its path, row count, columns and 5 sample rows. Use it for analysis over hundreds of messages (prices in a flea market, statistics): read the file with your own code instead of paging through history. Author names are hashed and phone numbers masked by default. A long export returns job_id: call again with only job_id.',
   input: {
     chat: z.string().optional().describe('Chat to export. Not needed when checking a job.'),
     query: z.string().optional().describe('Only messages matching these words.'),

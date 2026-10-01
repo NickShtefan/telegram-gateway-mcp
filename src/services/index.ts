@@ -2,7 +2,7 @@
  * Сборка сервисов поверх ядра. Сервисы не знают про MCP и транспорт: их
  * одинаково используют инструменты, CLI и фоновые воркеры.
  */
-import { buildAutomation, type Automation } from '../automation/index.js';
+import { buildWriteGate, type WriteGate } from '../writegate/index.js';
 import { AccessPolicy } from '../policy/access.js';
 import { Audit } from '../policy/audit.js';
 import { ScopePolicy } from '../policy/scopes.js';
@@ -41,7 +41,7 @@ export interface GatewayServices {
   media: MediaService;
   exporter: ExportService;
   jobs: JobManager;
-  automation: Automation;
+  writeGate: WriteGate;
 }
 
 export interface BuildOptions {
@@ -59,7 +59,7 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
   jobs.register('export', context => exporter.run(context));
 
   const comments = new CommentsService(tg, storage.entities);
-  const automation = buildAutomation({ runtime, history, comments, now });
+  const writeGate = buildWriteGate({ runtime, comments, now });
   if (!(storage instanceof SqliteStorage)) throw new GatewayError('UNAVAILABLE', 'The gateway needs the SQLite storage.');
   const resolver = new Resolver({ tg, entities: storage.entities, now });
   const snapshots = new SnapshotStore(storage, now);
@@ -69,7 +69,7 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
 
   return {
     runtime,
-    access: new AccessPolicy(storage, automation.store),
+    access: new AccessPolicy(storage),
     scopes: new ScopePolicy(storage),
     audit: new Audit(storage, now, log.child('audit')),
     resolver,
@@ -86,6 +86,6 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
     media,
     exporter,
     jobs,
-    automation,
+    writeGate,
   };
 }

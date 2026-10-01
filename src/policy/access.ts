@@ -4,7 +4,6 @@
  */
 import { safeEqualHex, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
-import type { AutomationStore, ScopedGrant } from '../automation/store.js';
 import type { Storage } from '../storage/port.js';
 
 export interface Principal {
@@ -12,18 +11,10 @@ export interface Principal {
   defaultAccount: string | null;
   /** Аккаунты, доступные пользователю. */
   accounts: string[];
-  /**
-   * Ограничение прав: задано у агента, запущенного по правилу или поручению.
-   * Такой агент видит один чат и может подготовить одно действие.
-   */
-  grant?: ScopedGrant;
 }
 
 export class AccessPolicy {
-  constructor(
-    private readonly storage: Storage,
-    private readonly automation?: AutomationStore,
-  ) {}
+  constructor(private readonly storage: Storage) {}
 
   /** Пользователь по токену. Ошибка одинакова для «нет токена» и «неверный токен». */
   authenticate(token: string | null | undefined): Principal {
@@ -33,14 +24,8 @@ export class AccessPolicy {
     if (!token || token.length < 16) return denied();
     const hash = sha256Hex(token);
     const user = this.storage.users.findByTokenHash(hash);
-    if (user && safeEqualHex(user.tokenSha256, hash)) return this.principalOf(user.id);
-
-    // Токен запуска: права пользователя, суженные до одного дела.
-    const scoped = this.automation?.getScopedToken(hash);
-    if (!scoped) return denied();
-    const base = this.principalOf(scoped.userId);
-    if (!scoped.scope.accountId || !base.accounts.includes(scoped.scope.accountId)) return denied();
-    return { ...base, defaultAccount: scoped.scope.accountId, accounts: [scoped.scope.accountId], grant: scoped.scope };
+    if (!user || !safeEqualHex(user.tokenSha256, hash)) return denied();
+    return this.principalOf(user.id);
   }
 
   principalOf(userId: string): Principal {

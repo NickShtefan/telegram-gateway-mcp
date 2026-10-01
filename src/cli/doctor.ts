@@ -6,7 +6,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ClientFactory } from '../core/clientPool.js';
-import { loadSessionSecret, type GatewayConfig } from '../core/config.js';
+import { loadSessionSecret, RETIRED_TOOLSETS, type GatewayConfig } from '../core/config.js';
 import { acquireLock, isLockHeld } from '../core/lock.js';
 import { createLogger } from '../core/log.js';
 import { createRuntime } from '../runtime.js';
@@ -68,6 +68,11 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
   } else add('warn', 'session key file does not exist yet: it is created on the first login');
 
   add('ok', `toolsets: ${config.toolsets.join(', ')}`);
+  const retired = (process.env.TG_MCP_TOOLSETS ?? '')
+    .split(',')
+    .map(t => t.trim().toLowerCase())
+    .filter(t => RETIRED_TOOLSETS.includes(t));
+  if (retired.length > 0) add('warn', `toolset "${retired.join(', ')}" no longer exists and is ignored: remove it from TG_MCP_TOOLSETS`);
 
   const users = describeUsers(storage);
   if (users.length === 0) add('warn', 'no gateway users: add one with tg-mcp user add <id>');

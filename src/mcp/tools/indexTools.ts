@@ -86,7 +86,6 @@ const tgIndex = defineTool({
   readOnly: true,
   handler: async (args, ctx) => {
     const { services, principal } = ctx;
-    if (principal.grant) throw new GatewayError('ACCESS_DENIED', 'This run may only work with the chat it was started for.');
     if (args.job_id) {
       const job = await services.jobs.waitFor(args.job_id, principal.userId, 5_000);
       return { accountId: job.accountId, text: renderIndexJob(ctx, job) };
@@ -160,7 +159,6 @@ const tgLocalSearch = defineTool({
   readOnly: true,
   handler: async (args, ctx) => {
     const { services, principal } = ctx;
-    if (principal.grant) throw new GatewayError('ACCESS_DENIED', 'This run may only work with the chat it was started for.');
     const limit = clampLimit(args.limit, 20, 50);
     const window = parseWindow(args.since, args.until, ctx.now());
     const query = args.query.trim();

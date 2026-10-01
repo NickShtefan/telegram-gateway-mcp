@@ -24,7 +24,9 @@ export interface GatewayConfig {
 
 export const DEFAULT_PORT = 7777;
 export const DEFAULT_HOST = '127.0.0.1';
-export const KNOWN_TOOLSETS = ['core', 'automate', 'write', 'discover', 'index', 'analytics'] as const;
+export const KNOWN_TOOLSETS = ['core', 'discover', 'analytics', 'index', 'write'] as const;
+/** Наборы, которых больше нет. В старом .env они не должны ронять демон: просто пропускаются. */
+export const RETIRED_TOOLSETS: readonly string[] = ['automate'];
 
 function expandHome(path: string): string {
   return path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(1)) : path;
@@ -54,7 +56,8 @@ export function parseToolsets(raw: string | undefined): string[] {
   const requested = (raw ?? 'core')
     .split(',')
     .map(s => s.trim().toLowerCase())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(s => !RETIRED_TOOLSETS.includes(s));
   const unknown = requested.filter(t => !(KNOWN_TOOLSETS as readonly string[]).includes(t));
   if (unknown.length > 0) {
     // Опечатка в списке не должна молча сузить набор инструментов.

@@ -58,13 +58,6 @@ export async function locateMessage(
   args: { link?: string; chat?: string; id?: number; account?: string },
 ): Promise<MessageLocation> {
   const accountId = context.account(args.account);
-  const floor = context.principal.grant?.minMessageId;
-  const assertNotOlder = (messageId: number): void => {
-    if (floor !== undefined && messageId < floor) {
-      throw new GatewayError('ACCESS_DENIED', 'This run may read only messages of its own task, not the earlier conversation.');
-    }
-  };
-
   if (args.link) {
     const parsed = parseRef(args.link);
     if (parsed.messageId === undefined) {
@@ -91,7 +84,6 @@ export async function locateMessage(
         commentOf: { chat, postId: parsed.messageId, rootId: root.rootId },
       };
     }
-    assertNotOlder(parsed.messageId);
     return { accountId, chat, messageId: parsed.messageId, topicId: parsed.topicId };
   }
 
@@ -99,7 +91,6 @@ export async function locateMessage(
     throw new GatewayError('INVALID_ARGUMENT', 'Pass either "link" (a t.me message link) or both "chat" and "id".');
   }
   const { chat, parsed } = await context.openChat(args.chat, accountId);
-  assertNotOlder(args.id);
   return { accountId, chat, messageId: args.id, topicId: parsed.topicId };
 }
 

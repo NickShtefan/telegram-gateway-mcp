@@ -3,8 +3,8 @@
  * а считает по ним модель хуже, чем код. Поэтому шлюз пишет JSONL или CSV и
  * возвращает путь, число строк, колонки и несколько примеров.
  *
- * При выгрузке из текста вытаскиваются цена, валюта и тип объявления. Авторы
- * хэшируются, телефоны маскируются, пока владелец явно не попросил иначе.
+ * Текст отдаётся как есть: разбирать его (цены, тип объявления) дело агента.
+ * Авторы хэшируются, телефоны маскируются, пока владелец явно не попросил иначе.
  *
  * Постраничный проход с отсечкой по дате взят из channel-scope
  * `archiveService.ts:180`, извлечение ссылок из `db/export/export.ts:87`.
@@ -24,7 +24,7 @@ import type { JobContext } from './jobs.js';
 import { messageLink } from './links.js';
 import type { MediaService } from './media.js';
 import type { MessageDto } from './messages.js';
-import { analyzeListing, maskPhones } from './prices.js';
+import { maskPhones } from './phones.js';
 import type { SearchService } from './search.js';
 
 export type ExportFormat = 'jsonl' | 'csv';
@@ -49,11 +49,6 @@ export interface ExportRow {
   date: string;
   topic_id: number | null;
   author: string;
-  kind: string;
-  price: number | null;
-  currency: string | null;
-  currency_assumed: boolean | null;
-  negotiable: boolean;
   text: string;
   views: number | null;
   replies: number | null;
@@ -69,11 +64,6 @@ export const EXPORT_COLUMNS: Array<keyof ExportRow> = [
   'date',
   'topic_id',
   'author',
-  'kind',
-  'price',
-  'currency',
-  'currency_assumed',
-  'negotiable',
   'text',
   'views',
   'replies',
@@ -94,7 +84,6 @@ export interface ExportResult extends Record<string, unknown> {
   format: ExportFormat;
   rows: number;
   scanned: number;
-  with_price: number;
   photos: number;
   /** Выгрузка остановлена по пределу строк: в чате есть ещё. */
   truncated: boolean;
@@ -157,18 +146,12 @@ export class ExportService {
   }
 
   toRow(message: MessageDto, chat: EntityRecord, includeContacts: boolean): ExportRow {
-    const listing = analyzeListing(message.text);
     const clean = sanitizeText(message.text);
     return {
       id: message.id,
       date: new Date(message.date * 1000).toISOString(),
       topic_id: message.topicId,
       author: this.authorLabel(message, includeContacts),
-      kind: listing.kind,
-      price: listing.price?.amount ?? null,
-      currency: listing.price?.currency ?? null,
-      currency_assumed: listing.price ? listing.price.assumedCurrency : null,
-      negotiable: listing.negotiable,
       text: includeContacts ? clean : maskPhones(clean),
       views: message.views,
       replies: message.replies,
@@ -200,7 +183,6 @@ export class ExportService {
     const fd = openNewFile(path, 0o644);
     let rows = 0;
     let scanned = 0;
-    let withPrice = 0;
     let photos = 0;
     let truncated = false;
     let newest: number | null = null;
@@ -254,7 +236,6 @@ export class ExportService {
             }
           }
 
-          if (row.price !== null) withPrice++;
           newest = newest === null ? message.date : Math.max(newest, message.date);
           oldest = oldest === null ? message.date : Math.min(oldest, message.date);
           if (samples.length < SAMPLE_ROWS) {
@@ -279,7 +260,6 @@ export class ExportService {
       format: params.format,
       rows,
       scanned,
-      with_price: withPrice,
       photos,
       truncated,
       date_from: oldest === null ? null : new Date(oldest * 1000).toISOString(),

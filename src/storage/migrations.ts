@@ -301,4 +301,18 @@ export const MIGRATIONS: string[] = [
     DELETE FROM indexed_fts WHERE rowid = old.rowid;
   END;
   `,
+
+  // 6: шлюз стал чистым MCP (решение 25): наблюдение, входящие, правила, запуски агента и поручения убраны.
+  // Запросы на запись (approvals) и журнал записи (writes) остаются.
+  `
+  DROP TABLE IF EXISTS task_messages;
+  DROP TABLE IF EXISTS tasks;
+  DROP TABLE IF EXISTS scoped_tokens;
+  DROP TABLE IF EXISTS runner_jobs;
+  DROP TABLE IF EXISTS rule_fires;
+  DROP TABLE IF EXISTS rules;
+  DROP TABLE IF EXISTS inbox;
+  DROP TABLE IF EXISTS watch_state;
+  DROP TABLE IF EXISTS watches;
+  `,
 ];

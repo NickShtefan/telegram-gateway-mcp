@@ -3,15 +3,13 @@
  *
  * Формулы взяты из channel-scope `analyzeChannel.ts`: средние и медианные
  * просмотры, охват (просмотры к подписчикам), ERR (реакции к просмотрам),
- * разброс просмотров, доля рекламы, сравнение свежей половины периода со
- * старой. Оценки, баллы и «вердикты» оттуда не перенесены: шлюз отдаёт числа,
+ * разброс просмотров, сравнение свежей половины периода со старой. Оценки, баллы и «вердикты» оттуда не перенесены: шлюз отдаёт числа,
  * выводы делает агент (решение 7).
  *
  * Рост подписчиков Telegram отдаёт только админам канала. Для чужих каналов
  * шлюз запоминает число участников каждый раз, когда видит его, и показывает
  * изменение между снимками.
  */
-import { isAdvertisement } from '../automation/rules.js';
 import type { ReactionCount } from '../core/reactions.js';
 import type { TgCallOptions } from '../core/tg.js';
 import type { EntityRecord } from '../storage/port.js';
@@ -88,7 +86,6 @@ export interface ChannelStats {
   topReactions: Array<{ reaction: string; share: number }>;
   reactionKinds: number;
   forwardedShare: number;
-  adShare: number;
   /** Изменение средних просмотров: свежая половина периода против старой, %. */
   viewsTrend: number | null;
   weeks: WeekBucket[];
@@ -209,7 +206,6 @@ export function computeStats(messages: MessageDto[], members: number | null, now
       .map(([reaction, count]) => ({ reaction, share: Math.round((count / reactions) * 100) })),
     reactionKinds: reactionTotals.size,
     forwardedShare: posts.length > 0 ? Math.round((posts.filter(p => p.forwardedFrom !== null).length / posts.length) * 100) : 0,
-    adShare: posts.length > 0 ? Math.round((posts.filter(p => isAdvertisement(p.text)).length / posts.length) * 100) : 0,
     viewsTrend,
     weeks,
     topPosts: [...withViews].sort((a, b) => b.views! - a.views!).slice(0, 3),

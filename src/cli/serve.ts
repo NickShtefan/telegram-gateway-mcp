@@ -28,8 +28,7 @@ export interface ServeOptions {
   log?: Logger;
 }
 
-/** Как долго хранятся события входящих и записи аудита. */
-const INBOX_KEEP_MS = 30 * 86_400_000;
+/** Как долго хранятся записи аудита. */
 const AUDIT_KEEP_MS = 90 * 86_400_000;
 const PRUNE_EVERY_MS = 6 * 3_600_000;
 
@@ -75,8 +74,8 @@ export async function runServe(options: ServeOptions): Promise<number> {
   try {
     const resumed = services.jobs.resume();
     if (resumed > 0) log.info('resumed interrupted jobs', { count: resumed });
-    // Действия, которые выполнялись в момент падения: исход неизвестен, об этом сообщает событие во входящих.
-    const interrupted = services.automation.approvals.recover();
+    // Действия, которые выполнялись в момент падения: исход неизвестен, повторять их шлюз не станет.
+    const interrupted = services.writeGate.approvals.recover();
     if (interrupted > 0) log.warn('write actions interrupted by a restart, their outcome is unknown', { count: interrupted });
     http = await startHttpServer({
       services,
@@ -94,34 +93,18 @@ export async function runServe(options: ServeOptions): Promise<number> {
     throw err;
   }
 
-  // Фоновая работа: наблюдатель, опрос диалогов поручений, уборка.
-  const background = new AbortController();
-  const { approvals, watcher, runner, tasks, store } = services.automation;
+  // Сам по себе демон в Telegram не ходит. Раз в минуту только уборка в своей базе.
   let lastPrune = 0;
-  void watcher.run(background.signal);
-  // Диалоги поручений опрашиваются чаще каналов: собеседник ждёт ответа.
-  const taskPoller = setInterval(() => {
-    void tasks.tick().catch(err => log.warn('task poll failed', { error: (err as Error).message }));
-  }, 10_000);
-  taskPoller.unref();
   const sweeper = setInterval(() => {
-    for (const [name, sweep] of [['approvals', () => approvals.sweep()], ['tasks', () => tasks.sweep()], ['runner', () => runner.sweep()]] as const) {
-      try {
-        sweep();
-      } catch (err) {
-        log.warn('sweep failed', { part: name, error: (err as Error).message });
-      }
-    }
-    if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
-      lastPrune = Date.now();
-      try {
-        const inbox = store.pruneInbox(Date.now() - INBOX_KEEP_MS);
+    try {
+      services.writeGate.approvals.sweep();
+      if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
+        lastPrune = Date.now();
         const audit = runtime.storage.audit.prune(Date.now() - AUDIT_KEEP_MS);
-        const tokens = store.pruneScopedTokens();
-        if (inbox + audit + tokens > 0) log.info('pruned old records', { inbox, audit, tokens });
-      } catch (err) {
-        log.warn('prune failed', { error: (err as Error).message });
+        if (audit > 0) log.info('pruned old audit records', { audit });
       }
+    } catch (err) {
+      log.warn('sweep failed', { error: (err as Error).message });
     }
   }, 60_000);
   sweeper.unref();
@@ -138,9 +121,7 @@ export async function runServe(options: ServeOptions): Promise<number> {
   });
 
   log.info('shutting down');
-  background.abort();
   clearInterval(sweeper);
-  clearInterval(taskPoller);
   services.jobs.stop();
   await http.close();
   await runtime.close();

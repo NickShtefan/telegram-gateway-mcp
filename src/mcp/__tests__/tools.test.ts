@@ -103,7 +103,7 @@ describe('tg_status и доступ к аккаунтам', () => {
   });
 });
 
-describe('кейс 1: цены в барахолке', () => {
+describe('кейс 1: объявления в барахолке', () => {
   const listings = [
     { id: 31, text: '#продам iPhone 15 256 гб, состояние отличное.\nЦена 65к, торг. +7 999 123-45-67', photo: true },
     { id: 30, text: 'Продаю айфон 15 Pro, 72 000 ₽, без торга', photo: false },
@@ -155,11 +155,13 @@ describe('кейс 1: цены в барахолке', () => {
     expect(gw.tg.callsOf('contacts.ResolveUsername')).toHaveLength(1);
   });
 
-  it('выгрузка: файл JSONL с ценами, авторы хэшированы, телефоны замаскированы', async () => {
+  it('выгрузка: файл JSONL с текстом как есть, авторы хэшированы, телефоны замаскированы', async () => {
     const reply = await nick.call('tg_export', { chat: '@baraholka', query: 'iphone 15', topic: 5, photos: 'thumb' });
     expect(reply.isError).toBe(false);
     expect(reply.text).toContain('Export finished: 3 rows');
-    expect(reply.text).toContain('rows with a price: 3 (100%)');
+    // цены шлюз не разбирает: это делает агент по тексту
+    expect(reply.text).not.toContain('price');
+    expect(reply.text).toContain('columns: id, date, topic_id, author, text, views, replies, reactions, media, album_id, link, photo_path');
     expect(reply.text).toContain('photo previews downloaded: 1');
     const path = reply.text.match(/^path: (.+)$/m)![1]!;
     expect(path.startsWith(gw.config.filesDir)).toBe(true);
@@ -167,9 +169,10 @@ describe('кейс 1: цены в барахолке', () => {
 
     const rows = readFileSync(path, 'utf8').trim().split('\n').map(l => JSON.parse(l) as Record<string, unknown>);
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toMatchObject({ id: 31, kind: 'sell', price: 65_000, currency: 'RUB', currency_assumed: true, negotiable: true, topic_id: 5, link: 'https://t.me/baraholka/5/31', media: 'photo' });
-    expect(rows[1]).toMatchObject({ kind: 'sell', price: 72_000, currency: 'RUB', currency_assumed: false, negotiable: false });
-    expect(rows[2]).toMatchObject({ kind: 'buy', price: 60_000 });
+    expect(rows[0]).toMatchObject({ id: 31, topic_id: 5, link: 'https://t.me/baraholka/5/31', media: 'photo' });
+    expect(Object.keys(rows[0]!)).toEqual(['id', 'date', 'topic_id', 'author', 'text', 'views', 'replies', 'reactions', 'media', 'album_id', 'link', 'photo_path']);
+    expect(String(rows[0]!.text)).toContain('Цена 65к, торг.');
+    expect(String(rows[1]!.text)).toContain('72 000 ₽');
     expect(String(rows[0]!.author)).toMatch(/^a_[0-9a-f]{12}$/);
     expect(String(rows[0]!.text)).not.toContain('123-45-67');
     expect(existsSync(String(rows[0]!.photo_path))).toBe(true);
@@ -180,7 +183,7 @@ describe('кейс 1: цены в барахолке', () => {
     const reply = await nick.call('tg_export', { chat: '@baraholka', query: 'iphone', format: 'csv', include_contacts: true });
     const path = reply.text.match(/^path: (.+)$/m)![1]!;
     const csv = readFileSync(path, 'utf8');
-    expect(csv.split('\n')[0]).toBe('id,date,topic_id,author,kind,price,currency,currency_assumed,negotiable,text,views,replies,reactions,media,album_id,link,photo_path');
+    expect(csv.split('\n')[0]).toBe('id,date,topic_id,author,text,views,replies,reactions,media,album_id,link,photo_path');
     expect(csv).toContain('@user31');
     expect(csv).toContain('+7 999 123-45-67');
   });

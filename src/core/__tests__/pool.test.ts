@@ -262,8 +262,11 @@ describe('config', () => {
     expect(() => requireApiCredentials(config)).toThrow(/TG_API_ID/);
   });
 
-  it('опечатка в наборе инструментов роняет старт', () => {
-    expect(parseToolsets('core, automate')).toEqual(['core', 'automate']);
+  it('опечатка в наборе инструментов роняет старт, снятый набор automate просто пропускается', () => {
+    expect(parseToolsets('core, Write ,index')).toEqual(['core', 'write', 'index']);
+    // старый .env с набором, которого больше нет, не должен ронять демон
+    expect(parseToolsets('core, automate, write')).toEqual(['core', 'write']);
+    expect(parseToolsets('automate')).toEqual(['core']);
     expect(parseToolsets(undefined)).toEqual(['core']);
     expect(() => parseToolsets('core,wirte')).toThrow(/Unknown toolset/);
   });

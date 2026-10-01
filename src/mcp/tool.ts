@@ -47,8 +47,6 @@ export type ToolShape = Record<string, z.ZodTypeAny>;
 export interface ToolDef<S extends ToolShape = ToolShape> {
   name: string;
   toolset: string;
-  /** Другие наборы, при которых инструмент тоже нужен (подтверждение нужно и правилам, и записи). */
-  alsoIn?: string[];
   /** Инструмент доступен при любом составе наборов: состояние шлюза агент видит всегда. */
   always?: boolean;
   title: string;
@@ -101,13 +99,7 @@ export function createToolContext(options: RegisterOptions): ToolContext {
     account: requested => services.access.resolveAccount(principal, requested || undefined),
     openChat: async (ref, accountId) => {
       const found = await services.resolver.resolve(accountId, ref);
-      if (principal.grant && !principal.grant.chatKeys.includes(found.chat.peerKey)) {
-        throw new GatewayError('ACCESS_DENIED', 'This run may only work with the chat it was started for.');
-      }
-      const decision = services.scopes.decide(principal.userId, accountId, found.chat);
-      // Личный диалог поручения открыт только токену его запуска: общего правила для пользователя нет.
-      const ownDialog = principal.grant !== undefined && !decision.allowed && decision.code === 'private';
-      if (!decision.allowed && !ownDialog) throw new GatewayError('ACCESS_DENIED', decision.reason);
+      services.scopes.assertAllowed(principal.userId, accountId, found.chat);
       return found;
     },
   };
@@ -119,10 +111,7 @@ export function registerTools(server: McpServer, tools: ToolDef[], options: Regi
   const registered: string[] = [];
 
   for (const tool of tools) {
-    const enabled = tool.always || [tool.toolset, ...(tool.alsoIn ?? [])].some(set => options.toolsets.includes(set));
-    if (!enabled) continue;
-    // Агент, запущенный по правилу или поручению, видит только инструменты своего дела.
-    if (options.principal.grant && !options.principal.grant.tools.includes(tool.name)) continue;
+    if (!tool.always && !options.toolsets.includes(tool.toolset)) continue;
     registered.push(tool.name);
 
     server.registerTool(

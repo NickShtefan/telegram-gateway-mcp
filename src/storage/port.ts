@@ -147,7 +147,7 @@ export interface ScopeRule {
   /** Ключ чата или username в нижнем регистре без @. */
   target: string;
   effect: ScopeEffect;
-  /** `owner` или `task:<id>`: поручение открывает ровно один диалог и закрывает его за собой. */
+  /** Кто поставил правило. Сейчас всегда `owner`: владелец через CLI. */
   source: string;
   createdAt: number;
 }
