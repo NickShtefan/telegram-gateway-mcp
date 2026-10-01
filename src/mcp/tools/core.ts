@@ -48,7 +48,7 @@ const tgStatus = defineTool({
   toolset: 'core',
   always: true,
   title: 'Gateway status',
-  description: 'Who you are for the gateway, which Telegram accounts you can use, their rate-limit state, and enabled toolsets. Call it first.',
+  description: 'Who you are for the gateway, which Telegram accounts you can use, their rate-limit state and private chat mode, enabled toolsets and daily write limits. Call it first.',
   input: {},
   readOnly: true,
   handler: async (_args, ctx) => {
@@ -673,7 +673,6 @@ function renderExport(job: JobRecord): string {
     return lines.join('\n');
   }
   if (job.state === 'failed') return `Export failed.\njob_id: ${job.id}\nerror: ${job.error ?? 'unknown'}`;
-  if (job.state === 'cancelled') return `Export was cancelled.\njob_id: ${job.id}`;
   const p = job.progress as { rows?: number; scanned?: number; total?: number | null; photos?: number };
   return [
     `Export is ${job.state}.`,

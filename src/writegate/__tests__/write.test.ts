@@ -392,7 +392,7 @@ describe('мелочи', () => {
     expect(closed.isError).toBe(true);
     expect(closed.text).toContain('Private chats are closed by default');
 
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'friend', effect: 'allow', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'friend', effect: 'allow' });
     const drafted = await nick.call('tg_send', { chat: '@friend', text: 'привет' });
     expect(drafted.text).toContain('Message to @friend is prepared');
     expect(drafted.text).toContain('Nothing has been done in Telegram yet');

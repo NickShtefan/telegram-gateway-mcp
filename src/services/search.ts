@@ -36,7 +36,6 @@ export interface GlobalSearchParams {
 
 export interface GlobalSearchPage {
   messages: MessageDto[];
-  total: number | null;
   next: GlobalPosition | null;
 }
 
@@ -87,7 +86,7 @@ export class SearchService {
       }),
       options,
     );
-    return this.globalPage(result, limit);
+    return this.globalPage(result);
   }
 
   /** Поиск по хэштегу в публичных постах каналов. */
@@ -104,7 +103,7 @@ export class SearchService {
       }),
       options,
     );
-    return this.globalPage(result, capped);
+    return this.globalPage(result);
   }
 
   async inChat(accountId: string, chat: EntityRecord, params: ChatSearchParams, options?: TgCallOptions): Promise<ChatSearchPage> {
@@ -146,7 +145,7 @@ export class SearchService {
     return entity && (entity.kind === 'chat' || entity.accessHash !== null) ? toInputPeer(entity) : new Api.InputPeerEmpty();
   }
 
-  private globalPage(result: unknown, _limit: number): GlobalSearchPage {
+  private globalPage(result: unknown): GlobalSearchPage {
     const slice = result as SliceLike;
     const messages = normalizeMessages(result);
     const rawCount = Array.isArray(slice.messages) ? slice.messages.length : 0;
@@ -155,7 +154,6 @@ export class SearchService {
     const hasMore = rawCount > 0 && last !== undefined && typeof slice.nextRate === 'number';
     return {
       messages,
-      total: totalCount(result),
       next: hasMore ? { offsetRate: slice.nextRate!, offsetPeerKey: last.chatKey, offsetId: last.id } : null,
     };
   }

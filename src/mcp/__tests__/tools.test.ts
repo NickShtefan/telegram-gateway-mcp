@@ -276,7 +276,7 @@ describe('безопасность', () => {
     expect(closed.text).toContain('Private chats are closed by default');
     expect(gw.tg.callsOf('messages.GetHistory')).toHaveLength(0);
 
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow' });
     expect((await nick.call('tg_read_history', { chat: '@seller' })).isError).toBe(false);
 
     // второму пользователю тот же диалог на общем аккаунте по-прежнему закрыт
@@ -335,12 +335,12 @@ describe('безопасность', () => {
     expect(foreign.text).not.toContain('другой ветки');
 
     // владелец закрыл группу обсуждений: комментарии через ссылку тоже закрыты
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000600', effect: 'deny', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000600', effect: 'deny' });
     expect((await nick.call('tg_get_message', { link: 'https://t.me/stonksnws/30?comment=45' })).text).toContain('deny list');
   });
 
   it('карточка человека, закрытого владельцем, не показывается', async () => {
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'deny', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'deny' });
     const card = await nick.call('tg_resolve', { ref: '@seller' });
     expect(card.isError).toBe(true);
     expect(card.text).toContain('deny list');

@@ -2,7 +2,7 @@
  * Страж зависаний. Зависший вызов teleproto нельзя безопасно отменить, а второй
  * клиент на той же сессии даёт AUTH_KEY_DUPLICATED. Поэтому процесс выходит
  * с кодом 1, и супервизор (launchd) поднимает его с чистого листа.
- * Перенесено из helper `gramFatalRecovery.ts` и `statsRefresher.ts` (watchdog).
+ * Перенесено из helper `gramFatalRecovery.ts`.
  */
 import { createLogger, type Logger } from './log.js';
 
@@ -17,7 +17,7 @@ export interface FatalHandlerOptions {
   prepare?: () => void;
   /**
    * Сколько ждать между `prepare` и выходом. За это время обработчики ошибок
-   * успевают записать исход: иначе согласование осталось бы «выполняется» навсегда.
+   * успевают записать исход: иначе запрос на запись остался бы «выполняется» навсегда.
    */
   graceMs?: number;
 }
@@ -48,49 +48,4 @@ export function createFatalHandler(options: FatalHandlerOptions = {}): FatalHand
     if (options.graceMs && options.graceMs > 0) setTimeout(finish, options.graceMs);
     else finish();
   };
-}
-
-export interface WatchdogOptions {
-  /** Сколько пропущенных тиков подряд считаются зависанием. */
-  maxMissedTicks: number;
-  onStuck: (missed: number) => void;
-  log?: Logger;
-  name: string;
-}
-
-/**
- * Сторож периодического воркера: тик не должен начинаться, пока идёт прошлый.
- * Считает пропуски подряд и поднимает тревогу, когда их слишком много.
- */
-export class TickWatchdog {
-  private busy = false;
-  private missed = 0;
-  private readonly log: Logger;
-
-  constructor(private readonly options: WatchdogOptions) {
-    this.log = options.log ?? createLogger('watchdog');
-  }
-
-  /** true, если тик можно начинать. */
-  begin(): boolean {
-    if (this.busy) {
-      this.missed++;
-      this.log.warn(`${this.options.name}: previous tick still running`, { missed: this.missed });
-      if (this.missed >= this.options.maxMissedTicks) {
-        this.options.onStuck(this.missed);
-      }
-      return false;
-    }
-    this.busy = true;
-    this.missed = 0;
-    return true;
-  }
-
-  end(): void {
-    this.busy = false;
-  }
-
-  get missedTicks(): number {
-    return this.missed;
-  }
 }

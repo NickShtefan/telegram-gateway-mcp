@@ -39,12 +39,3 @@ export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: st
 export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, Math.min(Math.max(0, ms), MAX_TIMER_MS)));
 }
-
-/** Число из env с проверкой диапазона; при мусоре возвращает значение по умолчанию. */
-export function envNumber(name: string, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') return fallback;
-  const n = Number(raw.trim());
-  if (!Number.isFinite(n) || n < min || n > max) return fallback;
-  return n;
-}

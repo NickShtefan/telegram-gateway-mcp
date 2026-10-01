@@ -169,7 +169,7 @@ export function formatMessageList(messages: MessageDto[], options: ListOptions):
   return lines.join('\n');
 }
 
-/** Пары «ключ: значение» одной карточкой, для tg_resolve и tg_status. */
+/** Пары «ключ: значение» одной карточкой, для tg_resolve. */
 export function formatCard(title: string, rows: Array<[string, string | number | null | undefined]>): string {
   const lines = [title];
   for (const [key, value] of rows) {

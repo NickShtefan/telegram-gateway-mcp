@@ -11,7 +11,7 @@
  * Чего не было ни там, ни там:
  * - бюджет ожидания: если пауза длиннее, чем готов ждать вызывающий, он сразу
  *   получает ошибку с retry_after, а не висит;
- * - приоритет: вызовы агента идут раньше фоновых (наблюдатель, индекс).
+ * - приоритет: вызовы агента идут раньше фоновых задач (выгрузка, индексация).
  */
 import { classifyError, floodInfo, GatewayError } from './errors.js';
 import { createLogger, type Logger } from './log.js';
@@ -24,7 +24,7 @@ export interface LimiterOptions {
   minIntervalMs?: number;
   /** Вызовов в минуту на аккаунт. */
   perMinute?: number;
-  /** FLOOD_WAIT дольше этого не пережидается никем, даже фоном. */
+  /** FLOOD_WAIT дольше этого не пережидается никем, даже фоновой задачей. */
   floodCapSeconds?: number;
   maxFloodRetries?: number;
   /** Дедлайн самого вызова, если не задан в опциях вызова. */
@@ -53,10 +53,8 @@ export interface CallOptions {
 
 export interface LaneStatus {
   queued: number;
-  running: boolean;
   callsInWindow: number;
   perMinute: number;
-  lastCallAt: number | null;
   /** Секунды до конца паузы FLOOD_WAIT, 0 если паузы нет. */
   floodWaitSeconds: number;
   /** Методы на долгой паузе: Telegram считает лимиты по методам, остальные вызовы работают. */
@@ -172,7 +170,7 @@ export class AccountLimiter {
     const lane = this.lanes.get(accountId);
     const now = this.now();
     if (!lane) {
-      return { queued: 0, running: false, callsInWindow: 0, perMinute: this.perMinute, lastCallAt: null, floodWaitSeconds: 0, pausedMethods: [] };
+      return { queued: 0, callsInWindow: 0, perMinute: this.perMinute, floodWaitSeconds: 0, pausedMethods: [] };
     }
     const pausedMethods: Array<{ label: string; seconds: number }> = [];
     for (const [label, until] of lane.methodPausedUntil) {
@@ -181,51 +179,11 @@ export class AccountLimiter {
     }
     return {
       queued: lane.queue.length,
-      running: lane.running,
       callsInWindow: this.windowCount(lane, now),
       perMinute: this.perMinute,
-      lastCallAt: lane.lastCallAt > 0 ? lane.lastCallAt : null,
       floodWaitSeconds: Math.max(0, Math.ceil((lane.floodWaitUntil - now) / 1000)),
       pausedMethods,
     };
-  }
-
-  /**
-   * Наименее загруженный аккаунт из списка: для фоновых чтений публичных
-   * каналов, которым всё равно, каким аккаунтом читать. Перенесено из
-   * channel-scope `pickActiveClientId`.
-   */
-  pickLeastLoaded(accountIds: string[]): string | null {
-    if (accountIds.length === 0) return null;
-    const now = this.now();
-    let best: string | null = null;
-    let bestScore = Infinity;
-    for (const id of accountIds) {
-      const lane = this.lanes.get(id);
-      if (lane && lane.floodWaitUntil > now) continue;
-      const score = lane ? this.windowCount(lane, now) + lane.queue.length : 0;
-      if (score < bestScore) {
-        bestScore = score;
-        best = id;
-      }
-    }
-    if (best) return best;
-    // Все на паузе: берём тот, что освободится раньше.
-    let soonest = Infinity;
-    for (const id of accountIds) {
-      const until = this.lanes.get(id)?.floodWaitUntil ?? 0;
-      if (until < soonest) {
-        soonest = until;
-        best = id;
-      }
-    }
-    return best;
-  }
-
-  /** Ставит аккаунт на паузу извне, например после FLOOD_WAIT при скачивании файла. */
-  pause(accountId: string, seconds: number): void {
-    const lane = this.lane(accountId);
-    lane.floodWaitUntil = Math.max(lane.floodWaitUntil, this.now() + seconds * 1000);
   }
 
   /** Останавливает приём и отклоняет всё, что ждёт в очередях. */

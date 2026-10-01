@@ -117,10 +117,6 @@ export class ClientPool {
     return this.identities.get(accountId) ?? null;
   }
 
-  isConnected(accountId: string): boolean {
-    return this.clients.has(accountId);
-  }
-
   /** Сессия перестала работать: клиент закрывается, аккаунт помечается. */
   async markUnauthorized(accountId: string): Promise<void> {
     this.options.storage.accounts.setStatus(accountId, 'unauthorized');

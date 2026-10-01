@@ -165,15 +165,17 @@ export class SqliteStorage implements Storage {
     const map = (row: Row): UserRecord => ({
       id: str(row.id),
       tokenSha256: str(row.token_sha256),
-      telegramId: strOrNull(row.telegram_id),
       defaultAccount: strOrNull(row.default_account),
       createdAt: num(row.created_at),
     });
     return {
       create: user => {
-        this.prepare(
-          'INSERT INTO users (id, token_sha256, telegram_id, default_account, created_at) VALUES (?, ?, ?, ?, ?)',
-        ).run(user.id, user.tokenSha256, user.telegramId ?? null, user.defaultAccount ?? null, this.now());
+        this.prepare('INSERT INTO users (id, token_sha256, default_account, created_at) VALUES (?, ?, ?, ?)').run(
+          user.id,
+          user.tokenSha256,
+          user.defaultAccount ?? null,
+          this.now(),
+        );
         return map(this.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as Row);
       },
       get: id => {
@@ -188,9 +190,6 @@ export class SqliteStorage implements Storage {
       update: (id, patch) => {
         if (patch.tokenSha256 !== undefined) {
           this.prepare('UPDATE users SET token_sha256 = ? WHERE id = ?').run(patch.tokenSha256, id);
-        }
-        if (patch.telegramId !== undefined) {
-          this.prepare('UPDATE users SET telegram_id = ? WHERE id = ?').run(patch.telegramId, id);
         }
         if (patch.defaultAccount !== undefined) {
           this.prepare('UPDATE users SET default_account = ? WHERE id = ?').run(patch.defaultAccount, id);
@@ -292,9 +291,6 @@ export class SqliteStorage implements Storage {
         const row = this.prepare('SELECT data, iv FROM sessions WHERE account_id = ?').get(accountId) as Row | undefined;
         return row ? { data: str(row.data), iv: str(row.iv) } : null;
       },
-      remove: accountId => {
-        this.prepare('DELETE FROM sessions WHERE account_id = ?').run(accountId);
-      },
     };
   }
 
@@ -368,10 +364,6 @@ export class SqliteStorage implements Storage {
       },
       remove: (accountId, peerKey) => {
         this.prepare('DELETE FROM entities WHERE account_id = ? AND peer_key = ?').run(accountId, peerKey);
-      },
-      count: accountId => {
-        const row = this.prepare('SELECT COUNT(*) AS n FROM entities WHERE account_id = ?').get(accountId) as Row;
-        return num(row.n);
       },
     };
   }
@@ -517,36 +509,30 @@ export class SqliteStorage implements Storage {
       accountId: str(row.account_id),
       target: str(row.target),
       effect: str(row.effect) as ScopeEffect,
-      source: str(row.source),
       createdAt: num(row.created_at),
     });
     return {
       put: rule => {
         this.prepare(
-          `INSERT INTO scope_rules (user_id, account_id, target, effect, source, created_at) VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(user_id, account_id, target, source) DO UPDATE SET effect = excluded.effect`,
-        ).run(rule.userId, rule.accountId, rule.target.replace(/^@/, '').toLowerCase(), rule.effect, rule.source, this.now());
+          `INSERT INTO scope_rules (user_id, account_id, target, effect, created_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, account_id, target) DO UPDATE SET effect = excluded.effect`,
+        ).run(rule.userId, rule.accountId, rule.target.replace(/^@/, '').toLowerCase(), rule.effect, this.now());
       },
       list: (userId, accountId) =>
         (
-          this.prepare('SELECT * FROM scope_rules WHERE user_id = ? AND account_id = ? ORDER BY target, source').all(
+          this.prepare('SELECT * FROM scope_rules WHERE user_id = ? AND account_id = ? ORDER BY target').all(
             userId,
             accountId,
           ) as Row[]
         ).map(map),
-      remove: (userId, accountId, target, source) => {
-        const t = target.replace(/^@/, '').toLowerCase();
-        const result = source
-          ? this.prepare('DELETE FROM scope_rules WHERE user_id = ? AND account_id = ? AND target = ? AND source = ?').run(
-              userId,
-              accountId,
-              t,
-              source,
-            )
-          : this.prepare('DELETE FROM scope_rules WHERE user_id = ? AND account_id = ? AND target = ?').run(userId, accountId, t);
-        return num(result.changes);
-      },
-      removeBySource: source => num(this.prepare('DELETE FROM scope_rules WHERE source = ?').run(source).changes),
+      remove: (userId, accountId, target) =>
+        num(
+          this.prepare('DELETE FROM scope_rules WHERE user_id = ? AND account_id = ? AND target = ?').run(
+            userId,
+            accountId,
+            target.replace(/^@/, '').toLowerCase(),
+          ).changes,
+        ),
     };
   }
 
@@ -562,9 +548,6 @@ export class SqliteStorage implements Storage {
         this.prepare(
           'INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run(key, value);
-      },
-      remove: key => {
-        this.prepare('DELETE FROM kv WHERE key = ?').run(key);
       },
     };
   }

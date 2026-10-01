@@ -127,7 +127,6 @@ function activeUsername(e: { username?: string | null; usernames?: Array<{ usern
 }
 
 interface RawPeer {
-  className?: string;
   userId?: unknown;
   chatId?: unknown;
   channelId?: unknown;
@@ -168,7 +167,6 @@ interface RawAttribute {
   w?: number;
   h?: number;
   voice?: boolean;
-  roundMessage?: boolean;
 }
 
 interface RawMedia {

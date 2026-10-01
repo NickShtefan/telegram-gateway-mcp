@@ -7,7 +7,7 @@
  * Авторы хэшируются, телефоны маскируются, пока владелец явно не попросил иначе.
  *
  * Постраничный проход с отсечкой по дате взят из channel-scope
- * `archiveService.ts:180`, извлечение ссылок из `db/export/export.ts:87`.
+ * `archiveService.ts:180`.
  */
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, writeSync } from 'node:fs';
@@ -194,7 +194,7 @@ export class ExportService {
 
       let offsetId = 0;
       for (;;) {
-        if (context.cancelled()) break;
+        if (context.stopping()) break;
         const page = params.query
           ? await this.deps.search.inChat(
               params.accountId,

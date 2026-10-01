@@ -273,22 +273,22 @@ describe('JobManager', () => {
     expect(maxRunning).toBe(1);
   });
 
-  it('отмена: задача в очереди снимается сразу, выполняемая видит флаг', async () => {
+  it('остановка шлюза: выполняемая задача видит флаг и остаётся в базе выполняемой, новые не стартуют', async () => {
     const jobs = new JobManager({ storage, log: silent, concurrency: 1 });
-    let sawCancel = false;
+    let sawStop = false;
     jobs.register('export', async ctx => {
-      while (!ctx.cancelled()) await new Promise(r => setTimeout(r, 5));
-      sawCancel = true;
+      while (!ctx.stopping()) await new Promise(r => setTimeout(r, 5));
+      sawStop = true;
       return { rows: 10 };
     });
     const running = jobs.start({ userId: 'nick', kind: 'export', params: {} });
     const queued = jobs.start({ userId: 'nick', kind: 'export', params: {} });
     await vi.waitFor(() => expect(jobs.get(running.id, 'nick').state).toBe('running'));
-    expect(jobs.cancel(queued.id, 'nick').state).toBe('cancelled');
-    jobs.cancel(running.id, 'nick');
-    const done = await jobs.waitFor(running.id, 'nick', 1_000);
-    expect(sawCancel).toBe(true);
-    expect(done).toMatchObject({ state: 'cancelled', result: { rows: 10 } });
+    jobs.stop();
+    await vi.waitFor(() => expect(sawStop).toBe(true));
+    // исход прерванной задачи не записывается: после старта она вернётся в очередь
+    expect(jobs.get(running.id, 'nick').state).toBe('running');
+    expect(jobs.get(queued.id, 'nick').state).toBe('queued');
   });
 
   it('очередь длиннее полусотни: первой идёт самая старая задача', async () => {

@@ -116,7 +116,7 @@ describe('tg_list_dialogs: чаты аккаунта', () => {
 
     // один чат, открытый правилом, тоже виден
     writePrivateMode(gw.storage, 'nick', 'agent', 'closed');
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'friend', effect: 'allow', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'friend', effect: 'allow' });
     expect((await nick.call('tg_list_dialogs', { type: 'private' })).text).toContain('@friend');
   });
 
@@ -141,7 +141,7 @@ describe('tg_list_dialogs: чаты аккаунта', () => {
   });
 
   it('чат, закрытый владельцем, в список не попадает; запуск по правилу список не видит', async () => {
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000700', effect: 'deny', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000700', effect: 'deny' });
     const reply = await nick.call('tg_list_dialogs');
     expect(reply.text).not.toContain('baraholka_cy');
     expect(reply.text).toContain('3 shown');
@@ -232,7 +232,7 @@ describe('набор discover: поиск каналов', () => {
     expect(gw.tg.callsOf('contacts.ResolveUsername')).toHaveLength(before);
 
     // канал из списка запрета владельца не показывается
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'crypto_news', effect: 'deny', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'crypto_news', effect: 'deny' });
     expect((await agent.call('tg_find_channels', { query: 'крипто' })).text).not.toContain('crypto_news');
     expect((await agent.call('tg_find_channels', { query: 'я' })).isError).toBe(true);
   });
@@ -413,7 +413,7 @@ describe('набор analytics: статистика канала', () => {
     expect((await agent.call('tg_channel_stats', { chat: '@stonksnws' })).text).toContain('No posts in this period.');
 
     gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'seller' })] }));
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow' });
     expect((await agent.call('tg_channel_stats', { chat: '@seller' })).text).toContain('not for people');
     expect((await nick.tools()).map(t => t.name)).not.toContain('tg_channel_stats');
   });
@@ -561,7 +561,7 @@ describe('набор index: локальный индекс и поиск по �
     expect(denied.text).toContain('was created by nick');
 
     // владелец закрыл чат первому пользователю: индекс для него пропадает из поиска и списка
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000700', effect: 'deny', source: 'owner' });
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000700', effect: 'deny' });
     expect((await agent.call('tg_local_search', { query: 'велосипед' })).text).toContain('Nothing is indexed yet');
     expect((await agent.call('tg_index', { action: 'list' })).text).toContain('Indexed chats: 0');
     expect((await partner.call('tg_local_search', { query: 'велосипед', account: 'agent' })).text).toContain('3 of 3 matches');

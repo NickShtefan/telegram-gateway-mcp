@@ -37,10 +37,7 @@ export interface HistoryPage {
 }
 
 interface RawMessage {
-  className?: string;
   id?: number;
-  date?: number;
-  groupedId?: unknown;
 }
 
 function rawMessages(result: unknown): RawMessage[] {

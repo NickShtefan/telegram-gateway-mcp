@@ -224,7 +224,7 @@ function userCommand(args: string[], storage: Storage, io: CliIo): number {
       return 0;
     }
     default:
-      throw new GatewayError('INVALID_ARGUMENT', 'Usage: tg-mcp user add|list|token|default|telegram|remove');
+      throw new GatewayError('INVALID_ARGUMENT', 'Usage: tg-mcp user add|list|token|default|remove');
   }
 }
 
@@ -280,7 +280,7 @@ function scopeCommand(args: string[], storage: Storage, io: CliIo): number {
       const rules = listScopes(storage, need(user, 'user id'), need(account, 'account id'));
       io.out(`Private chats: ${PRIVATE_MODE_NOTES[getPrivateMode(storage, user!, account!)]}`);
       if (rules.length === 0) io.out('No rules for single chats: channels and groups are open, Telegram service chats are closed.');
-      for (const r of rules) io.out(`${r.effect}  ${/^-?\d+$/.test(r.target) ? r.target : '@' + r.target}  (${r.source})`);
+      for (const r of rules) io.out(`${r.effect}  ${/^-?\d+$/.test(r.target) ? r.target : '@' + r.target}`);
       return 0;
     }
     case 'allow':

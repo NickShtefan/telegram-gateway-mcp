@@ -1,27 +1,30 @@
 import { RPCMessageToError } from 'teleproto/errors';
 import { describe, expect, it } from 'vitest';
-import { classifyError, floodInfo, GatewayError, getFloodWaitSeconds, telegramErrorCode } from '../errors.js';
+import { classifyError, floodInfo, GatewayError, telegramErrorCode } from '../errors.js';
 import { DeadlineError } from '../time.js';
 
-describe('getFloodWaitSeconds', () => {
-  it('берёт seconds из FloodWaitError GramJS', () => {
-    expect(getFloodWaitSeconds({ seconds: 42, errorMessage: 'FLOOD_WAIT_42', message: 'A wait of 42 seconds is required' })).toBe(42);
+/** Секунды ожидания; null, если это не ошибка ожидания. */
+const waitSeconds = (err: unknown): number | null => floodInfo(err)?.seconds ?? null;
+
+describe('floodInfo: секунды ожидания', () => {
+  it('берёт число из ошибки библиотеки', () => {
+    expect(waitSeconds({ seconds: 42, errorMessage: 'FLOOD_WAIT_42', message: 'A wait of 42 seconds is required' })).toBe(42);
   });
 
   it('разбирает число из текста', () => {
-    expect(getFloodWaitSeconds(new Error('420: FLOOD_WAIT_17 (caused by messages.Search)'))).toBe(17);
-    expect(getFloodWaitSeconds(new Error('FLOOD_PREMIUM_WAIT_5'))).toBe(5);
-    expect(getFloodWaitSeconds(new Error('SLOWMODE_WAIT_30'))).toBe(30);
+    expect(waitSeconds(new Error('420: FLOOD_WAIT_17 (caused by messages.Search)'))).toBe(17);
+    expect(waitSeconds(new Error('FLOOD_PREMIUM_WAIT_5'))).toBe(5);
+    expect(waitSeconds(new Error('SLOWMODE_WAIT_30'))).toBe(30);
   });
 
   it('возвращает 0, если FLOOD_WAIT без числа', () => {
-    expect(getFloodWaitSeconds(new Error('FLOOD_WAIT'))).toBe(0);
+    expect(waitSeconds(new Error('FLOOD_WAIT'))).toBe(0);
   });
 
   it('не считает ожиданием чужие ошибки с полем seconds', () => {
-    expect(getFloodWaitSeconds({ seconds: 3, errorMessage: 'PHONE_MIGRATE_2', message: 'migrate' })).toBeNull();
-    expect(getFloodWaitSeconds(new Error('CHANNEL_PRIVATE'))).toBeNull();
-    expect(getFloodWaitSeconds(null)).toBeNull();
+    expect(waitSeconds({ seconds: 3, errorMessage: 'PHONE_MIGRATE_2', message: 'migrate' })).toBeNull();
+    expect(waitSeconds(new Error('CHANNEL_PRIVATE'))).toBeNull();
+    expect(waitSeconds(null)).toBeNull();
   });
 });
 
@@ -83,7 +86,7 @@ describe('ошибки в том виде, в каком их создаёт б�
     // в тексте ошибки кода нет: распознавание не должно опираться на него
     expect(err.message).not.toContain('FLOOD_WAIT');
     expect(floodInfo(err)).toEqual({ seconds: 42, scope: 'account' });
-    // прежняя форма GramJS (errorMessage «FLOOD») тоже распознаётся
+    // базовая ошибка 420 (errorMessage «FLOOD») тоже распознаётся
     expect(floodInfo({ errorMessage: 'FLOOD', seconds: 42, message: 'A wait of 42 seconds is required' })).toEqual({ seconds: 42, scope: 'account' });
     expect(classifyError(err)).toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 42 });
     expect(floodInfo(realTelegramError(420, 'FLOOD_PREMIUM_WAIT_7'))).toEqual({ seconds: 7, scope: 'account' });

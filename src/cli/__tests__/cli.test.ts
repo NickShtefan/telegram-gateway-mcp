@@ -228,12 +228,6 @@ describe('lock: гонки и мусор', () => {
 });
 
 describe('main', () => {
-  it('команды runner больше нет: шлюз агентов не запускает', async () => {
-    expect(await main(['runner', '--agent', 'claude -p {prompt}'], { io, config, storage })).not.toBe(0);
-    expect(await main(['help'], { io, config, storage })).toBe(0);
-    expect(out.join('\n')).not.toContain('runner');
-  });
-
   it('help и неизвестная команда', async () => {
     expect(await main(['help'], { io, config, storage })).toBe(0);
     expect(out.join('\n')).toContain('tg-mcp login --account');
@@ -268,8 +262,8 @@ describe('main', () => {
     expect(await main(['scope', 'allow', 'nick', 'agent', '@Seller'], { io, config, storage })).toBe(0);
     expect(await main(['scope', 'deny', 'nick', 'agent', '-1001782171896'], { io, config, storage })).toBe(0);
     expect(await main(['scope', 'list', 'nick', 'agent'], { io, config, storage })).toBe(0);
-    expect(out.join('\n')).toContain('allow  @seller  (owner)');
-    expect(out.join('\n')).toContain('deny  -1001782171896  (owner)');
+    expect(out.join('\n')).toContain('allow  @seller');
+    expect(out.join('\n')).toContain('deny  -1001782171896');
     expect(await main(['scope', 'remove', 'nick', 'agent', 't.me/seller'], { io, config, storage })).toBe(0);
     expect(storage.scopes.list('nick', 'agent')).toHaveLength(1);
     // чужой аккаунт и инвайт не принимаются

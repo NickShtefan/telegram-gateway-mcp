@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { randomToken, safeEqualHex, seal, sha256Hex, unseal } from '../crypto.js';
 import { createLogger, parseLogLevel, redactFields } from '../log.js';
 import { normalizeReactions, reactionKey, totalReactions } from '../reactions.js';
-import { DeadlineError, envNumber, withTimeout } from '../time.js';
+import { DeadlineError, withTimeout } from '../time.js';
 
 describe('crypto', () => {
   it('шифрует и расшифровывает сессию', () => {
@@ -53,11 +53,9 @@ describe('log', () => {
 });
 
 describe('reactions', () => {
-  it('даёт единый ключ для teleproto и Bot API', () => {
-    expect(reactionKey({ emoticon: '👍' })).toBe('👍');
-    expect(reactionKey({ type: 'emoji', emoji: '👍' })).toBe('👍');
-    expect(reactionKey({ documentId: 5368324170671202286n })).toBe('custom:5368324170671202286');
-    expect(reactionKey({ type: 'custom_emoji', custom_emoji_id: '42' })).toBe('custom:42');
+  it('даёт ключ реакции: эмодзи, кастомный эмодзи, платная', () => {
+    expect(reactionKey({ className: 'ReactionEmoji', emoticon: '👍' })).toBe('👍');
+    expect(reactionKey({ className: 'ReactionCustomEmoji', documentId: 5368324170671202286n })).toBe('custom:5368324170671202286');
     expect(reactionKey({ className: 'ReactionPaid' })).toBe('paid');
     expect(reactionKey(null)).toBe('null');
   });
@@ -98,12 +96,4 @@ describe('time', () => {
     }
   });
 
-  it('envNumber возвращает значение по умолчанию на мусоре', () => {
-    process.env.TG_MCP_TEST_NUM = 'abc';
-    expect(envNumber('TG_MCP_TEST_NUM', 7)).toBe(7);
-    process.env.TG_MCP_TEST_NUM = '12';
-    expect(envNumber('TG_MCP_TEST_NUM', 7)).toBe(12);
-    expect(envNumber('TG_MCP_TEST_NUM', 7, 0, 10)).toBe(7);
-    delete process.env.TG_MCP_TEST_NUM;
-  });
 });

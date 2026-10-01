@@ -315,4 +315,29 @@ export const MIGRATIONS: string[] = [
   DROP TABLE IF EXISTS watch_state;
   DROP TABLE IF EXISTS watches;
   `,
+
+  // 7: остатки бота согласований и поручений в оставшихся таблицах. Telegram id пользователя и
+  // сообщение бота не нужны (решение 23); источник у запросов, записей журнала и правил скоупов
+  // всегда был один, а правила, открытые поручениями, удаляются вместе с ним (решение 25).
+  `
+  ALTER TABLE users DROP COLUMN telegram_id;
+  ALTER TABLE approvals DROP COLUMN bot_chat_id;
+  ALTER TABLE approvals DROP COLUMN bot_message_id;
+  ALTER TABLE approvals DROP COLUMN source;
+  ALTER TABLE writes DROP COLUMN source;
+
+  CREATE TABLE scope_rules_v7 (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    -- ключ чата, username в нижнем регистре без @ или служебная цель режима личных чатов
+    target TEXT NOT NULL,
+    effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, account_id, target)
+  );
+  INSERT INTO scope_rules_v7 (user_id, account_id, target, effect, created_at)
+    SELECT user_id, account_id, target, effect, created_at FROM scope_rules WHERE source = 'owner';
+  DROP TABLE scope_rules;
+  ALTER TABLE scope_rules_v7 RENAME TO scope_rules;
+  `,
 ];

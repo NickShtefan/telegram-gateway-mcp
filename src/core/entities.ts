@@ -142,7 +142,6 @@ export function harvestEntities(result: unknown): EntityInfo[] {
 }
 
 interface PeerLike {
-  className?: string;
   userId?: unknown;
   chatId?: unknown;
   channelId?: unknown;

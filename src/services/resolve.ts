@@ -9,7 +9,7 @@
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
 import { parsePeerKey, peerKey as makePeerKey } from '../core/chatId.js';
-import { entityFromApi, peerKeyOfPeer, toInputChannel, toInputPeer, toInputUser } from '../core/entities.js';
+import { entityFromApi, peerKeyOfPeer, toInputChannel, toInputUser } from '../core/entities.js';
 import { GatewayError, isGatewayError } from '../core/errors.js';
 import { safeLabel } from '../policy/envelope.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
@@ -248,10 +248,6 @@ export class Resolver {
       if (isGatewayError(err, 'CHAT_NOT_FOUND')) this.forget(accountId, entity.peerKey);
       throw err;
     }
-  }
-
-  inputPeer(entity: EntityRecord): Api.TypeInputPeer {
-    return toInputPeer(entity);
   }
 
   private usable(entity: EntityRecord): boolean {

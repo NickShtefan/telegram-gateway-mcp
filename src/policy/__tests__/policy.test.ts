@@ -67,23 +67,24 @@ describe('ScopePolicy', () => {
   });
 
   it('служебные чаты закрыты всегда, даже правилом allow', () => {
-    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '777000', effect: 'allow', source: 'owner' });
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '777000', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', { peerKey: '777000', kind: 'user' })).toBe(false);
     expect(scopes.isAllowed('nick', 'agent', { peerKey: '999', kind: 'user', username: 'BotFather' })).toBe(false);
   });
 
   it('allow открывает один диалог одному пользователю на одном аккаунте', () => {
-    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '@Seller', effect: 'allow', source: 'task:t1' });
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '@Seller', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', seller)).toBe(true);
     expect(scopes.isAllowed('partner', 'agent', seller)).toBe(false);
     expect(scopes.isAllowed('nick', 'nick', seller)).toBe(false);
-    expect(storage.scopes.removeBySource('task:t1')).toBe(1);
+    expect(storage.scopes.remove('nick', 'agent', 'seller')).toBe(1);
     expect(scopes.isAllowed('nick', 'agent', seller)).toBe(false);
   });
 
   it('deny сильнее allow', () => {
-    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: channel.peerKey, effect: 'deny', source: 'owner' });
-    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'news', effect: 'allow', source: 'task:t2' });
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: channel.peerKey, effect: 'deny' });
+    // правило по id и правило по username относятся к одному чату
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'news', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(false);
     expect(storage.scopes.remove('nick', 'agent', channel.peerKey)).toBe(1);
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(true);
@@ -108,7 +109,7 @@ describe('режим личных чатов', () => {
     expect(decision.allowed === false && decision.reason).toContain('open for sending only');
 
     // чат, открытый правилом, читается и в режиме send
-    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow', source: 'owner' });
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', seller)).toBe(true);
     // каналам режим ничего не меняет
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(true);
@@ -122,7 +123,7 @@ describe('режим личных чатов', () => {
 
   it('служебные чаты и запрет владельца сильнее режима', () => {
     writePrivateMode(storage, 'nick', 'agent', 'open');
-    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '42', effect: 'deny', source: 'owner' });
+    storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '42', effect: 'deny' });
     for (const action of ['read', 'write'] as const) {
       expect(scopes.isAllowed('nick', 'agent', seller, action)).toBe(false);
       expect(scopes.isAllowed('nick', 'agent', { peerKey: '777000', kind: 'user' }, action)).toBe(false);

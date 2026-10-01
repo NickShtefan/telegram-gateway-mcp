@@ -1,5 +1,6 @@
 /**
- * Список чатов аккаунта: каналы и группы, в которых он состоит.
+ * Список чатов аккаунта: каналы, группы и личные диалоги. Что из этого
+ * показать агенту, решает инструмент по скоупам.
  *
  * `messages.GetDialogs` отдаёт диалоги страницами, от самых свежих. Позиция
  * следующей страницы задаётся датой и id последнего сообщения диалога и самим
@@ -39,8 +40,6 @@ export interface DialogDto {
 
 export interface DialogsPage {
   dialogs: DialogDto[];
-  /** Сколько всего диалогов в папке, если Telegram сообщил. */
-  total: number | null;
   /** Позиция следующей страницы; null, если папка прочитана до конца. */
   next: DialogsPosition | null;
 }
@@ -51,7 +50,6 @@ interface RawDialog {
   topMessage?: number;
   unreadCount?: number;
   pinned?: boolean;
-  folderId?: number;
 }
 
 interface RawMessage {
@@ -62,7 +60,6 @@ interface RawMessage {
 
 interface RawDialogs {
   className?: string;
-  count?: number;
   dialogs?: RawDialog[];
   messages?: RawMessage[];
   chats?: unknown[];
@@ -138,6 +135,6 @@ export class DialogsService {
 
     // messages.Dialogs приходит, когда диалогов меньше страницы: дальше читать нечего.
     const complete = result.className === 'messages.Dialogs' || raw.length < limit || lastPosition === null;
-    return { dialogs, total: typeof result.count === 'number' ? result.count : null, next: complete ? null : lastPosition };
+    return { dialogs, next: complete ? null : lastPosition };
   }
 }

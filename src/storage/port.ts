@@ -14,13 +14,11 @@ export interface UserRecord {
   id: string;
   /** SHA-256 от bearer-токена. Сам токен шлюз не хранит. */
   tokenSha256: string;
-  /** Telegram id человека. Сейчас не используется: бота согласований нет (решение 23). */
-  telegramId: string | null;
   defaultAccount: string | null;
   createdAt: number;
 }
 
-export type AccountStatus = 'needs_login' | 'active' | 'unauthorized' | 'frozen';
+export type AccountStatus = 'needs_login' | 'active' | 'unauthorized';
 
 export interface AccountRecord {
   id: string;
@@ -34,11 +32,11 @@ export interface AccountRecord {
 }
 
 export interface UsersRepo {
-  create(user: { id: string; tokenSha256: string; telegramId?: string | null; defaultAccount?: string | null }): UserRecord;
+  create(user: { id: string; tokenSha256: string; defaultAccount?: string | null }): UserRecord;
   get(id: string): UserRecord | null;
   findByTokenHash(tokenSha256: string): UserRecord | null;
   list(): UserRecord[];
-  update(id: string, patch: { tokenSha256?: string; telegramId?: string | null; defaultAccount?: string | null }): void;
+  update(id: string, patch: { tokenSha256?: string; defaultAccount?: string | null }): void;
   remove(id: string): void;
 }
 
@@ -58,7 +56,6 @@ export interface AccountsRepo {
 export interface SessionsRepo {
   put(accountId: string, sealed: Sealed): void;
   get(accountId: string): Sealed | null;
-  remove(accountId: string): void;
 }
 
 // ---------- кэш сущностей: accessHash привязан к аккаунту ----------
@@ -82,7 +79,6 @@ export interface EntitiesRepo {
   get(accountId: string, peerKey: string): EntityRecord | null;
   getByUsername(accountId: string, username: string): EntityRecord | null;
   remove(accountId: string, peerKey: string): void;
-  count(accountId: string): number;
 }
 
 // ---------- аудит ----------
@@ -111,7 +107,7 @@ export interface AuditRepo {
 
 // ---------- задачи (долгие операции) ----------
 
-export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+export type JobState = 'queued' | 'running' | 'done' | 'failed';
 
 export interface JobRecord {
   id: string;
@@ -144,19 +140,17 @@ export type ScopeEffect = 'allow' | 'deny';
 export interface ScopeRule {
   userId: string;
   accountId: string;
-  /** Ключ чата или username в нижнем регистре без @. */
+  /** Ключ чата, username в нижнем регистре без @ или служебная цель режима личных чатов. */
   target: string;
   effect: ScopeEffect;
-  /** Кто поставил правило. Сейчас всегда `owner`: владелец через CLI. */
-  source: string;
   createdAt: number;
 }
 
+/** Правила ставит только владелец через CLI; на одну цель одно правило. */
 export interface ScopesRepo {
   put(rule: Omit<ScopeRule, 'createdAt'>): void;
   list(userId: string, accountId: string): ScopeRule[];
-  remove(userId: string, accountId: string, target: string, source?: string): number;
-  removeBySource(source: string): number;
+  remove(userId: string, accountId: string, target: string): number;
 }
 
 // ---------- ключ-значение для мелкого состояния ----------
@@ -164,7 +158,6 @@ export interface ScopesRepo {
 export interface KvRepo {
   get(key: string): string | null;
   set(key: string, value: string): void;
-  remove(key: string): void;
 }
 
 export interface Storage {

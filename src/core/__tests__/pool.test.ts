@@ -97,7 +97,7 @@ describe('ClientPool', () => {
     await expect(pool.getClient('agent')).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
     expect(storage.accounts.get('agent')?.status).toBe('unauthorized');
     expect(created[0]!.destroy).toHaveBeenCalled();
-    expect(pool.isConnected('agent')).toBe(false);
+    expect(pool.identity('agent')).toBeNull();
   });
 
   it('зависшее подключение требует перезапуска процесса', async () => {
@@ -117,7 +117,7 @@ describe('ClientPool', () => {
     await pool.getClient('agent');
     await pool.destroyAll();
     expect(created[0]!.destroy).toHaveBeenCalledTimes(1);
-    expect(pool.isConnected('agent')).toBe(false);
+    expect(pool.identity('agent')).toBeNull();
   });
 });
 
@@ -151,7 +151,7 @@ describe('TgGateway', () => {
     await expect(tg.invoke('agent', { className: 'users.GetUsers' } as never)).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
     expect(storage.accounts.get('agent')?.status).toBe('unauthorized');
     expect(created[0]!.destroy).toHaveBeenCalled();
-    expect(pool.isConnected('agent')).toBe(false);
+    expect(pool.identity('agent')).toBeNull();
   });
 
   it('withClient выполняет операцию с клиентом в полосе', async () => {
@@ -179,7 +179,7 @@ describe('библиотека MTProto (teleproto)', () => {
     }
   });
 
-  it('читает сессию, сохранённую GramJS: повторный вход после смены библиотеки не нужен', async () => {
+  it('читает сессию в формате GramJS: вход, сделанный до смены библиотеки, остаётся рабочим', async () => {
     const { StringSession } = await import('teleproto/sessions');
     // формат GramJS: версия, номер дата-центра, длина адреса, адрес, порт, ключ 256 байт
     const key = Buffer.alloc(256, 7);
@@ -243,7 +243,7 @@ describe('loginAccount', () => {
       c.start.mockImplementation(async (params: { firstAndLastNames: () => Promise<[string, string]>; onError: (e: Error) => Promise<boolean> }) => {
         const refused = (await params.firstAndLastNames().catch((e: unknown) => e)) as Error;
         expect(refused).toBeInstanceOf(Error);
-        // GramJS спрашивает, прекращать ли: с первой же ошибки да
+        // библиотека спрашивает, прекращать ли: с первой же ошибки да
         expect(await params.onError(refused)).toBe(true);
         throw new Error('AUTH_USER_CANCEL');
       });

@@ -292,7 +292,7 @@ cat > "$PLIST" <<EOF
     <key>TG_MCP_HOME</key><string>$GATEWAY_HOME</string>
   </dict>
   <key>RunAtLoad</key><true/>
-  <!-- Демон выходит с кодом 1 при зависшем вызове GramJS: launchd поднимает его заново. -->
+  <!-- Демон выходит с кодом 1 при зависшем вызове MTProto: launchd поднимает его заново. -->
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$LOG_DIR/daemon.log</string>

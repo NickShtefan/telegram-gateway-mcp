@@ -211,7 +211,7 @@ export class LocalIndexService {
    * длиннее уже покрытого.
    *
    * Состояние чата всегда описывает сплошной кусок ленты: от самого нового
-   * сообщения до даты `sinceTs`. Если проход оборван (предел за запуск, отмена),
+   * сообщения до даты `sinceTs`. Если проход оборван (предел за запуск, остановка шлюза),
    * сохраняется то, что успели покрыть, и следующий запуск продолжает оттуда.
    */
   async run(context: JobContext): Promise<IndexJobResult> {
@@ -240,7 +240,7 @@ export class LocalIndexService {
       const result: Walk = { complete: false, highId: 0, lowId: 0, lowDate: null };
       let offsetId = startOffset;
       for (;;) {
-        if (context.cancelled()) return result;
+        if (context.stopping()) return result;
         if (scanned >= this.maxPerRun) {
           partial = true;
           return result;
@@ -284,7 +284,7 @@ export class LocalIndexService {
         const newest = Math.max(state.newestId, head.highId);
         save(since, newest, oldest);
         // Хвост: период стал длиннее.
-        if (params.sinceTs < since && !context.cancelled()) {
+        if (params.sinceTs < since && !context.stopping()) {
           const tail = await walk(oldest, params.sinceTs);
           if (tail.lowId !== 0) oldest = Math.min(oldest === 0 ? tail.lowId : oldest, tail.lowId);
           if (tail.complete) since = params.sinceTs;

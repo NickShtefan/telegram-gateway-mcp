@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError } from '../errors.js';
 import { AccountLimiter } from '../limiter.js';
 import { createLogger } from '../log.js';
-import { createFatalHandler, TickWatchdog } from '../recovery.js';
+import { createFatalHandler } from '../recovery.js';
 
 const silent = createLogger('test', { level: 'silent' });
 
@@ -179,12 +179,16 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
   });
 
   it('пауза одного аккаунта не трогает другой', async () => {
-    const { limiter } = makeLimiter();
-    limiter.pause('a', 100);
+    const { limiter } = makeLimiter({ interactiveWaitBudgetMs: 1_000 });
+    const paused = limiter.run('a', async () => {
+      throw floodError(100);
+    }, { label: 'op' });
+    const assertion = expect(paused).rejects.toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 100 });
+    await vi.advanceTimersByTimeAsync(10);
+    await assertion;
+    expect(limiter.status('a').floodWaitSeconds).toBeGreaterThan(0);
+    expect(limiter.status('b').floodWaitSeconds).toBe(0);
     await expect(limiter.run('b', async () => 'ok', { label: 'op' })).resolves.toBe('ok');
-    expect(limiter.pickLeastLoaded(['a', 'b'])).toBe('b');
-    expect(limiter.pickLeastLoaded(['a'])).toBe('a');
-    expect(limiter.pickLeastLoaded([])).toBeNull();
   });
 });
 
@@ -341,19 +345,5 @@ describe('recovery', () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(order).toEqual(['prepare', 'beforeExit']);
     expect(exit).toHaveBeenCalledWith(1);
-  });
-
-  it('watchdog считает пропущенные тики и поднимает тревогу', () => {
-    const onStuck = vi.fn();
-    const dog = new TickWatchdog({ name: 'watcher', maxMissedTicks: 3, onStuck, log: silent });
-    expect(dog.begin()).toBe(true);
-    expect(dog.begin()).toBe(false);
-    expect(dog.begin()).toBe(false);
-    expect(onStuck).not.toHaveBeenCalled();
-    expect(dog.begin()).toBe(false);
-    expect(onStuck).toHaveBeenCalledWith(3);
-    dog.end();
-    expect(dog.begin()).toBe(true);
-    expect(dog.missedTicks).toBe(0);
   });
 });

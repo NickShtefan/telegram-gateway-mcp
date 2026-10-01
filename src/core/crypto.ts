@@ -41,7 +41,7 @@ export function unseal(sealed: Sealed, secret: string): string {
   return Buffer.concat([decipher.update(Buffer.from(encryptedHex, 'hex')), decipher.final()]).toString('utf8');
 }
 
-/** Новый случайный секрет: токен пользователя, ключ шифрования, confirm_token. */
+/** Новый случайный секрет: токен пользователя, ключ шифрования сессий, соль выгрузки. */
 export function randomToken(bytes = 32): string {
   return randomBytes(bytes).toString('base64url');
 }

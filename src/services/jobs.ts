@@ -16,8 +16,8 @@ export interface JobContext {
   job: JobRecord;
   /** Сохраняет прогресс: его видит агент. */
   progress(update: Record<string, unknown>): void;
-  /** true, если задачу отменили: исполнитель должен остановиться. */
-  cancelled(): boolean;
+  /** true, если шлюз останавливается: исполнитель должен прерваться, задача продолжится после старта. */
+  stopping(): boolean;
 }
 
 export type JobRunner = (context: JobContext) => Promise<Record<string, unknown>>;
@@ -37,7 +37,6 @@ export class JobManager {
   private readonly concurrency: number;
   private readonly log: Logger;
   private readonly runners = new Map<string, JobRunner>();
-  private readonly cancelledIds = new Set<string>();
   private readonly waiters = new Map<string, Array<() => void>>();
   private active = 0;
   private stopped = false;
@@ -71,20 +70,9 @@ export class JobManager {
     return job;
   }
 
-  cancel(id: string, userId: string): JobRecord {
-    const job = this.get(id, userId);
-    if (job.state === 'queued') {
-      this.storage.jobs.update(id, { state: 'cancelled' });
-      this.notify(id);
-    } else if (job.state === 'running') {
-      this.cancelledIds.add(id);
-    }
-    return this.get(id, userId);
-  }
-
   /** Ждёт завершения задачи не дольше `ms` и возвращает её текущее состояние. */
   async waitFor(id: string, userId: string, ms: number): Promise<JobRecord> {
-    const done = (j: JobRecord): boolean => j.state === 'done' || j.state === 'failed' || j.state === 'cancelled';
+    const done = (j: JobRecord): boolean => j.state === 'done' || j.state === 'failed';
     const current = this.get(id, userId);
     if (done(current) || ms <= 0) return current;
     await new Promise<void>(resolve => {
@@ -153,20 +141,19 @@ export class JobManager {
           progress = { ...progress, ...update };
           this.storage.jobs.update(id, { progress });
         },
-        cancelled: () => this.cancelledIds.has(id) || this.stopped,
+        stopping: () => this.stopped,
       });
       if (this.stopped) {
         // Процесс останавливается: задача остаётся «выполняемой» и вернётся в очередь при старте.
         return;
       }
-      this.storage.jobs.update(id, this.cancelledIds.has(id) ? { state: 'cancelled', result } : { state: 'done', result });
+      this.storage.jobs.update(id, { state: 'done', result });
     } catch (err) {
       if (this.stopped) return;
       const message = isGatewayError(err) ? `${err.code}: ${err.message}` : (err as Error).message;
       this.log.warn('job failed', { job: id, kind: job.kind, error: message });
       this.storage.jobs.update(id, { state: 'failed', error: message });
     } finally {
-      this.cancelledIds.delete(id);
       this.notify(id);
     }
   }

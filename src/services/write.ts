@@ -219,7 +219,7 @@ export class WriteService {
   }
 
   /** Сообщение в чат или человеку. */
-  async send(context: WriteContext, peer: EntityRecord, text: string, replyToId?: number): Promise<SentMessage> {
+  async send(context: WriteContext, peer: EntityRecord, text: string): Promise<SentMessage> {
     const message = assertMessageText(text);
     this.assertCanMessage(context.accountId, peer);
     const messageId = await this.sendMessage(
@@ -229,7 +229,6 @@ export class WriteService {
         message,
         randomId: randomId(),
         noWebpage: true,
-        replyTo: replyToId ? new Api.InputReplyToMessage({ replyToMsgId: replyToId }) : undefined,
       }),
     );
     this.record({

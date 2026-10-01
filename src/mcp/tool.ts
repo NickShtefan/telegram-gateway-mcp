@@ -32,7 +32,6 @@ export interface ToolOutput {
 export interface ToolContext {
   services: GatewayServices;
   principal: Principal;
-  log: Logger;
   now(): number;
   /** Аккаунт вызова: запрошенный или по умолчанию, с проверкой доступа. */
   account(requested?: string): string;
@@ -96,7 +95,6 @@ export function createToolContext(options: RegisterOptions): ToolContext {
   return {
     services,
     principal,
-    log: options.log,
     now,
     account: requested => services.access.resolveAccount(principal, requested || undefined),
     openChat: async (ref, accountId, action = 'read') => {

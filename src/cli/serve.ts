@@ -33,7 +33,7 @@ const AUDIT_KEEP_MS = 90 * 86_400_000;
 const PRUNE_EVERY_MS = 6 * 3_600_000;
 
 /** Известный шум teleproto: цикл обновлений бросает TIMEOUT мимо всех обработчиков. */
-function isGramUpdateNoise(reason: unknown): boolean {
+function isUpdateLoopNoise(reason: unknown): boolean {
   const text = reason instanceof Error ? `${reason.message}\n${reason.stack ?? ''}` : String(reason);
   return /TIMEOUT/.test(text) && /updates\.js|_updateLoop/.test(text);
 }
@@ -62,7 +62,7 @@ export async function runServe(options: ServeOptions): Promise<number> {
   const services = buildServices(runtime);
 
   const onRejection = (reason: unknown): void => {
-    if (isGramUpdateNoise(reason)) {
+    if (isUpdateLoopNoise(reason)) {
       log.debug('ignored teleproto update loop timeout');
       return;
     }

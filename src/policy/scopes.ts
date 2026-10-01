@@ -60,7 +60,7 @@ export function readPrivateMode(storage: Storage, userId: string, accountId: str
 export function writePrivateMode(storage: Storage, userId: string, accountId: string, mode: PrivateMode): void {
   storage.transaction(() => {
     for (const target of Object.values(PRIVATE_MODE_TARGETS)) storage.scopes.remove(userId, accountId, target);
-    if (mode !== 'closed') storage.scopes.put({ userId, accountId, target: PRIVATE_MODE_TARGETS[mode], effect: 'allow', source: 'owner' });
+    if (mode !== 'closed') storage.scopes.put({ userId, accountId, target: PRIVATE_MODE_TARGETS[mode], effect: 'allow' });
   });
 }
 

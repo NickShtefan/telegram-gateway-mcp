@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { seal, sha256Hex, unseal } from '../../core/crypto.js';
 import { MIGRATIONS } from '../migrations.js';
@@ -28,6 +32,60 @@ describe('SqliteStorage: схема', () => {
     }
   });
 
+  it('миграция 7 убирает остатки бота и поручений, не теряя правил владельца, запросов и журнала записи', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tgmcp-migrate-'));
+    const path = join(dir, 'gateway.sqlite');
+    try {
+      // база в том виде, в каком её оставила версия 6
+      const old = new DatabaseSync(path);
+      old.exec('PRAGMA foreign_keys = ON');
+      for (const sql of MIGRATIONS.slice(0, 6)) old.exec(sql);
+      old.exec('PRAGMA user_version = 6');
+      old.exec(`
+        INSERT INTO users (id, token_sha256, telegram_id, default_account, created_at) VALUES ('nick', 'h1', '111', 'agent', 1);
+        INSERT INTO accounts (id, status, created_at, updated_at) VALUES ('agent', 'active', 1, 1);
+        INSERT INTO account_access (account_id, user_id) VALUES ('agent', 'nick');
+        INSERT INTO scope_rules (user_id, account_id, target, effect, source, created_at) VALUES
+          ('nick', 'agent', 'seller', 'allow', 'owner', 2),
+          ('nick', 'agent', '-1000000000500', 'deny', 'owner', 3),
+          ('nick', 'agent', '*private-send', 'allow', 'owner', 4),
+          ('nick', 'agent', '-1000000000500', 'allow', 'task:t1', 5),
+          ('nick', 'agent', 'stranger', 'allow', 'task:t1', 6);
+        INSERT INTO approvals (id, user_id, account_id, kind, source, payload, preview, state, result, bot_chat_id, bot_message_id, created_at, expires_at, decided_at)
+          VALUES ('ap_1', 'nick', 'agent', 'reply', 'tool', '{"text":"hi"}', 'Reply', 'executed', '{"summary":"Sent"}', '123', 7, 10, 20, 15);
+        INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id, source)
+          VALUES (10, 'nick', 'agent', 'reply', '-1000000000500', 10, 77, 'tool'), (11, 'nick', 'agent', 'send', '42', NULL, 78, 'task:t1');
+      `);
+      old.close();
+
+      const upgraded = new SqliteStorage({ path, now: () => 1_000 });
+      try {
+        expect(upgraded.schemaVersion()).toBe(MIGRATIONS.length);
+        const columns = (table: string): string[] => (upgraded.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(c => c.name);
+        expect(columns('users')).toEqual(['id', 'token_sha256', 'default_account', 'created_at']);
+        expect(columns('approvals')).not.toEqual(expect.arrayContaining(['source', 'bot_chat_id', 'bot_message_id']));
+        expect(columns('writes')).not.toContain('source');
+        expect(columns('scope_rules')).toEqual(['user_id', 'account_id', 'target', 'effect', 'created_at']);
+
+        // правила владельца на месте, в том числе режим личных чатов; открытое поручением исчезло
+        expect(upgraded.scopes.list('nick', 'agent').map(r => `${r.effect} ${r.target}`)).toEqual(['allow *private-send', 'deny -1000000000500', 'allow seller']);
+        expect(upgraded.users.get('nick')).toMatchObject({ tokenSha256: 'h1', defaultAccount: 'agent' });
+        expect(upgraded.db.prepare("SELECT state, result FROM approvals WHERE id = 'ap_1'").get()).toMatchObject({ state: 'executed', result: '{"summary":"Sent"}' });
+        expect((upgraded.db.prepare('SELECT COUNT(*) AS n FROM writes').get() as { n: number }).n).toBe(2);
+        // одно правило на цель: повторная запись меняет его, а не добавляет второе
+        upgraded.scopes.put({ userId: 'nick', accountId: 'agent', target: '@Seller', effect: 'deny' });
+        expect(upgraded.scopes.list('nick', 'agent').filter(r => r.target === 'seller')).toEqual([expect.objectContaining({ effect: 'deny' })]);
+        // каскад по удалению пользователя пережил пересборку таблицы
+        upgraded.users.remove('nick');
+        expect(upgraded.scopes.list('nick', 'agent')).toEqual([]);
+      } finally {
+        upgraded.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('FTS5 доступен в node:sqlite', () => {
     storage.db.exec('CREATE VIRTUAL TABLE fts_probe USING fts5(body)');
     storage.db.prepare('INSERT INTO fts_probe (body) VALUES (?)').run('продам велосипед недорого');
@@ -39,7 +97,7 @@ describe('SqliteStorage: схема', () => {
 describe('SqliteStorage: пользователи и аккаунты', () => {
   it('находит пользователя по хэшу токена, сам токен не хранит', () => {
     const token = 'user-token';
-    storage.users.create({ id: 'nick', tokenSha256: sha256Hex(token), telegramId: '111' });
+    storage.users.create({ id: 'nick', tokenSha256: sha256Hex(token) });
     expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
     expect(storage.users.findByTokenHash(sha256Hex('other'))).toBeNull();
     expect(JSON.stringify(storage.users.list())).not.toContain(token);
@@ -85,7 +143,7 @@ describe('SqliteStorage: пользователи и аккаунты', () => {
     storage.entities.put({ accountId: 'agent', peerKey: '-1001', kind: 'channel', accessHash: '9', username: 'chan', title: 'Chan', meta: {} });
     storage.accounts.remove('agent');
     expect(storage.sessions.get('agent')).toBeNull();
-    expect(storage.entities.count('agent')).toBe(0);
+    expect(storage.entities.get('agent', '-1001')).toBeNull();
     expect(storage.accounts.accountsOf('nick')).toEqual([]);
   });
 });
@@ -145,7 +203,8 @@ describe('SqliteStorage: кэш сущностей', () => {
     storage.entities.putMany(
       Array.from({ length: 50 }, (_, i) => ({ accountId: 'a1', peerKey: String(i + 1), kind: 'user' as const, accessHash: String(i), username: null, title: null, meta: {} })),
     );
-    expect(storage.entities.count('a1')).toBe(50);
+    expect(storage.entities.get('a1', '1')?.kind).toBe('user');
+    expect(storage.entities.get('a1', '50')?.accessHash).toBe('49');
   });
 });
 
@@ -191,8 +250,6 @@ describe('SqliteStorage: аудит, задачи, kv, транзакции', ()
     storage.kv.set('k', '1');
     storage.kv.set('k', '2');
     expect(storage.kv.get('k')).toBe('2');
-    storage.kv.remove('k');
-    expect(storage.kv.get('k')).toBeNull();
   });
 
   it('транзакция откатывается при ошибке', () => {

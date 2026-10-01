@@ -8,7 +8,7 @@ import { ClientPool, type ClientFactory } from './core/clientPool.js';
 import { loadSessionSecret, requireApiCredentials, type GatewayConfig } from './core/config.js';
 import { AccountLimiter, type LimiterOptions } from './core/limiter.js';
 import { createLogger, type Logger } from './core/log.js';
-import { createFatalHandler, type ExitProcess, type FatalHandler } from './core/recovery.js';
+import { createFatalHandler, type ExitProcess } from './core/recovery.js';
 import { TgGateway, type Tg } from './core/tg.js';
 import type { Storage } from './storage/port.js';
 import { openStorage } from './storage/sqlite.js';
@@ -19,7 +19,6 @@ export interface Runtime {
   limiter: AccountLimiter;
   pool: ClientPool;
   tg: Tg;
-  fatal: FatalHandler;
   log: Logger;
   /** Останавливает очереди, закрывает клиентов и базу. */
   close(): Promise<void>;
@@ -81,7 +80,6 @@ export function createRuntime(config: GatewayConfig, overrides: RuntimeOverrides
     limiter,
     pool,
     tg,
-    fatal,
     log,
     close: async () => {
       limiter.shutdown();

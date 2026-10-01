@@ -67,7 +67,7 @@ export function makeTestGateway(options: { now?: () => number; writeLimits?: Gat
   }
   storage.users.update('nick', { defaultAccount: 'agent' });
 
-  const runtime = { config, storage, tg, log, fatal: () => undefined, close: async () => undefined } as unknown as Runtime;
+  const runtime = { config, storage, tg, log, close: async () => undefined } as unknown as Runtime;
   const services = buildServices(runtime, { now: options.now });
 
   return {

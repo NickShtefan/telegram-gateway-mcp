@@ -168,13 +168,13 @@ function assertUserAccount(storage: Storage, userId: string, accountId: string):
 export function setScope(storage: Storage, userId: string, accountId: string, chat: string, effect: ScopeEffect): string {
   assertUserAccount(storage, userId, accountId);
   const target = scopeTarget(chat);
-  storage.scopes.put({ userId, accountId, target, effect, source: 'owner' });
+  storage.scopes.put({ userId, accountId, target, effect });
   return target;
 }
 
 export function removeScope(storage: Storage, userId: string, accountId: string, chat: string): number {
   assertUserAccount(storage, userId, accountId);
-  return storage.scopes.remove(userId, accountId, scopeTarget(chat), 'owner');
+  return storage.scopes.remove(userId, accountId, scopeTarget(chat));
 }
 
 /** Правила для чатов, без служебной записи о режиме личных чатов. */

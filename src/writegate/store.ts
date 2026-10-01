@@ -73,8 +73,8 @@ export class WriteStore {
   createApproval(a: Pick<ApprovalRecord, 'id' | 'userId' | 'accountId' | 'kind' | 'payload' | 'preview' | 'expiresAt'>): ApprovalRecord {
     this.db
       .prepare(
-        `INSERT INTO approvals (id, user_id, account_id, kind, source, payload, preview, state, created_at, expires_at)
-         VALUES (?, ?, ?, ?, 'tool', ?, ?, 'pending', ?, ?)`,
+        `INSERT INTO approvals (id, user_id, account_id, kind, payload, preview, state, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
       )
       .run(a.id, a.userId, a.accountId, a.kind, JSON.stringify(a.payload), a.preview, this.now(), a.expiresAt);
     return this.getApproval(a.id)!;
@@ -138,7 +138,7 @@ export class WriteStore {
 
   recordWrite(write: WriteRecord): number {
     const result = this.db
-      .prepare("INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'tool')")
+      .prepare('INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(write.ts, write.userId, write.accountId, write.kind, write.chatKey, write.postId, write.sentMessageId);
     return num(result.lastInsertRowid);
   }

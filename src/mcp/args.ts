@@ -67,16 +67,6 @@ export function describeWindow(window: DateWindow): string {
   return '';
 }
 
-/** Длительность вида `3d`, `24h`, `30m`, `2w` в миллисекундах. */
-export function parseDuration(value: string, argName: string, maxMs: number): number {
-  const m = value.trim().match(RELATIVE_RE);
-  const ms = m ? Number(m[1]) * UNIT_SECONDS[m[2]!.toLowerCase()]! * 1000 : NaN;
-  if (!Number.isFinite(ms) || ms <= 0 || ms > maxMs) {
-    throw new GatewayError('INVALID_ARGUMENT', `Invalid "${argName}": use a duration like 3d, 24h or 30m, up to ${Math.round(maxMs / 86_400_000)} days.`);
-  }
-  return ms;
-}
-
 /** Число от 0 до max: для «сколько сообщений добавить», где ноль это осмысленное значение. */
 export function clampCount(value: number | undefined, max: number): number {
   if (value === undefined || !Number.isFinite(value)) return 0;

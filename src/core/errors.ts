@@ -21,7 +21,6 @@ export type GatewayErrorCode =
   | 'ACCOUNT_UNAUTHORIZED'
   | 'ACCOUNT_FROZEN'
   | 'ACCESS_DENIED'
-  | 'CONFIRMATION_REQUIRED'
   | 'INVALID_ARGUMENT'
   | 'NOT_FOUND'
   | 'LIMIT_REACHED'
@@ -67,6 +66,7 @@ function errorText(err: unknown): string {
 }
 
 export interface FloodInfo {
+  /** Секунды ожидания; 0, если тип ошибки понятен, а число не разобрать. */
   seconds: number;
   /**
    * account: Telegram ограничил аккаунт (или метод); chat: медленный режим
@@ -83,9 +83,9 @@ const SLOWMODE_CODE = /SLOWMODE_WAIT[_ ]?(\d+)/;
 /**
  * Разбор ошибки ожидания. Библиотека (teleproto) кладёт код сервера в
  * `errorMessage` (`FLOOD_WAIT_17`), число секунд в `seconds`, а в `message`
- * пишет фразу без кода. У GramJS, с которого шлюз начинался, `errorMessage` был
- * просто `FLOOD`, а код до нас не доходил. Разбираются обе формы и формы с
- * кодом в тексте: так ошибки выглядят в логах и у других библиотек.
+ * пишет фразу без кода. У базового класса ошибок 420 `errorMessage` просто
+ * `FLOOD`. Разбираются обе формы и формы с кодом в тексте: так ошибки выглядят
+ * в логах.
  */
 export function floodInfo(err: unknown): FloodInfo | null {
   const e = err as TelegramErrorLike | null;
@@ -98,7 +98,7 @@ export function floodInfo(err: unknown): FloodInfo | null {
   if (slowCode) return { seconds: parseInt(slowCode[1]!, 10), scope: 'chat' };
 
   const hasSeconds = typeof e.seconds === 'number' && Number.isFinite(e.seconds) && e.seconds >= 0;
-  // Форма GramJS. MSG_WAIT там тоже приходил с errorMessage FLOOD, но без seconds: это не ожидание.
+  // Базовая ошибка 420 без своего класса. MSG_WAIT тоже приходит с errorMessage FLOOD, но без seconds: это не ожидание.
   if (e.errorMessage === 'FLOOD' && hasSeconds) return { seconds: e.seconds!, scope: 'account' };
 
   const waitCode = text.match(WAIT_CODE);
@@ -107,14 +107,6 @@ export function floodInfo(err: unknown): FloodInfo | null {
   if (waitText) return { seconds: parseInt(waitText[1]!, 10), scope: 'account' };
   if (/FLOOD_PREMIUM_WAIT|FLOOD_TEST_PHONE_WAIT|FLOOD_WAIT/.test(text)) return { seconds: hasSeconds ? e.seconds! : 0, scope: 'account' };
   return null;
-}
-
-/**
- * Секунды ожидания из ошибки FLOOD_WAIT (и родственных). null, если это не
- * ошибка ожидания; 0, если тип ошибки понятен, а число не разобрать.
- */
-export function getFloodWaitSeconds(err: unknown): number | null {
-  return floodInfo(err)?.seconds ?? null;
 }
 
 /** Код ошибки Telegram в верхнем регистре, если он есть в тексте. */

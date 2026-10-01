@@ -69,12 +69,6 @@ describe('HTTP: вход демона', () => {
     expect(localhost.status).toBe(200);
   });
 
-  it('у демона один вход, /mcp: очереди запусков агента больше нет', async () => {
-    const auth = { Authorization: `Bearer ${gw.tokens.nick}`, 'Content-Type': 'application/json' };
-    expect((await raw('POST', '/runner/claim', auth, '{}')).status).toBe(404);
-    expect((await raw('POST', '/runner/finish', auth, '{}')).status).toBe(404);
-  });
-
   it('GET не поддерживается, мусор в теле и неизвестный путь дают понятные коды', async () => {
     const auth = { Authorization: `Bearer ${gw.tokens.nick}` };
     const get = await fetch(url, { headers: auth });

@@ -1,6 +1,6 @@
 /**
  * Сборка сервисов поверх ядра. Сервисы не знают про MCP и транспорт: их
- * одинаково используют инструменты, CLI и фоновые воркеры.
+ * вызывают инструменты и задачи, начатые инструментами (выгрузка, индексация).
  */
 import { buildWriteGate, type WriteGate } from '../writegate/index.js';
 import { AccessPolicy } from '../policy/access.js';
@@ -39,7 +39,6 @@ export interface GatewayServices {
   indexStore: IndexStore;
   topics: TopicsService;
   media: MediaService;
-  exporter: ExportService;
   jobs: JobManager;
   writeGate: WriteGate;
 }
@@ -84,7 +83,6 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
     indexStore,
     topics: new TopicsService(tg),
     media,
-    exporter,
     jobs,
     writeGate,
   };

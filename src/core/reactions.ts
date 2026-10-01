@@ -1,15 +1,11 @@
 /**
- * Нормализация реакций. Ключ реакции един для MTProto и Bot API:
- * обычный эмодзи это сам эмодзи, кастомный `custom:<id>`, платная `paid`.
- * Перенесено из helper `processors/reactionKey.ts` и `refreshShared.ts`.
+ * Нормализация реакций. Ключ реакции: обычный эмодзи это сам эмодзи,
+ * кастомный `custom:<id>`, платная `paid`. Идея ключа из helper
+ * `processors/reactionKey.ts`.
  */
 
+/** Api.ReactionEmoji, Api.ReactionCustomEmoji или Api.ReactionPaid. */
 interface ReactionLike {
-  // Bot API ReactionType
-  type?: string;
-  emoji?: string;
-  custom_emoji_id?: string;
-  // teleproto Api.Reaction*
   className?: string;
   emoticon?: string;
   documentId?: unknown;
@@ -24,17 +20,9 @@ export function reactionKey(reaction: unknown): string {
   const r = reaction as ReactionLike | null | undefined;
   if (!r || typeof r !== 'object') return JSON.stringify(r ?? null);
 
-  if (typeof r.emoji === 'string' && r.emoji) return r.emoji;
   if (typeof r.emoticon === 'string' && r.emoticon) return r.emoticon;
-
-  if (typeof r.custom_emoji_id === 'string' && r.custom_emoji_id) {
-    return `custom:${r.custom_emoji_id}`;
-  }
-  if (r.documentId !== undefined && r.documentId !== null) {
-    return `custom:${String(r.documentId)}`;
-  }
-
-  if (r.type === 'paid' || r.className === 'ReactionPaid') return 'paid';
+  if (r.documentId !== undefined && r.documentId !== null) return `custom:${String(r.documentId)}`;
+  if (r.className === 'ReactionPaid') return 'paid';
 
   return JSON.stringify(r);
 }

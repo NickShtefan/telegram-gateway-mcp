@@ -28,7 +28,6 @@ function renderIndexJob(ctx: ToolContext, job: JobRecord): string {
   const chat = chatOf(ctx, params.accountId, params.chatKey);
   const label = chat ? chatLabel(chat) : `id ${params.chatKey}`;
   if (job.state === 'failed') return `Indexing of ${label} failed.\njob_id: ${job.id}\nerror: ${job.error ?? 'unknown'}`;
-  if (job.state === 'cancelled') return `Indexing of ${label} was cancelled.\njob_id: ${job.id}`;
   if (job.state !== 'done') {
     const progress = job.progress as { scanned?: number; added?: number };
     return [

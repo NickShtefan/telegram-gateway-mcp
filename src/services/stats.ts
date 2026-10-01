@@ -3,8 +3,9 @@
  *
  * Формулы взяты из channel-scope `analyzeChannel.ts`: средние и медианные
  * просмотры, охват (просмотры к подписчикам), ERR (реакции к просмотрам),
- * разброс просмотров, сравнение свежей половины периода со старой. Оценки, баллы и «вердикты» оттуда не перенесены: шлюз отдаёт числа,
- * выводы делает агент (решение 7).
+ * разброс просмотров, сравнение свежей половины периода со старой. Оценки,
+ * баллы и «вердикты» оттуда не перенесены: шлюз отдаёт числа, выводы делает
+ * агент (решение 7).
  *
  * Рост подписчиков Telegram отдаёт только админам канала. Для чужих каналов
  * шлюз запоминает число участников каждый раз, когда видит его, и показывает
@@ -220,7 +221,6 @@ export interface StatsReport {
   earlier: MemberSnapshot | null;
   /** Лента оборвана пределом числа постов, период покрыт не целиком. */
   truncated: boolean;
-  windowStartSec: number;
 }
 
 export interface StatsServiceDeps {
@@ -264,6 +264,6 @@ export class StatsService {
     const windowDay = new Date(windowStartSec * 1000).toISOString().slice(0, 10);
     const earlier = this.deps.snapshots.list(chat.peerKey).find(s => s.day >= windowDay && s.day < today) ?? null;
 
-    return { stats: computeStats(messages, card.members, nowSec, windowStartSec), members: card.members, earlier, truncated, windowStartSec };
+    return { stats: computeStats(messages, card.members, nowSec, windowStartSec), members: card.members, earlier, truncated };
   }
 }
