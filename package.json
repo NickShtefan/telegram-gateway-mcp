@@ -1,0 +1,29 @@
+{
+  "name": "telegram-gateway-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegram MCP gateway: one daemon owns the MTProto sessions and serves agents over MCP",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "tg-mcp": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "telegram": "^2.26.22",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}
