@@ -78,12 +78,18 @@ export async function runServe(options: ServeOptions): Promise<number> {
 
   // Фоновая работа: бот согласований, наблюдатель, уборка.
   const background = new AbortController();
-  const { approvals, watcher, runner } = services.automation;
+  const { approvals, watcher, runner, tasks } = services.automation;
   const loops: Array<Promise<void>> = [watcher.run(background.signal)];
   if (approvals.enabled) loops.push(approvals.poll(background.signal));
   else log.warn('approval bot is not configured (TG_MCP_APPROVAL_BOT_TOKEN): write tools and rules will answer UNAVAILABLE');
+  // Диалоги поручений опрашиваются чаще каналов: собеседник ждёт ответа.
+  const taskPoller = setInterval(() => {
+    void tasks.tick().catch(err => log.warn('task poll failed', { error: (err as Error).message }));
+  }, 10_000);
+  taskPoller.unref();
   const sweeper = setInterval(() => {
     void approvals.sweep().catch(err => log.warn('approval sweep failed', { error: (err as Error).message }));
+    void tasks.sweep().catch(err => log.warn('task sweep failed', { error: (err as Error).message }));
     try {
       runner.sweep();
     } catch (err) {
@@ -106,6 +112,7 @@ export async function runServe(options: ServeOptions): Promise<number> {
   log.info('shutting down');
   background.abort();
   clearInterval(sweeper);
+  clearInterval(taskPoller);
   services.jobs.stop();
   await http.close();
   await runtime.close();

@@ -41,6 +41,8 @@ export class AccessPolicy {
     const scoped = this.automation?.getScopedToken(hash);
     if (!scoped) return denied();
     const base = this.principalOf(scoped.userId);
+    // У поручения через Business-бота аккаунта шлюза нет: переписка идёт от имени владельца.
+    if (!scoped.scope.accountId) return { ...base, defaultAccount: null, accounts: [], grant: scoped.scope };
     if (!base.accounts.includes(scoped.scope.accountId)) return denied();
     return { ...base, defaultAccount: scoped.scope.accountId, accounts: [scoped.scope.accountId], grant: scoped.scope };
   }

@@ -543,6 +543,12 @@ export class AutomationStore {
     return rows.map(r => this.mapJob(r));
   }
 
+  /** Есть ли незавершённое задание этого вида с таким значением в payload (например, для поручения). */
+  hasOpenRunnerJob(kind: string, field: string, value: string): boolean {
+    const rows = this.db.prepare("SELECT payload FROM runner_jobs WHERE kind = ? AND state IN ('pending', 'claimed')").all(kind) as Row[];
+    return rows.some(r => json<Record<string, unknown>>(r.payload, {})[field] === value);
+  }
+
   pendingRunnerJobs(userId: string): number {
     return num((this.db.prepare("SELECT COUNT(*) AS n FROM runner_jobs WHERE user_id = ? AND state = 'pending'").get(userId) as Row).n);
   }

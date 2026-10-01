@@ -65,6 +65,7 @@ export class Approvals {
   private readonly now: () => number;
   private readonly defaultTtlMs: number;
   private readonly executors = new Map<string, ExecutorEntry>();
+  private readonly updateHandlers: Array<(update: BotUpdate) => Promise<boolean>> = [];
 
   constructor(options: ApprovalsOptions) {
     this.store = options.store;
@@ -77,6 +78,19 @@ export class Approvals {
 
   get enabled(): boolean {
     return this.bot !== null;
+  }
+
+  /** Клиент Bot API для тех, кто пишет человеку через того же бота (вопросы и отчёты поручений). */
+  get botApi(): BotApi | null {
+    return this.bot;
+  }
+
+  /**
+   * Дополнительный обработчик обновлений бота: вопросы поручений и
+   * Business-сообщения. Вернувший true забирает обновление себе.
+   */
+  addUpdateHandler(handler: (update: BotUpdate) => Promise<boolean>): void {
+    this.updateHandlers.push(handler);
   }
 
   register(kind: string, run: ApprovalExecutor, options: { editable?: boolean; approveLabel?: string; rejectLabel?: string } = {}): void {
@@ -158,6 +172,9 @@ export class Approvals {
   // ---------- обновления бота ----------
 
   async handleUpdate(update: BotUpdate): Promise<void> {
+    for (const handler of this.updateHandlers) {
+      if (await handler(update)) return;
+    }
     if (update.callback_query) return this.handleCallback(update.callback_query);
     if (update.message) return this.handleMessage(update.message);
   }

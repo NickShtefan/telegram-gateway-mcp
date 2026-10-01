@@ -10,6 +10,7 @@ import type { GatewayServices } from '../services/index.js';
 import { registerTools, type ToolDef } from './tool.js';
 import { AUTOMATE_TOOLS, WRITE_TOOLS } from './tools/automate.js';
 import { CORE_TOOLS } from './tools/core.js';
+import { TASK_TOOLS_AUTOMATE, TASK_TOOLS_WRITE } from './tools/tasks.js';
 
 export const SERVER_NAME = 'telegram-gateway';
 
@@ -26,10 +27,10 @@ How to work:
 - Photos: tg_get_media returns file paths; previews (size=thumb) are enough for most questions.
 - On "Error: FLOOD_WAIT" do not retry before retry_after seconds: retries make the limit longer. Tell the user how long the pause is.
 - Private chats are closed unless the owner opened them. The gateway never passes captchas, never pays, and never joins chats without the owner's confirmation.
-- Write tools (tg_reply, tg_join, tg_rule_set) never act at once: they send a request to the owner, who approves it in Telegram. Do not repeat a write call; read the outcome from tg_inbox.
+- Write tools (tg_reply, tg_send, tg_join, tg_rule_set, tg_task_start) never act at once: they send a request to the owner, who approves it in Telegram. Do not repeat a write call; read the outcome from tg_inbox.
 - All times are UTC.`;
 
-export const ALL_TOOLS: ToolDef[] = [...CORE_TOOLS, ...AUTOMATE_TOOLS, ...WRITE_TOOLS];
+export const ALL_TOOLS: ToolDef[] = [...CORE_TOOLS, ...AUTOMATE_TOOLS, ...TASK_TOOLS_AUTOMATE, ...WRITE_TOOLS, ...TASK_TOOLS_WRITE];
 
 export interface McpServerOptions {
   services: GatewayServices;

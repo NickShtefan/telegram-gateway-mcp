@@ -214,4 +214,46 @@ export const MIGRATIONS: string[] = [
     expires_at INTEGER NOT NULL
   );
   `,
+
+  // 4: поручения: цель, рамки, переписка и состояние хранит шлюз (решения 10 и 13)
+  `
+  CREATE TABLE tasks (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- аккаунт шлюза; NULL, если переписка идёт через Business-бота от имени владельца
+    account_id TEXT,
+    via TEXT NOT NULL,
+    peer_key TEXT NOT NULL,
+    peer_label TEXT NOT NULL,
+    goal TEXT NOT NULL,
+    limits TEXT NOT NULL DEFAULT '',
+    ask_me_before TEXT NOT NULL DEFAULT '[]',
+    state TEXT NOT NULL,
+    deadline_at INTEGER NOT NULL,
+    max_messages INTEGER NOT NULL,
+    reminder_after_ms INTEGER,
+    reminder_sent INTEGER NOT NULL DEFAULT 0,
+    messages_sent INTEGER NOT NULL DEFAULT 0,
+    last_seen_id INTEGER NOT NULL DEFAULT 0,
+    next_poll_at INTEGER NOT NULL DEFAULT 0,
+    last_activity_at INTEGER NOT NULL DEFAULT 0,
+    question TEXT,
+    question_message_id INTEGER,
+    summary TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX tasks_state ON tasks(state);
+
+  CREATE TABLE task_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    ts INTEGER NOT NULL,
+    -- peer: собеседник, agent: отправлено шлюзом, owner: указание владельца, system: служебная запись
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    tg_message_id INTEGER
+  );
+  CREATE INDEX task_messages_task ON task_messages(task_id, id);
+  `,
 ];

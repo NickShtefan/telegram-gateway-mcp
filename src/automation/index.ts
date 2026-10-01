@@ -15,6 +15,8 @@ import { HttpBotApi, type BotApi } from './botApi.js';
 import { RuleEngine } from './rules.js';
 import { RunnerQueue } from './runner.js';
 import { AutomationStore, type RuleRecord } from './store.js';
+import { TaskEngine } from './tasks.js';
+import { TaskStore } from './taskStore.js';
 import { Watcher } from './watcher.js';
 
 export interface Automation {
@@ -24,6 +26,8 @@ export interface Automation {
   rules: RuleEngine;
   runner: RunnerQueue;
   write: WriteService;
+  tasks: TaskEngine;
+  taskStore: TaskStore;
 }
 
 export interface AutomationDeps {
@@ -100,5 +104,8 @@ export function buildAutomation(deps: AutomationDeps): Automation {
     { approveLabel: '✅ Включить', rejectLabel: '🚫 Отклонить' },
   );
 
-  return { store, approvals, watcher, rules, runner, write };
+  const taskStore = new TaskStore(storage, now);
+  const tasks = new TaskEngine({ tasks: taskStore, store, storage, history: deps.history, write, approvals, runner, log: log.child('tasks'), now });
+
+  return { store, approvals, watcher, rules, runner, write, tasks, taskStore };
 }
