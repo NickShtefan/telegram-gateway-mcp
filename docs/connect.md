@@ -2,7 +2,7 @@
 
 Шлюз запускается один раз, каждый клиент добавляет его одной записью. Установка на лабораторную машину: [deploy.md](deploy.md). Ниже считается, что демон слушает `http://127.0.0.1:7777/mcp`, а команды лежат в `/opt/telegram-gateway-mcp/bin`.
 
-Что проверено: конфиги Codex и OpenCode (1 октября 2026, [findings.md](findings.md)). Конфиг Claude Code собран по документации и проверен на уровне протокола тем же SDK; полный прогон с моделью ещё не сделан. Hermes записан по памяти.
+Что проверено на лабораторной машине 1 октября 2026 с живым Telegram: Claude Code (подключение, `claude mcp list`), Hermes (`hermes mcp add`, `hermes mcp test`), Codex (полный сценарий «сводка по каналу»). OpenCode: только подключение, для прогона нужен провайдер моделей.
 
 `npx tg-mcp` не использовать: в npm под этим именем чужой пакет (решение 14).
 
@@ -26,14 +26,26 @@ sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin account grant agent partner
 
 ## Claude Code
 
-Токен кладётся в переменную окружения, в конфиге стоит ссылка на неё.
+Сервер добавляется в профиль пользователя. Токен при этом записывается в конфиг профиля (`.claude.json`, права 600).
 
 ```bash
-claude mcp add --transport http telegram http://127.0.0.1:7777/mcp \
-  --header "Authorization: Bearer $TG_MCP_TOKEN"
+claude mcp add --scope user --transport http tg-gateway http://127.0.0.1:7777/mcp \
+  --header "Authorization: Bearer $(cat ~/.config/tg-mcp/token)"
 ```
 
-Второй пользователь делает то же в своём профиле (`CLAUDE_CONFIG_DIR=<папка профиля> claude mcp add ...`) со своим токеном.
+- Имя сервера любое. На лабораторной машине это `tg-gateway`, а не `telegram`: имя `telegram` уже носит плагин бота-моста, и агент путал бы их. Инструменты тогда называются `mcp__tg-gateway__tg_status` и так далее.
+- Если профилей несколько, перед командой укажи нужный: `CLAUDE_CONFIG_DIR=/Users/nick/.claude claude mcp add ...`. Второй пользователь делает то же в своём профиле со своим токеном.
+- Проверка: `claude mcp list` должен показать `tg-gateway ... Connected`. Уже открытая сессия увидит сервер после перезапуска.
+- Разрешения. Чтобы агент не спрашивал подтверждение на каждое чтение, в `settings.json` профиля можно разрешить сервер целиком, а подтверждение записи оставить с вопросом:
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__tg-gateway"],
+    "ask": ["mcp__tg-gateway__tg_confirm"]
+  }
+}
+```
 
 Файл для запуска без интерфейса (`claude -p --mcp-config`), он же нужен runner:
 
@@ -90,15 +102,28 @@ TG_MCP_TOKEN=... codex exec --skip-git-repo-check \
 
 ## Hermes
 
-Раздел `mcp_servers` в `~/.hermes/config.yaml`.
+Hermes хранит токен в своём `~/.hermes/.env`, а в `config.yaml` ставит ссылку на него. Имя переменной он строит из имени сервера: для `tg-gateway` это `MCP_TG_GATEWAY_API_KEY`.
+
+```bash
+printf '\nMCP_TG_GATEWAY_API_KEY=%s\n' "$(cat ~/.config/tg-mcp/token)" >> ~/.hermes/.env
+```
+
+```bash
+hermes mcp add tg-gateway --url http://127.0.0.1:7777/mcp --auth header
+```
+
+Команда спросит, нужна ли авторизация (да), найдёт токен в `.env`, покажет инструменты и предложит включить все. В `config.yaml` получится:
 
 ```yaml
 mcp_servers:
-  telegram:
-    url: "http://127.0.0.1:7777/mcp"
+  tg-gateway:
+    url: http://127.0.0.1:7777/mcp
     headers:
-      Authorization: "Bearer <токен пользователя>"
+      Authorization: Bearer ${MCP_TG_GATEWAY_API_KEY}
+    enabled: true
 ```
+
+Проверка: `hermes mcp test tg-gateway`. Инструменты появятся в новой сессии Hermes.
 
 ## Любой клиент со stdio
 
