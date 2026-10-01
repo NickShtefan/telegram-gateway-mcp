@@ -69,6 +69,68 @@ sudo launchctl kickstart -k system/com.tg-mcp.gateway
 
 Сессия создаётся входом на этой машине и никуда не копируется (решение 12).
 
+## Бот согласований и запись
+
+Без бота шлюз только читает. Чтобы включить наблюдение, правила, ответы и поручения:
+
+1. Создай нового бота у @BotFather. Старые не подойдут: у токена может быть только один получатель обновлений.
+2. Открой бота в Telegram и нажми Start. Команда `/id` покажет твой Telegram id.
+3. Впиши в `/var/tgmcp/.tg-mcp/.env`:
+
+```
+TG_MCP_TOOLSETS=core,automate,write
+TG_MCP_APPROVAL_BOT_TOKEN=<токен от BotFather>
+```
+
+4. Привяжи свой Telegram id к пользователю шлюза, если не указал его при создании:
+
+```bash
+sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user telegram nick <твой id>
+```
+
+5. Перезапусти демон:
+
+```bash
+sudo launchctl kickstart -k system/com.tg-mcp.gateway
+```
+
+## Runner под своим пользователем
+
+Runner запускает твоего агента, когда срабатывает правило или отвечает собеседник. Ему не нужен sudo: он работает под `nick` и ходит в демон по HTTP ([connect.md](connect.md)).
+
+Чтобы он работал постоянно, положи plist в `~/Library/LaunchAgents/com.tg-mcp.runner.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.tg-mcp.runner</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/telegram-gateway-mcp/bin/tg-mcp</string>
+    <string>runner</string>
+    <string>--agent</string>
+    <string>claude -p {prompt} --mcp-config /Users/nick/tg-mcp/agent.mcp.json --strict-mcp-config --allowedTools "mcp__telegram__*"</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TG_MCP_TOKEN</key><string>ТОКЕН_ПОЛЬЗОВАТЕЛЯ</string>
+    <key>PATH</key><string>/Users/nick/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardErrorPath</key><string>/Users/nick/Library/Logs/tg-mcp-runner.log</string>
+</dict>
+</plist>
+```
+
+```bash
+chmod 600 ~/Library/LaunchAgents/com.tg-mcp.runner.plist && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tg-mcp.runner.plist
+```
+
+LaunchAgent работает в графической сессии пользователя, поэтому `claude -p` видит связку ключей и авторизуется. По SSH это не работает ([findings.md](findings.md)).
+
 ## Обновление
 
 ```bash
