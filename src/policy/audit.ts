@@ -1,0 +1,61 @@
+/**
+ * Аудит: каждый вызов инструмента с временем, пользователем, аккаунтом, чатом
+ * и исходом. Нужен, чтобы видеть, что читал агент, и чтобы настраивать лимиты.
+ */
+import { isGatewayError } from '../core/errors.js';
+import { createLogger, redactFields, type Logger } from '../core/log.js';
+import type { Storage } from '../storage/port.js';
+
+export interface AuditCall {
+  userId: string | null;
+  accountId: string | null;
+  tool: string;
+  args: Record<string, unknown>;
+  peerKey?: string | null;
+  resultCount?: number | null;
+  startedAt: number;
+  error?: unknown;
+}
+
+/** Длинные значения аргументов в аудите обрезаются: текст сообщений там не нужен целиком. */
+function compactArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(redactFields(args))) {
+    if (value === undefined) continue;
+    out[key] = typeof value === 'string' && value.length > 200 ? value.slice(0, 200) + '…' : value;
+  }
+  return out;
+}
+
+export class Audit {
+  private readonly log: Logger;
+
+  constructor(
+    private readonly storage: Storage,
+    private readonly now: () => number = () => Date.now(),
+    log?: Logger,
+  ) {
+    this.log = log ?? createLogger('audit');
+  }
+
+  record(call: AuditCall): void {
+    const error = call.error;
+    try {
+      this.storage.audit.add({
+        ts: call.startedAt,
+        userId: call.userId,
+        accountId: call.accountId,
+        tool: call.tool,
+        args: compactArgs(call.args),
+        peerKey: call.peerKey ?? null,
+        resultCount: call.resultCount ?? null,
+        durationMs: Math.max(0, this.now() - call.startedAt),
+        errorCode: error === undefined ? null : isGatewayError(error) ? error.code : 'INTERNAL',
+        floodWaitSeconds: isGatewayError(error, 'FLOOD_WAIT') ? (error.retryAfter ?? null) : null,
+      });
+    } catch (err) {
+      // Сбой записи аудита не должен ломать вызов инструмента.
+      this.log.error('audit write failed', { error: err as Error, tool: call.tool });
+    }
+  }
+}

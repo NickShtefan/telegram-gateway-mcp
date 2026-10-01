@@ -84,4 +84,19 @@ export const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+
+  // 2: скоупы доступа: что пользователю открыто или закрыто сверх правил по умолчанию
+  `
+  CREATE TABLE scope_rules (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    -- ключ чата или username в нижнем регистре без @
+    target TEXT NOT NULL,
+    effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),
+    -- откуда правило: owner (владелец через CLI) или task:<id> (поручение открыло диалог)
+    source TEXT NOT NULL DEFAULT 'owner',
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, account_id, target, source)
+  );
+  `,
 ];

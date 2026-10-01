@@ -17,6 +17,9 @@ import type {
   JobState,
   JobsRepo,
   KvRepo,
+  ScopeEffect,
+  ScopeRule,
+  ScopesRepo,
   SessionsRepo,
   Storage,
   UserRecord,
@@ -69,6 +72,7 @@ export class SqliteStorage implements Storage {
   readonly entities: EntitiesRepo;
   readonly audit: AuditRepo;
   readonly jobs: JobsRepo;
+  readonly scopes: ScopesRepo;
   readonly kv: KvRepo;
 
   constructor(options: SqliteStorageOptions) {
@@ -87,6 +91,7 @@ export class SqliteStorage implements Storage {
     this.entities = this.createEntitiesRepo();
     this.audit = this.createAuditRepo();
     this.jobs = this.createJobsRepo();
+    this.scopes = this.createScopesRepo();
     this.kv = this.createKvRepo();
   }
 
@@ -480,6 +485,47 @@ export class SqliteStorage implements Storage {
         num(
           this.prepare("UPDATE jobs SET state = 'queued', updated_at = ? WHERE state = 'running'").run(this.now()).changes,
         ),
+    };
+  }
+
+  // ---------- scopes ----------
+
+  private createScopesRepo(): ScopesRepo {
+    const map = (row: Row): ScopeRule => ({
+      userId: str(row.user_id),
+      accountId: str(row.account_id),
+      target: str(row.target),
+      effect: str(row.effect) as ScopeEffect,
+      source: str(row.source),
+      createdAt: num(row.created_at),
+    });
+    return {
+      put: rule => {
+        this.prepare(
+          `INSERT INTO scope_rules (user_id, account_id, target, effect, source, created_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, account_id, target, source) DO UPDATE SET effect = excluded.effect`,
+        ).run(rule.userId, rule.accountId, rule.target.replace(/^@/, '').toLowerCase(), rule.effect, rule.source, this.now());
+      },
+      list: (userId, accountId) =>
+        (
+          this.prepare('SELECT * FROM scope_rules WHERE user_id = ? AND account_id = ? ORDER BY target, source').all(
+            userId,
+            accountId,
+          ) as Row[]
+        ).map(map),
+      remove: (userId, accountId, target, source) => {
+        const t = target.replace(/^@/, '').toLowerCase();
+        const result = source
+          ? this.prepare('DELETE FROM scope_rules WHERE user_id = ? AND account_id = ? AND target = ? AND source = ?').run(
+              userId,
+              accountId,
+              t,
+              source,
+            )
+          : this.prepare('DELETE FROM scope_rules WHERE user_id = ? AND account_id = ? AND target = ?').run(userId, accountId, t);
+        return num(result.changes);
+      },
+      removeBySource: source => num(this.prepare('DELETE FROM scope_rules WHERE source = ?').run(source).changes),
     };
   }
 

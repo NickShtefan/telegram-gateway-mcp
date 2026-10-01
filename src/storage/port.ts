@@ -136,6 +136,28 @@ export interface JobsRepo {
   requeueRunning(): number;
 }
 
+// ---------- скоупы доступа ----------
+
+export type ScopeEffect = 'allow' | 'deny';
+
+export interface ScopeRule {
+  userId: string;
+  accountId: string;
+  /** Ключ чата или username в нижнем регистре без @. */
+  target: string;
+  effect: ScopeEffect;
+  /** `owner` или `task:<id>`: поручение открывает ровно один диалог и закрывает его за собой. */
+  source: string;
+  createdAt: number;
+}
+
+export interface ScopesRepo {
+  put(rule: Omit<ScopeRule, 'createdAt'>): void;
+  list(userId: string, accountId: string): ScopeRule[];
+  remove(userId: string, accountId: string, target: string, source?: string): number;
+  removeBySource(source: string): number;
+}
+
 // ---------- ключ-значение для мелкого состояния ----------
 
 export interface KvRepo {
@@ -151,6 +173,7 @@ export interface Storage {
   entities: EntitiesRepo;
   audit: AuditRepo;
   jobs: JobsRepo;
+  scopes: ScopesRepo;
   kv: KvRepo;
   /** Выполняет fn в одной транзакции; при ошибке откатывает. */
   transaction<T>(fn: () => T): T;
