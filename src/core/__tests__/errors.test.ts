@@ -1,4 +1,4 @@
-import { RPCMessageToError } from 'telegram/errors/index.js';
+import { RPCMessageToError } from 'teleproto/errors';
 import { describe, expect, it } from 'vitest';
 import { classifyError, floodInfo, GatewayError, getFloodWaitSeconds, telegramErrorCode } from '../errors.js';
 import { DeadlineError } from '../time.js';
@@ -70,16 +70,21 @@ describe('classifyError', () => {
   });
 });
 
-/** Ошибка ровно в том виде, в каком её создаёт GramJS из ответа Telegram. */
+/** Ошибка ровно в том виде, в каком её создаёт библиотека из ответа Telegram. */
 function realTelegramError(code: number, message: string, method = 'messages.Search'): Error {
   return RPCMessageToError({ errorCode: code, errorMessage: message } as never, { className: method } as never) as Error;
 }
 
-describe('ошибки в том виде, в каком их создаёт GramJS', () => {
-  it('FLOOD_WAIT: у настоящей ошибки errorMessage «FLOOD», а секунды в поле seconds', () => {
+describe('ошибки в том виде, в каком их создаёт библиотека (teleproto)', () => {
+  it('FLOOD_WAIT: настоящая ошибка несёт код сервера в errorMessage и секунды в поле seconds', () => {
     const err = realTelegramError(420, 'FLOOD_WAIT_42');
-    expect((err as { errorMessage?: string }).errorMessage).toBe('FLOOD');
+    expect(err.constructor.name).toBe('FloodWaitError');
+    expect(err as unknown as { errorMessage: string; seconds: number }).toMatchObject({ errorMessage: 'FLOOD_WAIT_42', seconds: 42 });
+    // в тексте ошибки кода нет: распознавание не должно опираться на него
+    expect(err.message).not.toContain('FLOOD_WAIT');
     expect(floodInfo(err)).toEqual({ seconds: 42, scope: 'account' });
+    // прежняя форма GramJS (errorMessage «FLOOD») тоже распознаётся
+    expect(floodInfo({ errorMessage: 'FLOOD', seconds: 42, message: 'A wait of 42 seconds is required' })).toEqual({ seconds: 42, scope: 'account' });
     expect(classifyError(err)).toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 42 });
     expect(floodInfo(realTelegramError(420, 'FLOOD_PREMIUM_WAIT_7'))).toEqual({ seconds: 7, scope: 'account' });
   });
@@ -102,6 +107,17 @@ describe('ошибки в том виде, в каком их создаёт Gra
     expect(classifyError(realTelegramError(400, 'INPUT_USER_DEACTIVATED')).code).toBe('CHAT_NOT_FOUND');
     expect(classifyError(realTelegramError(401, 'USER_DEACTIVATED')).code).toBe('ACCOUNT_UNAUTHORIZED');
     expect(classifyError(realTelegramError(401, 'AUTH_KEY_UNREGISTERED')).code).toBe('ACCOUNT_UNAUTHORIZED');
+  });
+
+  it('сессия отозвана, аккаунт заморожен, ключ занят другим процессом', () => {
+    expect(classifyError(realTelegramError(401, 'SESSION_REVOKED')).code).toBe('ACCOUNT_UNAUTHORIZED');
+    expect(classifyError(realTelegramError(406, 'AUTH_KEY_DUPLICATED')).code).toBe('ACCOUNT_UNAUTHORIZED');
+    expect(classifyError(realTelegramError(420, 'FROZEN_METHOD_INVALID')).code).toBe('ACCOUNT_FROZEN');
+    expect(classifyError(realTelegramError(400, 'PEER_FLOOD')).code).toBe('PEER_FLOOD');
+    expect(classifyError(realTelegramError(400, 'REACTION_INVALID')).code).toBe('INVALID_ARGUMENT');
+    // ошибка, которой библиотека ещё не знает, не теряет код
+    const unknown = classifyError(realTelegramError(400, 'SOME_BRAND_NEW_ERROR_7'));
+    expect(unknown).toMatchObject({ code: 'TELEGRAM_ERROR', telegramCode: 'SOME_BRAND_NEW_ERROR_7' });
   });
 
   it('код Telegram сохраняется для тех, кто разбирает исход записи', () => {

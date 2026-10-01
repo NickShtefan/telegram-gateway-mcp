@@ -7,7 +7,7 @@
  * `refreshService.ts:75` (GetMessages пачками по 100).
  */
 import bigInt from 'big-integer';
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import { toInputChannel, toInputPeer } from '../core/entities.js';
 import { GatewayError } from '../core/errors.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';

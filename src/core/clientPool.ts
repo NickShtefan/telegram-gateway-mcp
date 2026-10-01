@@ -6,9 +6,10 @@
  *
  * Второй клиент на той же сессии не создаётся никогда: AUTH_KEY_DUPLICATED.
  */
-import { TelegramClient } from 'telegram';
-import { Logger as GramLogger, LogLevel as GramLogLevel } from 'telegram/extensions/Logger.js';
-import { StringSession } from 'telegram/sessions/index.js';
+import { TelegramClient } from 'teleproto';
+import { Logger as GramLogger } from 'teleproto/extensions';
+import { LogLevel as GramLogLevel } from 'teleproto/extensions/Logger';
+import { StringSession } from 'teleproto/sessions';
 import { unseal } from './crypto.js';
 import { classifyError, GatewayError } from './errors.js';
 import { createLogger, type Logger } from './log.js';
@@ -30,10 +31,12 @@ class StderrGramLogger extends GramLogger {
     super(GramLogLevel.WARN);
   }
 
-  override log(level: GramLogLevel, message: string): void {
-    if (level === GramLogLevel.ERROR) this.sink.error(message);
-    else if (level === GramLogLevel.WARN) this.sink.warn(message);
-    else this.sink.debug(message);
+  // Базовый логгер пишет через console.log, то есть в stdout: этот метод заменяет его целиком.
+  override log(level: GramLogLevel, message: string, error?: unknown): void {
+    const text = error === undefined ? message : `${message}: ${error instanceof Error ? error.message : String(error)}`;
+    if (level === GramLogLevel.ERROR) this.sink.error(text);
+    else if (level === GramLogLevel.WARN) this.sink.warn(text);
+    else this.sink.debug(text);
   }
 }
 

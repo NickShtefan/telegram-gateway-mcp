@@ -10,7 +10,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import bigInt from 'big-integer';
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import type { WriteStore } from '../writegate/store.js';
 import { toInputChannel, toInputPeer } from '../core/entities.js';
 import { GatewayError, isGatewayError } from '../core/errors.js';

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TelegramClient } from 'telegram';
+import type { TelegramClient } from 'teleproto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientFactory } from '../../core/clientPool.js';
 import { loadConfig, type GatewayConfig } from '../../core/config.js';

@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RPCMessageToError } from 'telegram/errors/index.js';
+import { RPCMessageToError } from 'teleproto/errors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeTg } from '../../__tests__/helpers/fakeTg.js';
 import { GatewayError } from '../../core/errors.js';

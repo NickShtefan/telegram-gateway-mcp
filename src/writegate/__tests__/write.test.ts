@@ -1,4 +1,4 @@
-import { RPCMessageToError } from 'telegram/errors/index.js';
+import { RPCMessageToError } from 'teleproto/errors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeTestGateway, type TestClient, type TestGateway } from '../../__tests__/helpers/gateway.js';
 import { rawChannel, rawMessage, rawUser } from '../../__tests__/helpers/fakeTg.js';

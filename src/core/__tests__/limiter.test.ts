@@ -1,4 +1,4 @@
-import { RPCMessageToError } from 'telegram/errors/index.js';
+import { RPCMessageToError } from 'teleproto/errors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GatewayError } from '../errors.js';
 import { AccountLimiter } from '../limiter.js';

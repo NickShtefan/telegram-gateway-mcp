@@ -81,11 +81,11 @@ const WAIT_CODE = /(?:FLOOD_PREMIUM_WAIT|FLOOD_TEST_PHONE_WAIT|FLOOD_WAIT)[_ ]?(
 const SLOWMODE_CODE = /SLOWMODE_WAIT[_ ]?(\d+)/;
 
 /**
- * Разбор ошибки ожидания. Важно, как её отдаёт GramJS: у `FloodWaitError`
- * поле `errorMessage` равно просто `FLOOD`, число лежит в `seconds`, а текст
- * выглядит как «A wait of 17 seconds is required (caused by ...)». Исходный код
- * `FLOOD_WAIT_17` до нас в таком случае не доходит. Формы с кодом в тексте
- * тоже разбираются: так ошибки выглядят у других библиотек и в логах.
+ * Разбор ошибки ожидания. Библиотека (teleproto) кладёт код сервера в
+ * `errorMessage` (`FLOOD_WAIT_17`), число секунд в `seconds`, а в `message`
+ * пишет фразу без кода. У GramJS, с которого шлюз начинался, `errorMessage` был
+ * просто `FLOOD`, а код до нас не доходил. Разбираются обе формы и формы с
+ * кодом в тексте: так ошибки выглядят в логах и у других библиотек.
  */
 export function floodInfo(err: unknown): FloodInfo | null {
   const e = err as TelegramErrorLike | null;
@@ -98,7 +98,7 @@ export function floodInfo(err: unknown): FloodInfo | null {
   if (slowCode) return { seconds: parseInt(slowCode[1]!, 10), scope: 'chat' };
 
   const hasSeconds = typeof e.seconds === 'number' && Number.isFinite(e.seconds) && e.seconds >= 0;
-  // MSG_WAIT тоже приходит с errorMessage FLOOD, но без seconds: это не ожидание.
+  // Форма GramJS. MSG_WAIT там тоже приходил с errorMessage FLOOD, но без seconds: это не ожидание.
   if (e.errorMessage === 'FLOOD' && hasSeconds) return { seconds: e.seconds!, scope: 'account' };
 
   const waitCode = text.match(WAIT_CODE);

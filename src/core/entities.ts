@@ -4,7 +4,7 @@
  * каждого аккаунта (см. channel-scope `universalSearchService.ts:269`).
  */
 import bigInt from 'big-integer';
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import { parsePeerKey, peerKey, type PeerKind } from './chatId.js';
 import { GatewayError } from './errors.js';
 

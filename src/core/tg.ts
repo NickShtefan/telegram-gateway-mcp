@@ -3,7 +3,7 @@
  * лимитер аккаунта и имеет дедлайн; прямых `client.invoke` мимо очереди нет
  * (в channel-scope это была ошибка, которую мы не переносим).
  */
-import type { Api, TelegramClient } from 'telegram';
+import type { Api, TelegramClient } from 'teleproto';
 import type { ClientPool, AccountIdentity } from './clientPool.js';
 import { harvestEntities } from './entities.js';
 import { isGatewayError } from './errors.js';

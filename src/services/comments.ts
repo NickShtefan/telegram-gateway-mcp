@@ -8,7 +8,7 @@
  * не пишем в базу.
  */
 import bigInt from 'big-integer';
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import { peerKeyOfPeer, toInputPeer } from '../core/entities.js';
 import { GatewayError, isGatewayError } from '../core/errors.js';
 import { totalReactions } from '../core/reactions.js';

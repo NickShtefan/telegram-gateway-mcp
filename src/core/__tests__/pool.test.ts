@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TelegramClient } from 'telegram';
+import type { TelegramClient } from 'teleproto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loginAccount, normalizePhone } from '../auth.js';
 import { ClientPool, type ClientFactory } from '../clientPool.js';
@@ -158,6 +158,46 @@ describe('TgGateway', () => {
     const { tg } = makeTg();
     await expect(tg.withClient('agent', 'download', async client => typeof client.invoke)).resolves.toBe('function');
     await expect(tg.whoami('agent')).resolves.toMatchObject({ username: 'agent_acc' });
+  });
+});
+
+describe('библиотека MTProto (teleproto)', () => {
+  it('настоящий клиент создаётся с параметрами шлюза и ничего не пишет в stdout', async () => {
+    const { defaultClientFactory } = await import('../clientPool.js');
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const client = defaultClientFactory({ session: '', apiId: 12345, apiHash: 'a'.repeat(32), log: silent });
+      expect(client.floodSleepThreshold).toBe(0);
+      // сообщение библиотеки уходит в логгер шлюза (stderr), а не в stdout
+      (client as unknown as { _log: { warn(message: string): void } })._log.warn('test warning');
+      expect(stdout).not.toHaveBeenCalled();
+      expect(consoleLog).not.toHaveBeenCalled();
+    } finally {
+      stdout.mockRestore();
+      consoleLog.mockRestore();
+    }
+  });
+
+  it('читает сессию, сохранённую GramJS: повторный вход после смены библиотеки не нужен', async () => {
+    const { StringSession } = await import('teleproto/sessions');
+    // формат GramJS: версия, номер дата-центра, длина адреса, адрес, порт, ключ 256 байт
+    const key = Buffer.alloc(256, 7);
+    const address = Buffer.from('149.154.167.91');
+    const length = Buffer.alloc(2);
+    length.writeInt16BE(address.length, 0);
+    const port = Buffer.alloc(2);
+    port.writeInt16BE(443, 0);
+    const legacy = '1' + Buffer.concat([Buffer.from([2]), length, address, port, key]).toString('base64');
+
+    const session = new StringSession(legacy);
+    await session.load();
+    expect(session.dcId).toBe(2);
+    expect(session.serverAddress).toBe('149.154.167.91');
+    expect(session.port).toBe(443);
+    expect(session.authKey?.getKey()?.equals(key)).toBe(true);
+    // и сохраняет в том же виде
+    expect(session.save()).toBe(legacy);
   });
 });
 

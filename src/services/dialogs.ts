@@ -7,7 +7,7 @@
  * чаты, которые владелец убрал в архив.
  */
 import bigInt from 'big-integer';
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import { entityFromApi, peerKeyOfPeer, toInputPeer, type EntityInfo } from '../core/entities.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntitiesRepo } from '../storage/port.js';

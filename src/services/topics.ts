@@ -3,8 +3,8 @@
  * «Обмен». Список тем нужен, чтобы поиск, лента и выгрузка не смешивали
  * продажу с покупкой.
  */
-import { Api } from 'telegram';
-import { toInputChannel } from '../core/entities.js';
+import { Api } from 'teleproto';
+import { toInputPeer } from '../core/entities.js';
 import { GatewayError, isGatewayError } from '../core/errors.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntityRecord } from '../storage/port.js';
@@ -48,8 +48,9 @@ export class TopicsService {
     try {
       result = (await this.tg.invoke(
         accountId,
-        new Api.channels.GetForumTopics({
-          channel: toInputChannel(chat),
+        // С 2025 года темы есть не только у супергрупп, и метод переехал из channels в messages.
+        new Api.messages.GetForumTopics({
+          peer: toInputPeer(chat),
           q: params.query || undefined,
           offsetDate: 0,
           offsetId: 0,

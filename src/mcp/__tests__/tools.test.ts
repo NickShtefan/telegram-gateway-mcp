@@ -89,7 +89,7 @@ describe('tg_status и доступ к аккаунтам', () => {
   });
 
   it('чужой аккаунт недоступен, общий доступен обоим', async () => {
-    gw.tg.on('channels.GetForumTopics', () => ({ count: 0, topics: [] }));
+    gw.tg.on('messages.GetForumTopics', () => ({ count: 0, topics: [] }));
     const denied = await nick.call('tg_list_topics', { chat: '@baraholka', account: 'partner' });
     expect(denied.isError).toBe(true);
     expect(denied.text).toContain('Error: ACCESS_DENIED');
@@ -98,7 +98,7 @@ describe('tg_status и доступ к аккаунтам', () => {
     const partner = await gw.client('partner');
     const ok = await partner.call('tg_list_topics', { chat: '@baraholka', account: 'agent' });
     expect(ok.isError).toBe(false);
-    expect(gw.tg.last('channels.GetForumTopics').accountId).toBe('agent');
+    expect(gw.tg.last('messages.GetForumTopics').accountId).toBe('agent');
     await partner.close();
   });
 });
@@ -124,7 +124,7 @@ describe('кейс 1: объявления в барахолке', () => {
 
   beforeEach(() => {
     gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { about: 'Продажа техники', participantsCount: 12_000 }, chats: [forum({ left: true })] }));
-    gw.tg.on('channels.GetForumTopics', () => ({
+    gw.tg.on('messages.GetForumTopics', () => ({
       count: 2,
       topics: [
         { className: 'ForumTopic', id: 5, title: 'Продам', topMessage: 31 },

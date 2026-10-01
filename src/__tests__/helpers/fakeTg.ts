@@ -3,7 +3,7 @@
  * запросы по `className`, запоминает вызовы и, как настоящий TgGateway,
  * складывает сущности из ответов в кэш аккаунта.
  */
-import type { Api, TelegramClient } from 'telegram';
+import type { Api, TelegramClient } from 'teleproto';
 import type { AccountIdentity } from '../../core/clientPool.js';
 import { harvestEntities } from '../../core/entities.js';
 import type { LaneStatus } from '../../core/limiter.js';
@@ -45,6 +45,16 @@ export class FakeTg implements Tg {
 
   async invoke<R extends Api.AnyRequest>(accountId: string, request: R, options?: TgCallOptions): Promise<R['__response']> {
     const className = (request as { className?: string }).className ?? 'unknown';
+    // Запрос собран настоящими классами библиотеки: он обязан сериализоваться.
+    // Так тесты ловят поля, которые стали обязательными в новом слое протокола.
+    const serialize = (request as { getBytes?: () => unknown }).getBytes;
+    if (typeof serialize === 'function') {
+      try {
+        serialize.call(request);
+      } catch (err) {
+        throw new Error(`FakeTg: request ${className} does not serialize: ${(err as Error).message}`);
+      }
+    }
     this.calls.push({ accountId, className, request, options });
     const handler = this.handlers.get(className);
     if (!handler) throw new Error(`FakeTg: unexpected call ${className}`);

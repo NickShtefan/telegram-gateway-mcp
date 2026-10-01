@@ -7,7 +7,7 @@
  * `telegramUtils.getChannelFullInfo` и `universalSearchService.enrichChannelById`.
  */
 import bigInt from 'big-integer';
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import { parsePeerKey, peerKey as makePeerKey } from '../core/chatId.js';
 import { entityFromApi, peerKeyOfPeer, toInputChannel, toInputPeer, toInputUser } from '../core/entities.js';
 import { GatewayError, isGatewayError } from '../core/errors.js';

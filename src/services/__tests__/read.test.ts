@@ -323,7 +323,7 @@ describe('TopicsService', () => {
   const forum = { accountId: ACC, peerKey: '-1000000000700', kind: 'channel' as const, accessHash: '5', username: 'baraholka', title: 'Барахолка', meta: { forum: true }, updatedAt: 0 };
 
   it('список тем без удалённых', async () => {
-    tg.on('channels.GetForumTopics', () => ({
+    tg.on('messages.GetForumTopics', () => ({
       count: 3,
       topics: [
         { className: 'ForumTopic', id: 1, title: 'General', topMessage: 900, pinned: true, date: 1_700_000_000 },
@@ -340,11 +340,11 @@ describe('TopicsService', () => {
       { id: 1, title: 'General', topMessageId: 900, closed: false, pinned: true, hidden: false, date: 1_700_000_000 },
       { id: 5, title: 'Продам', topMessageId: 950, closed: false, pinned: false, hidden: false, date: null },
     ]);
-    expect(tg.last('channels.GetForumTopics').request).toMatchObject({ q: 'прод', limit: 50 });
+    expect(tg.last('messages.GetForumTopics').request).toMatchObject({ q: 'прод', limit: 50 });
   });
 
   it('не форум объясняется понятно', async () => {
-    tg.on('channels.GetForumTopics', () => {
+    tg.on('messages.GetForumTopics', () => {
       throw new GatewayError('TELEGRAM_ERROR', 'Telegram error: CHANNEL_FORUM_MISSING', { telegramCode: 'CHANNEL_FORUM_MISSING' });
     });
     await expect(new TopicsService(tg).list(ACC, forum, { limit: 10 })).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('not a forum') });

@@ -8,7 +8,7 @@
  */
 import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
-import type { Api } from 'telegram';
+import type { Api } from 'teleproto';
 import { createLogger, type Logger } from '../core/log.js';
 import { ensureTrustedDir, isOwnRegularFile, writeNewFile } from '../core/safeFs.js';
 import { sleep } from '../core/time.js';

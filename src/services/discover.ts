@@ -8,7 +8,7 @@
  * чаты из ответов попадают в кэш аккаунта, поэтому найденный канал можно сразу
  * открыть другими инструментами.
  */
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import { entityFromApi, peerKeyOfPeer, toInputChannel, type EntityInfo } from '../core/entities.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntitiesRepo, EntityRecord } from '../storage/port.js';

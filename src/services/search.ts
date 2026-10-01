@@ -11,7 +11,7 @@
  * хэштегу. Полнотекстового поиска по всему Telegram здесь нет.
  */
 import bigInt from 'big-integer';
-import { Api } from 'telegram';
+import { Api } from 'teleproto';
 import { toInputPeer } from '../core/entities.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntitiesRepo, EntityRecord } from '../storage/port.js';
