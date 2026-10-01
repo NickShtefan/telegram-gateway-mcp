@@ -75,9 +75,9 @@ export async function runServe(options: ServeOptions): Promise<number> {
   try {
     const resumed = services.jobs.resume();
     if (resumed > 0) log.info('resumed interrupted jobs', { count: resumed });
-    // Действия, которые выполнялись в момент падения: исход неизвестен, человеку об этом сообщается.
-    const interrupted = await services.automation.approvals.recover();
-    if (interrupted > 0) log.warn('approvals interrupted by a restart', { count: interrupted });
+    // Действия, которые выполнялись в момент падения: исход неизвестен, об этом сообщает событие во входящих.
+    const interrupted = services.automation.approvals.recover();
+    if (interrupted > 0) log.warn('write actions interrupted by a restart, their outcome is unknown', { count: interrupted });
     http = await startHttpServer({
       services,
       host: config.host,
@@ -94,25 +94,23 @@ export async function runServe(options: ServeOptions): Promise<number> {
     throw err;
   }
 
-  // Фоновая работа: бот согласований, наблюдатель, уборка.
+  // Фоновая работа: наблюдатель, опрос диалогов поручений, уборка.
   const background = new AbortController();
   const { approvals, watcher, runner, tasks, store } = services.automation;
   let lastPrune = 0;
-  const loops: Array<Promise<void>> = [watcher.run(background.signal)];
-  if (approvals.enabled) loops.push(approvals.poll(background.signal));
-  else log.warn('approval bot is not configured (TG_MCP_APPROVAL_BOT_TOKEN): write tools and rules will answer UNAVAILABLE');
+  void watcher.run(background.signal);
   // Диалоги поручений опрашиваются чаще каналов: собеседник ждёт ответа.
   const taskPoller = setInterval(() => {
     void tasks.tick().catch(err => log.warn('task poll failed', { error: (err as Error).message }));
   }, 10_000);
   taskPoller.unref();
   const sweeper = setInterval(() => {
-    void approvals.sweep().catch(err => log.warn('approval sweep failed', { error: (err as Error).message }));
-    void tasks.sweep().catch(err => log.warn('task sweep failed', { error: (err as Error).message }));
-    try {
-      runner.sweep();
-    } catch (err) {
-      log.warn('runner sweep failed', { error: (err as Error).message });
+    for (const [name, sweep] of [['approvals', () => approvals.sweep()], ['tasks', () => tasks.sweep()], ['runner', () => runner.sweep()]] as const) {
+      try {
+        sweep();
+      } catch (err) {
+        log.warn('sweep failed', { part: name, error: (err as Error).message });
+      }
     }
     if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
       lastPrune = Date.now();

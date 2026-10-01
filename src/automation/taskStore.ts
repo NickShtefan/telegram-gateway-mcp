@@ -15,7 +15,8 @@ const numOrNull = (v: unknown): number | null => (v === null || v === undefined 
  * question: вопрос владельцу; done: готово; closed: остановлено или истекло.
  */
 export type TaskState = 'waiting_reply' | 'agent_turn' | 'question' | 'done' | 'closed';
-export type TaskVia = 'account' | 'business';
+/** Способ переписки. Сейчас один: пишет подключённый аккаунт (решения 9 и 23). */
+export type TaskVia = 'account';
 export type TaskRole = 'peer' | 'agent' | 'owner' | 'system';
 
 export const ASK_ME_BEFORE = ['over_limits', 'money_transfer', 'address', 'personal_data', 'meeting_time'] as const;

@@ -6,7 +6,7 @@
 
 | Файл | Что берём | Компонент | Режим |
 |---|---|---|---|
-| `canary/src/telegram/telegram.js:9` | сообщение с inline-клавиатурой через Bot API | Согласование и вопросы | паттерн |
+| `canary/src/telegram/telegram.js:9` | сообщение с inline-клавиатурой через Bot API | не используется: бота согласований нет (решение 23) | паттерн |
 | `channel-scope/packages/mcp/src/helpers.ts` | чистые функции вынесены ради тестов, тесты на vitest | Реестр инструментов | паттерн |
 | `channel-scope/packages/mcp/src/index.ts:101` | `McpServer` с полем `instructions` | Реестр инструментов | паттерн |
 | `channel-scope/packages/mcp/src/index.ts:117` | `registerTool`, zod-схемы, `readOnlyHint` | Реестр инструментов | паттерн |
@@ -63,7 +63,7 @@
 | `helper/src/db/models/CommentReactionActor.ts` | кто и чем отреагировал, флаг `isOwner` | Мост к архивам | адаптация |
 | `helper/src/scripts/generateSession.ts:12` | интерактивный вход через `client.start` и `input` | CLI | адаптация |
 | `helper/src/scripts/generateSession.ts:34` | консольный вариант того же входа | Вход в аккаунт | как есть |
-| `helper/src/telegram/bot/listenerBot.ts:17` | приём обновлений бота через polling | Согласование и вопросы | паттерн |
+| `helper/src/telegram/bot/listenerBot.ts:17` | приём обновлений бота через polling | не используется: бота согласований нет (решение 23) | паттерн |
 | `helper/src/telegram/bot/listenerBot.ts:49` | быстрый слой через Bot API: посты, комментарии, реакции (бот должен быть админом) | Наблюдатель | адаптация |
 | `helper/src/telegram/client/backfillComments.ts:32` | lock-файл против второго процесса на той же сессии, снимается при Ctrl+C | stdio-прокладка | паттерн |
 | `helper/src/telegram/client/gramClient.ts:21` | режим `STRING_SESSION` из env | Хранилище сессий | адаптация |

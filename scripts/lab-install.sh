@@ -203,10 +203,9 @@ TG_API_ID=
 TG_API_HASH=
 TG_MCP_FILES_DIR=$FILES_DIR
 TG_MCP_PORT=$PORT
-# Наборы инструментов: core (чтение), automate (наблюдение, правила, поручения), write (запись через согласование).
+# Наборы инструментов: core (чтение), write (запись в два шага: предпросмотр и tg_confirm),
+# automate (наблюдение, правила, поручения).
 TG_MCP_TOOLSETS=core
-# Токен бота согласований от BotFather. Нужен отдельный бот: токены бота Claude Code и бота Hermes заняты.
-# TG_MCP_APPROVAL_BOT_TOKEN=
 EOF
   chown "$SVC_USER":staff "$GATEWAY_HOME/.env"
   chmod 600 "$GATEWAY_HOME/.env"
@@ -304,7 +303,7 @@ cat <<EOF
   2. Войди в аккаунт Telegram (код и пароль 2FA вводишь сам):
        sudo $PREFIX/bin/tg-mcp-admin login --account agent
   3. Заведи пользователей и выдай доступ (токен печатается один раз):
-       sudo $PREFIX/bin/tg-mcp-admin user add nick --telegram-id <твой id> --account agent
+       sudo $PREFIX/bin/tg-mcp-admin user add nick --account agent
   4. Проверь:
        sudo $PREFIX/bin/tg-mcp-admin doctor
   5. Перезапусти демон, чтобы он увидел .env:

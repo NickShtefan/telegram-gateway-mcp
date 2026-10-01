@@ -15,7 +15,6 @@ import { createMcpServer } from '../../mcp/server.js';
 import type { Runtime } from '../../runtime.js';
 import { buildServices, type GatewayServices } from '../../services/index.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
-import { FakeBot } from './fakeBot.js';
 import { FakeTg } from './fakeTg.js';
 
 export interface TestGateway {
@@ -23,7 +22,6 @@ export interface TestGateway {
   config: GatewayConfig;
   storage: SqliteStorage;
   tg: FakeTg;
-  bot: FakeBot;
   services: GatewayServices;
   tokens: { nick: string; partner: string };
   /** MCP-клиент, подключённый к серверу пользователя в памяти. */
@@ -44,7 +42,7 @@ export interface TestClient {
   close(): Promise<void>;
 }
 
-export function makeTestGateway(options: { bot?: boolean; now?: () => number } = {}): TestGateway {
+export function makeTestGateway(options: { now?: () => number } = {}): TestGateway {
   const home = mkdtempSync(join(tmpdir(), 'tgmcp-gw-'));
   const storage = new SqliteStorage({ path: ':memory:' });
   const tg = new FakeTg(storage.entities);
@@ -58,11 +56,10 @@ export function makeTestGateway(options: { bot?: boolean; now?: () => number } =
     toolsets: ['core'],
     apiId: 1,
     apiHash: 'hash',
-    approvalBotToken: null,
   };
 
-  const nick = addUser(storage, { id: 'nick', telegramId: '111', accounts: ['nick', 'agent'] });
-  const partner = addUser(storage, { id: 'partner', telegramId: '222', accounts: ['partner', 'agent'] });
+  const nick = addUser(storage, { id: 'nick', accounts: ['nick', 'agent'] });
+  const partner = addUser(storage, { id: 'partner', accounts: ['partner', 'agent'] });
   for (const id of ['nick', 'partner', 'agent']) {
     storage.accounts.upsert({ id, status: 'active', username: `${id}_acc`, tgUserId: '1001' });
     storage.sessions.put(id, seal('session', 'secret'));
@@ -70,15 +67,13 @@ export function makeTestGateway(options: { bot?: boolean; now?: () => number } =
   storage.users.update('nick', { defaultAccount: 'agent' });
 
   const runtime = { config, storage, tg, log, fatal: () => undefined, close: async () => undefined } as unknown as Runtime;
-  const bot = new FakeBot();
-  const services = buildServices(runtime, { bot: options.bot === false ? null : bot, now: options.now });
+  const services = buildServices(runtime, { now: options.now });
 
   return {
     home,
     config,
     storage,
     tg,
-    bot,
     services,
     tokens: { nick: nick.token, partner: partner.token },
     client: async (userId, toolsets = ['core']) => {

@@ -220,7 +220,7 @@ export const MIGRATIONS: string[] = [
   CREATE TABLE tasks (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    -- аккаунт шлюза; NULL, если переписка идёт через Business-бота от имени владельца
+    -- аккаунт шлюза, который ведёт переписку
     account_id TEXT,
     via TEXT NOT NULL,
     peer_key TEXT NOT NULL,

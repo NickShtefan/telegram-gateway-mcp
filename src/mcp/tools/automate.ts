@@ -2,12 +2,12 @@
  * Наборы `automate` и `write`: наблюдение, входящие, правила и действия.
  *
  * Наблюдение ничего не пишет в Telegram и работает сразу (решение 15).
- * Всё, что пишет, уходит человеку на согласование в бота: инструмент
- * возвращает `approval_id`, а действие выполняет шлюз после нажатия кнопки.
+ * Всё, что пишет, идёт в два шага: инструмент возвращает предпросмотр и
+ * `approval_id`, а действие выполняет шлюз после `tg_confirm` (решение 23).
  */
 import { z } from 'zod';
 import { assertRuleId, describeRule, normalizeRuleConfig, RULE_PER_DAY_MAX, ruleKey, ruleName } from '../../automation/rules.js';
-import type { ApprovalRecord, InboxEvent } from '../../automation/store.js';
+import type { InboxEvent } from '../../automation/store.js';
 import { GatewayError } from '../../core/errors.js';
 import { createEnvelope, safeLabel } from '../../policy/envelope.js';
 import { messageLink, parseRef } from '../../services/links.js';
@@ -16,15 +16,8 @@ import { clampLimit } from '../args.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import { formatDate } from '../format.js';
 import { defineTool, type ToolContext, type ToolDef } from '../tool.js';
+import { confirmNote } from './confirm.js';
 import { accountArg, chatArg, chatLabel, locateMessage } from './shared.js';
-
-function pendingNote(approval: ApprovalRecord): string {
-  return [
-    `Sent to the owner for approval: approval_id ${approval.id}.`,
-    'Nothing has been done in Telegram yet. The gateway performs the action itself after the owner taps the button in the approval bot.',
-    'Do not repeat this call. The outcome appears in tg_inbox as an "approval" event.',
-  ].join('\n');
-}
 
 const tgWatch = defineTool({
   name: 'tg_watch',
@@ -103,12 +96,26 @@ function formatEvent(event: InboxEvent, ctx: ToolContext, env: ReturnType<typeof
     }
     case 'approval': {
       const result = (p.result ?? {}) as Record<string, unknown>;
-      const detail = typeof result.summary === 'string' ? result.summary : typeof result.error === 'string' ? result.error : '';
+      const detail =
+        p.state === 'pending'
+          ? 'a draft waits for the owner: show it with tg_confirm action=list'
+          : typeof result.summary === 'string'
+            ? result.summary
+            : typeof result.error === 'string'
+              ? result.error
+              : '';
       return [
-        [`event ${event.id}`, when, 'approval', String(p.approval_id), `${String(p.action)} ${String(p.state)}`, where ? `in ${where}` : '', detail]
+        [`event ${event.id}`, when, 'approval', String(p.approval_id), `${String(p.action)} ${String(p.state)}`, where ? `in ${where}` : '', typeof p.source === 'string' && p.source !== 'tool' ? `by ${p.source}` : '', detail]
           .filter(Boolean)
           .join(' | '),
       ];
+    }
+    case 'task': {
+      const head = [`event ${event.id}`, when, 'task', String(p.task), String(p.state), typeof p.peer === 'string' ? `with ${safeLabel(p.peer, 60)}` : ''].filter(Boolean).join(' | ');
+      // Вопрос и отчёт пишет агент, который читал сообщения собеседника: это чужой текст.
+      const lines = typeof p.detail === 'string' && p.detail ? [head, env.inline(p.detail, 600)] : [head];
+      if (p.state === 'question') lines.push(`  The owner has to answer: pass their words with tg_task_update task_id=${String(p.task)} state=answer.`);
+      return lines;
     }
     case 'agent_run':
       return [
@@ -126,7 +133,7 @@ const tgInbox = defineTool({
   toolset: 'automate',
   title: 'Read new events',
   description:
-    'Events since the cursor: new posts in watched chats, outcomes of approvals, runs of your rules. Without a cursor returns the latest events. Always returns next_cursor: pass it next time to get only newer events.',
+    'Events since the cursor: new posts in watched chats, drafts of unattended runs that wait for the owner, outcomes of confirmed requests, runs of your rules, questions and reports of tasks. Without a cursor returns the latest events. Always returns next_cursor: pass it next time to get only newer events.',
   input: {
     cursor: z.string().optional().describe('next_cursor from the previous tg_inbox call.'),
     limit: z.number().int().optional().describe('Default 20, max 50.'),
@@ -150,7 +157,7 @@ const tgInbox = defineTool({
     });
     const env = createEnvelope();
     const lines = [`Inbox: ${events.length} event(s)`];
-    if (events.some(e => e.kind === 'new_post')) lines.push(env.notice(), 'Times are UTC.');
+    if (events.some(e => e.kind === 'new_post' || e.kind === 'task')) lines.push(env.notice(), 'Times are UTC.');
     for (const event of events) lines.push(...formatEvent(event, ctx, env));
     if (events.length === 0) lines.push('Nothing new.');
 
@@ -167,7 +174,7 @@ const tgRuleSet = defineTool({
   toolset: 'automate',
   title: 'Create or change a monitoring rule',
   description:
-    'A rule watches a chat and, on each new post, starts the owner\'s agent with your prompt to draft a reply in comments; every draft still goes to the owner for approval. Creating or changing a rule needs the owner\'s approval in Telegram. enabled=false switches a rule off at once.',
+    'A rule watches a chat and, on each new post, starts the owner\'s agent with your prompt to draft a reply in comments; every draft waits for the owner (tg_confirm). Creating or changing a rule is a write request too: it returns a preview and starts working only after tg_confirm. enabled=false switches a rule off at once.',
   input: {
     id: z.string().describe('Rule id: lowercase letters, digits, "-" or "_".'),
     chat: z.string().optional().describe('Chat to watch. Required for a new rule.'),
@@ -177,7 +184,7 @@ const tgRuleSet = defineTool({
     per_day: z.number().int().optional().describe(`Maximum agent runs per day: default 5, max ${RULE_PER_DAY_MAX}.`),
     quiet_hours: z.string().optional().describe('Hours with no runs, UTC, like 23:00-09:00.'),
     send_as: z.enum(['account', 'channel']).optional().describe('Reply as the account (default) or as the channel, if the account is its admin.'),
-    enabled: z.boolean().optional().describe('false switches the rule off without approval.'),
+    enabled: z.boolean().optional().describe('false switches the rule off at once, no confirmation needed.'),
     account: accountArg,
   },
   readOnly: false,
@@ -216,7 +223,7 @@ const tgRuleSet = defineTool({
     });
 
     const rule = { id: key, userId, accountId, chatKey: chat.peerKey, config };
-    const approval = await automation.approvals.request({
+    const approval = automation.approvals.request({
       userId,
       accountId,
       kind: 'rule',
@@ -224,7 +231,7 @@ const tgRuleSet = defineTool({
       payload: { rule, chatKey: chat.peerKey },
       title: describeRule(rule, chatLabel(chat)),
     });
-    return { accountId, peerKey: chat.peerKey, text: `Rule "${id}" for ${chatLabel(chat)} is ${existing ? 'changed' : 'created'} but NOT active yet.\n${pendingNote(approval)}` };
+    return { accountId, peerKey: chat.peerKey, text: `Rule "${id}" for ${chatLabel(chat)} is ${existing ? 'changed' : 'prepared'} but NOT active yet.\n${confirmNote(approval, ctx)}` };
   },
 });
 
@@ -272,12 +279,12 @@ const tgReply = defineTool({
   toolset: 'write',
   title: 'Reply in comments to a post',
   description:
-    'Drafts a reply in the comments of a channel post and sends the draft to the owner for approval in Telegram. Nothing is posted until the owner taps Send. One reply per post per account.',
+    'Prepares a reply in the comments of a channel post and returns a preview with an approval_id. Nothing is posted until tg_confirm, which you call after the owner agrees. One reply per post per account.',
   input: {
     link: z.string().optional().describe('t.me link to the post.'),
     chat: z.string().optional().describe('Channel, when "link" is not given.'),
     id: z.number().int().positive().max(2_147_483_647).optional().describe('Post id, when "link" is not given.'),
-    text: z.string().describe('Reply text, plain text, up to 2800 characters.'),
+    text: z.string().describe('Reply text, plain text, up to 4096 characters.'),
     send_as: z.enum(['account', 'channel']).optional().describe('Reply as the account (default) or as the channel, if the account is its admin.'),
     account: accountArg,
   },
@@ -298,24 +305,28 @@ const tgReply = defineTool({
 
     automation.write.assertCanReply(where.accountId, post.chat.peerKey, post.postId);
     const waiting = automation.store
-      .listApprovals(ctx.principal.userId, ['pending', 'awaiting_edit', 'executing'], 100)
+      .listApprovals(ctx.principal.userId, ['pending', 'executing'], 100)
       .find(a => a.kind === 'reply' && a.payload.accountId === where.accountId && a.payload.chatKey === post.chat.peerKey && a.payload.postId === post.postId);
     if (waiting) {
-      throw new GatewayError('LIMIT_REACHED', `A reply to this post is already waiting for the owner's approval (${waiting.id}). Do not send another one.`);
+      throw new GatewayError(
+        'LIMIT_REACHED',
+        `A reply to this post is already prepared (${waiting.id}). Confirm it with tg_confirm (pass "text" to change the wording) or reject it there; do not prepare another one.`,
+      );
     }
 
-    const link = messageLink({ username: post.chat.username, peerKey: post.chat.peerKey, messageId: post.postId }) ?? `#${post.postId} в ${chatLabel(post.chat)}`;
+    const link = messageLink({ username: post.chat.username, peerKey: post.chat.peerKey, messageId: post.postId }) ?? `#${post.postId} in ${chatLabel(post.chat)}`;
     // Агент, запущенный по правилу, отвечает так, как записано в правиле, а не как решит сам.
     const sendAs = grant ? (grant.reply?.sendAs ?? 'account') : (args.send_as ?? 'account');
-    const approval = await automation.approvals.request({
+    const approval = automation.approvals.request({
       userId: ctx.principal.userId,
       accountId: where.accountId,
       kind: 'reply',
-      source: grant?.ruleId ? `rule:${grant.ruleId}` : 'tool',
+      source: grant?.ruleId ? `rule:${ruleName(grant.ruleId)}` : 'tool',
       payload: { accountId: where.accountId, chatKey: post.chat.peerKey, postId: post.postId, text, sendAs, link },
-      title: `Ответ в комментариях к посту ${link}${sendAs === 'channel' ? ' (от имени канала)' : ''}`,
+      title: `Reply in the comments of post ${link}${sendAs === 'channel' ? ' (on behalf of the channel)' : ''}`,
+      background: grant !== undefined,
     });
-    return { accountId: where.accountId, peerKey: post.chat.peerKey, text: `Reply to post #${post.postId} of ${chatLabel(post.chat)} is drafted.\n${pendingNote(approval)}` };
+    return { accountId: where.accountId, peerKey: post.chat.peerKey, text: `Reply to post #${post.postId} of ${chatLabel(post.chat)} is prepared.\n${confirmNote(approval, ctx)}` };
   },
 });
 
@@ -324,7 +335,7 @@ const tgJoin = defineTool({
   toolset: 'write',
   title: 'Join a chat',
   description:
-    'Asks the owner to approve joining a channel or group (public or by invite link). The gateway never passes captchas of gatekeeper bots: if the chat asks for one, the owner has to do it.',
+    'Prepares joining a channel or group (public or by invite link) and returns a preview with an approval_id; the account joins only after tg_confirm, which you call after the owner agrees. The gateway never passes captchas of gatekeeper bots: if the chat asks for one, the owner has to do it.',
   input: { ref: chatArg, account: accountArg },
   readOnly: false,
   handler: async (args, ctx) => {
@@ -337,26 +348,26 @@ const tgJoin = defineTool({
     if (parsed.chat.type === 'invite') {
       const invite = await resolver.invite(accountId, parsed.chat.hash);
       if (invite.member) return { accountId, text: 'The account is already a member of this chat.' };
-      label = `закрытый чат «${safeLabel(invite.title, 60) || 'без названия'}»${invite.members ? `, участников: ${invite.members}` : ''}${invite.requestNeeded ? ' (вступление по заявке)' : ''}`;
+      label = `the private chat "${safeLabel(invite.title, 60) || 'untitled'}"${invite.members ? `, ${invite.members} members` : ''}${invite.requestNeeded ? ' (joining needs an admin to accept the request)' : ''}`;
       payload = { accountId, inviteHash: parsed.chat.hash, label };
     } else {
       const { chat } = await ctx.openChat(args.ref, accountId);
       if (chat.kind !== 'channel') throw new GatewayError('INVALID_ARGUMENT', 'Only channels and supergroups can be joined.');
       const card = await resolver.card(accountId, chat);
       if (card.isMember === true) return { accountId, peerKey: chat.peerKey, text: `The account is already a member of ${chatLabel(chat)}.` };
-      label = `${chatLabel(chat)} (${card.type}${card.members !== null ? `, участников: ${card.members}` : ''})`;
+      label = `${chatLabel(chat)} (${card.type}${card.members !== null ? `, ${card.members} members` : ''})`;
       payload = { accountId, chatKey: chat.peerKey, label };
     }
 
-    const approval = await automation.approvals.request({
+    const approval = automation.approvals.request({
       userId: ctx.principal.userId,
       accountId,
       kind: 'join',
       source: 'tool',
       payload,
-      title: `Вступить в ${label}`,
+      title: `Join ${label}`,
     });
-    return { accountId, text: `Joining is requested.\n${pendingNote(approval)}` };
+    return { accountId, text: `Joining is prepared.\n${confirmNote(approval, ctx)}` };
   },
 });
 

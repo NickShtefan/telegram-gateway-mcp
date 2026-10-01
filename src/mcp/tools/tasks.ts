@@ -1,7 +1,7 @@
 /**
- * Инструменты поручений (кейс 4) и отправки сообщений. Поручение создаётся
- * только с согласия владельца; каждое сообщение агента тоже уходит ему на
- * согласование. Сообщения собеседника в выдаче помечены как чужой текст.
+ * Инструменты поручений (кейс 4) и отправки сообщений. Поручение начинается
+ * только после подтверждения владельца (`tg_confirm`); каждое сообщение агента
+ * тоже ждёт подтверждения. Сообщения собеседника помечены как чужой текст.
  */
 import { z } from 'zod';
 import { TASK_MAX_DEADLINE_MS, TASK_MAX_MESSAGES } from '../../automation/tasks.js';
@@ -12,6 +12,7 @@ import { assertMessageText } from '../../services/write.js';
 import { clampLimit, parseDuration } from '../args.js';
 import { formatDate } from '../format.js';
 import { defineTool, type ToolDef } from '../tool.js';
+import { confirmNote } from './confirm.js';
 import { accountArg, chatLabel } from './shared.js';
 
 const STATE_TEXT: Record<TaskRecord['state'], string> = {
@@ -26,7 +27,7 @@ function taskLine(task: TaskRecord, own: boolean): string {
   return [
     `task ${task.id}`,
     safeLabel(task.peerLabel, 60),
-    task.via === 'business' ? 'via business bot' : `account ${task.accountId}`,
+    `account ${task.accountId}`,
     STATE_TEXT[task.state],
     `messages ${task.messagesSent}/${task.maxMessages}`,
     `deadline ${formatDate(Math.floor(task.deadlineAt / 1000))}`,
@@ -39,7 +40,7 @@ const tgTaskStart = defineTool({
   toolset: 'automate',
   title: 'Start a task: negotiate with a person',
   description:
-    'Starts a conversation with a person on the owner\'s behalf, with a goal and limits kept by the gateway. The owner approves the task and its first message in Telegram; every later message is approved too. The gateway wakes the owner\'s agent on each reply of the person.',
+    'Prepares a conversation with a person on the owner\'s behalf, with a goal and limits kept by the gateway. Returns a preview with an approval_id: the task starts and its first message is sent only after tg_confirm, which you call after the owner agrees. Every later message waits for the owner too. The gateway wakes the owner\'s agent on each reply of the person.',
   input: {
     peer: z.string().describe('The person: @username or t.me link.'),
     goal: z.string().describe('What has to be achieved.'),
@@ -48,28 +49,24 @@ const tgTaskStart = defineTool({
       .array(z.enum(ASK_ME_BEFORE))
       .optional()
       .describe('What only the owner decides. money_transfer is always included.'),
-    first_message: z.string().describe('First message to the person, up to 2800 characters. By default say that you write as an assistant.'),
+    first_message: z.string().describe('First message to the person, up to 4096 characters. By default say that you write as an assistant.'),
     deadline: z.string().optional().describe('How long the task lives: 3d (default), 12h, 2w. Max 30d.'),
     max_messages: z.number().int().optional().describe(`Maximum messages to the person: default 20, max ${TASK_MAX_MESSAGES}.`),
     reminder_after: z.string().optional().describe('Allow one reminder if the person is silent this long: 24h by default.'),
-    via: z.enum(['account', 'business']).optional().describe('account (default): the gateway account writes. business: replies go from the owner\'s own account through the Business bot; the owner sends the first message.'),
     account: accountArg,
   },
   readOnly: false,
   handler: async (args, ctx) => {
     const { automation, resolver, scopes } = ctx.services;
-    const via = args.via ?? 'account';
-    // Для режима business аккаунт шлюза нужен только чтобы найти человека по username.
     const accountId = ctx.account(args.account);
     const { chat: peer } = await resolver.resolve(accountId, args.peer);
     const decision = scopes.decide(ctx.principal.userId, accountId, peer);
     // Служебные чаты и чаты, закрытые владельцем, не открывает даже поручение.
     if (!decision.allowed && decision.code !== 'private') throw new GatewayError('ACCESS_DENIED', decision.reason);
 
-    const approval = await automation.tasks.requestStart({
+    const approval = automation.tasks.requestStart({
       userId: ctx.principal.userId,
       accountId,
-      via,
       peer,
       goal: args.goal,
       limits: args.limits ?? '',
@@ -85,8 +82,8 @@ const tgTaskStart = defineTool({
       peerKey: peer.peerKey,
       text: [
         `Task ${taskId} with ${chatLabel(peer)} is prepared but NOT started.`,
-        `Sent to the owner for approval: approval_id ${approval.id}. The owner sees the goal, the limits and the first message, and may edit the message.`,
-        'Do not repeat this call. After approval the task appears in tg_tasks; replies of the person wake the owner\'s agent automatically.',
+        confirmNote(approval, ctx),
+        'After tg_confirm the task appears in tg_tasks; replies of the person wake the owner\'s agent automatically.',
       ].join('\n'),
     };
   },
@@ -132,11 +129,12 @@ const tgTaskUpdate = defineTool({
   toolset: 'automate',
   title: 'Change the state of a task',
   description:
-    'state=question asks the owner in Telegram and waits for the answer; state=done finishes the task with a summary for the owner; state=waiting means nothing has to be said now.',
+    'state=question puts a question to the owner (it appears in their tg_inbox) and waits; state=answer passes the owner\'s own answer or instruction to the task and wakes its agent; state=done finishes the task with a summary for the owner; state=waiting means nothing has to be said now.',
   input: {
     task_id: z.string().describe('Task id.'),
-    state: z.enum(['question', 'done', 'waiting']).describe('New state.'),
+    state: z.enum(['question', 'answer', 'done', 'waiting']).describe('New state.'),
     question: z.string().optional().describe('For state=question: a short question with the options you see.'),
+    answer: z.string().optional().describe('For state=answer: what the owner said, in their words. Only the owner\'s own agent may pass it.'),
     summary: z.string().optional().describe('For state=done: the outcome: what was agreed, what is left for the owner to do.'),
   },
   readOnly: false,
@@ -149,11 +147,16 @@ const tgTaskUpdate = defineTool({
     let task: TaskRecord;
     let note: string;
     if (args.state === 'question') {
-      task = await tasks.ask(args.task_id, userId, args.question ?? '');
-      note = 'The owner is asked in Telegram. Their answer will wake the agent again: stop now.';
+      task = tasks.ask(args.task_id, userId, args.question ?? '');
+      note = 'The question is in the owner\'s tg_inbox. Their answer will wake the agent again: stop now.';
+    } else if (args.state === 'answer') {
+      // Указание владельца имеет силу команды для агента поручения: запуск без человека подать его не может.
+      if (ctx.principal.grant) throw new GatewayError('ACCESS_DENIED', 'An unattended run cannot answer for the owner. Ask with state=question and stop.');
+      task = tasks.answer(args.task_id, userId, args.answer ?? '');
+      note = 'The owner\'s answer is recorded. The agent of the task is woken to continue.';
     } else if (args.state === 'done') {
-      task = await tasks.finish(args.task_id, userId, args.summary ?? '');
-      note = 'The owner received the summary. The dialog with the person is closed for the gateway.';
+      task = tasks.finish(args.task_id, userId, args.summary ?? '');
+      note = 'The summary is in the owner\'s tg_inbox. The dialog with the person is closed for the gateway.';
     } else {
       task = tasks.wait(args.task_id, userId);
       note = 'Nothing is sent. The next message of the person will wake the agent.';
@@ -192,11 +195,11 @@ const tgSend = defineTool({
   toolset: 'write',
   title: 'Send a message',
   description:
-    'Drafts a message and sends it to the owner for approval in Telegram; nothing is sent until the owner taps Send. With task_id the message goes to the person of that task. Without it, "chat" is a group or a private chat the owner has opened.',
+    'Prepares a message and returns a preview with an approval_id; nothing is sent until tg_confirm, which you call after the owner agrees. With task_id the message goes to the person of that task. Without it, "chat" is a group or a private chat the owner has opened.',
   input: {
     task_id: z.string().optional().describe('Task whose person receives the message.'),
     chat: z.string().optional().describe('Chat, when no task is given.'),
-    text: z.string().describe('Message text, plain text, up to 2800 characters.'),
+    text: z.string().describe('Message text, plain text, up to 4096 characters.'),
     account: accountArg,
   },
   readOnly: false,
@@ -212,22 +215,24 @@ const tgSend = defineTool({
       if (!own) throw new GatewayError('ACCESS_DENIED', `Task ${task.id} belongs to another user.`);
       if (task.state === 'done' || task.state === 'closed') throw new GatewayError('LIMIT_REACHED', `Task ${task.id} is already ${task.state}.`);
       if (task.messagesSent >= task.maxMessages) throw new GatewayError('LIMIT_REACHED', `Task ${task.id} reached its limit of ${task.maxMessages} messages. Finish it or ask the owner.`);
-      const waiting = automation.store.listApprovals(userId, ['pending', 'awaiting_edit', 'executing'], 100).find(a => a.kind === 'send' && a.payload.taskId === task.id);
-      if (waiting) throw new GatewayError('LIMIT_REACHED', `A message for this task is already waiting for the owner's approval (${waiting.id}). Do not send another one.`);
+      const waiting = automation.store.listApprovals(userId, ['pending', 'executing'], 100).find(a => a.kind === 'send' && a.payload.taskId === task.id);
+      if (waiting) {
+        throw new GatewayError(
+          'LIMIT_REACHED',
+          `A message for this task is already prepared (${waiting.id}) and waits for the owner. Do not prepare another one: it is confirmed or rejected with tg_confirm.`,
+        );
+      }
 
-      const approval = await automation.approvals.request({
+      const approval = automation.approvals.request({
         userId,
         accountId: task.accountId,
         kind: 'send',
         source: `task:${task.id}`,
         payload: { taskId: task.id, accountId: task.accountId, chatKey: task.peerKey, text },
-        title: `Сообщение ${task.peerLabel} по поручению ${task.id} (${task.messagesSent + 1} из ${task.maxMessages})`,
+        title: `Message to ${safeLabel(task.peerLabel, 60)} for task ${task.id} (message ${task.messagesSent + 1} of ${task.maxMessages})`,
+        background: grant !== undefined,
       });
-      return {
-        accountId: task.accountId,
-        peerKey: task.peerKey,
-        text: `Message for task ${task.id} is drafted.\nSent to the owner for approval: approval_id ${approval.id}. Nothing is sent until the owner taps Send. Do not repeat this call.`,
-      };
+      return { accountId: task.accountId, peerKey: task.peerKey, text: `Message for task ${task.id} is prepared.\n${confirmNote(approval, ctx)}` };
     }
 
     if (grant) throw new GatewayError('ACCESS_DENIED', 'This run may write only inside its task: pass task_id.');
@@ -235,19 +240,15 @@ const tgSend = defineTool({
     const accountId = ctx.account(args.account);
     const { chat } = await ctx.openChat(args.chat, accountId);
     automation.write.assertCanMessage(accountId, chat);
-    const approval = await automation.approvals.request({
+    const approval = automation.approvals.request({
       userId,
       accountId,
       kind: 'send',
       source: 'tool',
       payload: { accountId, chatKey: chat.peerKey, text },
-      title: `Сообщение в ${chatLabel(chat)}`,
+      title: `Message to ${chatLabel(chat)}`,
     });
-    return {
-      accountId,
-      peerKey: chat.peerKey,
-      text: `Message to ${chatLabel(chat)} is drafted.\nSent to the owner for approval: approval_id ${approval.id}. Nothing is sent until the owner taps Send. Do not repeat this call.`,
-    };
+    return { accountId, peerKey: chat.peerKey, text: `Message to ${chatLabel(chat)} is prepared.\n${confirmNote(approval, ctx)}` };
   },
 });
 

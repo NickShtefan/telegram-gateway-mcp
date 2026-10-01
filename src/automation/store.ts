@@ -54,9 +54,9 @@ export interface InboxEvent {
   payload: Record<string, unknown>;
 }
 
-// ---------- согласования ----------
+// ---------- запросы на подтверждение записи ----------
 
-export type ApprovalState = 'pending' | 'awaiting_edit' | 'executing' | 'executed' | 'rejected' | 'expired' | 'failed';
+export type ApprovalState = 'pending' | 'executing' | 'executed' | 'rejected' | 'expired' | 'failed';
 
 export interface ApprovalRecord {
   id: string;
@@ -69,8 +69,6 @@ export interface ApprovalRecord {
   preview: string;
   state: ApprovalState;
   result: Record<string, unknown> | null;
-  botChatId: string | null;
-  botMessageId: number | null;
   createdAt: number;
   expiresAt: number;
   decidedAt: number | null;
@@ -280,8 +278,6 @@ export class AutomationStore {
       preview: str(r.preview),
       state: str(r.state) as ApprovalState,
       result: json<Record<string, unknown> | null>(r.result, null),
-      botChatId: strOrNull(r.bot_chat_id),
-      botMessageId: numOrNull(r.bot_message_id),
       createdAt: num(r.created_at),
       expiresAt: num(r.expires_at),
       decidedAt: numOrNull(r.decided_at),
@@ -305,19 +301,17 @@ export class AutomationStore {
 
   updateApproval(
     id: string,
-    patch: Partial<Pick<ApprovalRecord, 'state' | 'payload' | 'preview' | 'result' | 'botChatId' | 'botMessageId'>> & { decided?: boolean },
+    patch: Partial<Pick<ApprovalRecord, 'state' | 'payload' | 'preview' | 'result'>> & { decided?: boolean },
   ): void {
     const current = this.getApproval(id);
     if (!current) return;
     this.db
-      .prepare('UPDATE approvals SET state = ?, payload = ?, preview = ?, result = ?, bot_chat_id = ?, bot_message_id = ?, decided_at = ? WHERE id = ?')
+      .prepare('UPDATE approvals SET state = ?, payload = ?, preview = ?, result = ?, decided_at = ? WHERE id = ?')
       .run(
         patch.state ?? current.state,
         JSON.stringify(patch.payload ?? current.payload),
         patch.preview ?? current.preview,
         patch.result === undefined ? (current.result === null ? null : JSON.stringify(current.result)) : patch.result === null ? null : JSON.stringify(patch.result),
-        patch.botChatId === undefined ? current.botChatId : patch.botChatId,
-        patch.botMessageId === undefined ? current.botMessageId : patch.botMessageId,
         patch.decided ? this.now() : current.decidedAt,
         id,
       );
@@ -325,20 +319,12 @@ export class AutomationStore {
 
   /**
    * Атомарный переход состояния: возвращает true, только если запись была в
-   * одном из ожидаемых состояний. Защищает от двойного нажатия кнопки.
+   * одном из ожидаемых состояний. Защищает от двойного подтверждения.
    */
   transitionApproval(id: string, from: ApprovalState[], to: ApprovalState): boolean {
     const marks = from.map(() => '?').join(', ');
     const result = this.db.prepare(`UPDATE approvals SET state = ?, decided_at = ? WHERE id = ? AND state IN (${marks})`).run(to, this.now(), id, ...from);
     return num(result.changes) > 0;
-  }
-
-  /** Согласование, которое ждёт новый текст от этого человека в этом чате бота. */
-  approvalAwaitingEdit(botChatId: string): ApprovalRecord | null {
-    const row = this.db
-      .prepare("SELECT * FROM approvals WHERE state = 'awaiting_edit' AND bot_chat_id = ? ORDER BY decided_at DESC LIMIT 1")
-      .get(botChatId) as Row | undefined;
-    return row ? this.mapApproval(row) : null;
   }
 
   listApprovals(userId: string, states: ApprovalState[], limit = 20): ApprovalRecord[] {
@@ -352,13 +338,13 @@ export class AutomationStore {
     return (this.db.prepare('SELECT * FROM approvals WHERE state = ? ORDER BY created_at').all(state) as Row[]).map(r => this.mapApproval(r));
   }
 
-  /** Просроченные согласования: переводятся в `expired` и возвращаются для уведомления. */
+  /** Просроченные запросы: переводятся в `expired` и возвращаются для уведомления. */
   expireApprovals(): ApprovalRecord[] {
-    const rows = this.db.prepare("SELECT * FROM approvals WHERE state IN ('pending', 'awaiting_edit') AND expires_at <= ?").all(this.now()) as Row[];
+    const rows = this.db.prepare("SELECT * FROM approvals WHERE state = 'pending' AND expires_at <= ?").all(this.now()) as Row[];
     const expired: ApprovalRecord[] = [];
     for (const row of rows) {
       const id = str(row.id);
-      if (this.transitionApproval(id, ['pending', 'awaiting_edit'], 'expired')) expired.push(this.getApproval(id)!);
+      if (this.transitionApproval(id, ['pending'], 'expired')) expired.push(this.getApproval(id)!);
     }
     return expired;
   }

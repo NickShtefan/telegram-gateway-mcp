@@ -70,6 +70,14 @@ const tgStatus = defineTool({
     }
 
     lines.push('', `Toolsets: ${services.runtime.config.toolsets.join(', ')}`, 'Times in all tools are UTC.');
+
+    // То, что ждёт владельца: черновики запусков без человека и вопросы поручений.
+    if (!principal.grant) {
+      const drafts = services.automation.approvals.pending(principal.userId, 50).length;
+      const questions = services.automation.taskStore.openQuestions(principal.userId).length;
+      if (drafts > 0) lines.push(`Write requests waiting for the owner's decision: ${drafts}. Show them with tg_confirm action=list.`);
+      if (questions > 0) lines.push(`Tasks waiting for the owner's answer: ${questions}. See tg_tasks.`);
+    }
     return { text: lines.join('\n'), count: principal.accounts.length };
   },
 });

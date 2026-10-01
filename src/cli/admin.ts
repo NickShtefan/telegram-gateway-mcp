@@ -27,14 +27,11 @@ export interface NewUser {
 
 export function addUser(
   storage: Storage,
-  input: { id: string; telegramId?: string | null; accounts?: string[]; defaultAccount?: string | null },
+  input: { id: string; accounts?: string[]; defaultAccount?: string | null },
 ): NewUser {
   const id = assertId('user', input.id);
   if (storage.users.get(id)) {
     throw new GatewayError('INVALID_ARGUMENT', `User "${id}" already exists.`);
-  }
-  if (input.telegramId !== undefined && input.telegramId !== null && !/^\d{1,20}$/.test(input.telegramId)) {
-    throw new GatewayError('INVALID_ARGUMENT', 'Telegram id must be a number (your numeric user id, not a username).');
   }
   const accounts = (input.accounts ?? []).map(a => assertId('account', a));
   const defaultAccount = input.defaultAccount ?? accounts[0] ?? null;
@@ -42,7 +39,7 @@ export function addUser(
 
   const token = randomToken(32);
   return storage.transaction(() => {
-    const user = storage.users.create({ id, tokenSha256: sha256Hex(token), telegramId: input.telegramId ?? null, defaultAccount });
+    const user = storage.users.create({ id, tokenSha256: sha256Hex(token), defaultAccount });
     for (const accountId of accounts) {
       if (!storage.accounts.get(accountId)) storage.accounts.upsert({ id: accountId });
       storage.accounts.grant(accountId, id);
@@ -110,7 +107,6 @@ export function removeAccount(storage: Storage, accountId: string): void {
 
 export interface UserView {
   id: string;
-  telegramId: string | null;
   defaultAccount: string | null;
   accounts: string[];
 }
@@ -118,7 +114,6 @@ export interface UserView {
 export function describeUsers(storage: Storage): UserView[] {
   return storage.users.list().map(u => ({
     id: u.id,
-    telegramId: u.telegramId,
     defaultAccount: u.defaultAccount,
     accounts: storage.accounts.accountsOf(u.id).map(a => a.id),
   }));

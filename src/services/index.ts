@@ -3,7 +3,6 @@
  * одинаково используют инструменты, CLI и фоновые воркеры.
  */
 import { buildAutomation, type Automation } from '../automation/index.js';
-import type { BotApi } from '../automation/botApi.js';
 import { AccessPolicy } from '../policy/access.js';
 import { Audit } from '../policy/audit.js';
 import { ScopePolicy } from '../policy/scopes.js';
@@ -35,8 +34,6 @@ export interface GatewayServices {
 
 export interface BuildOptions {
   now?: () => number;
-  /** Для тестов: клиент Bot API вместо настоящего; null выключает бота. */
-  bot?: BotApi | null;
 }
 
 export function buildServices(runtime: Runtime, options: BuildOptions = {}): GatewayServices {
@@ -50,7 +47,7 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
   jobs.register('export', context => exporter.run(context));
 
   const comments = new CommentsService(tg, storage.entities);
-  const automation = buildAutomation({ runtime, history, comments, bot: options.bot, now });
+  const automation = buildAutomation({ runtime, history, comments, now });
 
   return {
     runtime,

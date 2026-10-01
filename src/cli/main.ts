@@ -41,11 +41,10 @@ Usage:
   tg-mcp runner --agent '<command with {prompt}>'  start your agent when a rule fires; token in TG_MCP_TOKEN
   tg-mcp login --account <id> [--phone <number>]   log in to a Telegram account (code and 2FA are asked interactively)
   tg-mcp doctor [--connect]                        check the installation; --connect also opens the sessions
-  tg-mcp user add <id> [--telegram-id <n>] [--account <id>]... [--default-account <id>]
+  tg-mcp user add <id> [--account <id>]... [--default-account <id>]
   tg-mcp user list
   tg-mcp user token <id>                           issue a new token (the old one stops working)
   tg-mcp user default <id> <account>
-  tg-mcp user telegram <id> <telegram-id>          whom the approval bot asks
   tg-mcp user remove <id>
   tg-mcp account list
   tg-mcp account grant <account> <user>
@@ -200,14 +199,12 @@ function userCommand(args: string[], storage: Storage, io: CliIo): number {
         args: rest,
         allowPositionals: true,
         options: {
-          'telegram-id': { type: 'string' },
           account: { type: 'string', multiple: true },
           'default-account': { type: 'string' },
         },
       });
       const { user, token } = addUser(storage, {
         id: need(positionals[0], 'user id'),
-        telegramId: values['telegram-id'] ?? null,
         accounts: values.account ?? [],
         defaultAccount: values['default-account'] ?? null,
       });
@@ -221,7 +218,7 @@ function userCommand(args: string[], storage: Storage, io: CliIo): number {
       if (users.length === 0) io.out('No users.');
       for (const u of users) {
         io.out(
-          `${u.id}  accounts: [${u.accounts.join(', ')}]  default: ${u.defaultAccount ?? '-'}  telegram id: ${u.telegramId ?? '-'}`,
+          `${u.id}  accounts: [${u.accounts.join(', ')}]  default: ${u.defaultAccount ?? '-'}`,
         );
       }
       return 0;
@@ -231,15 +228,6 @@ function userCommand(args: string[], storage: Storage, io: CliIo): number {
       const token = rotateToken(storage, id);
       io.out(`New token for "${id}" (shown once):`);
       io.out(token);
-      return 0;
-    }
-    case 'telegram': {
-      const id = need(rest[0], 'user id');
-      const telegramId = need(rest[1], 'telegram id');
-      if (!/^\d{1,20}$/.test(telegramId)) throw new GatewayError('INVALID_ARGUMENT', 'Telegram id must be a number. Open the approval bot and send /id to see yours.');
-      if (!storage.users.get(id)) throw new GatewayError('NOT_FOUND', `User "${id}" does not exist.`);
-      storage.users.update(id, { telegramId });
-      io.out(`Approvals for "${id}" now go to Telegram id ${telegramId}.`);
       return 0;
     }
     case 'default': {

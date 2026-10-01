@@ -67,9 +67,6 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
     add((keyMode & 0o077) === 0 ? 'ok' : 'fail', `session key file (mode ${keyMode.toString(8)})`);
   } else add('warn', 'session key file does not exist yet: it is created on the first login');
 
-  const writing = config.toolsets.includes('write') || config.toolsets.includes('automate');
-  if (config.approvalBotToken) add('ok', 'approval bot token is set');
-  else add(writing ? 'fail' : 'warn', 'approval bot is not configured (TG_MCP_APPROVAL_BOT_TOKEN): write tools and rules are unavailable');
   add('ok', `toolsets: ${config.toolsets.join(', ')}`);
 
   const users = describeUsers(storage);
@@ -77,7 +74,7 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
   for (const u of users) {
     add(
       u.accounts.length > 0 ? 'ok' : 'warn',
-      `user ${u.id}: accounts [${u.accounts.join(', ')}]${u.defaultAccount ? `, default ${u.defaultAccount}` : ''}${u.telegramId ? '' : ', no Telegram id for approvals'}`,
+      `user ${u.id}: accounts [${u.accounts.join(', ')}]${u.defaultAccount ? `, default ${u.defaultAccount}` : ''}`,
     );
   }
 

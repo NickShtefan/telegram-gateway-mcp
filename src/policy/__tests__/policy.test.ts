@@ -14,7 +14,7 @@ let partnerToken: string;
 
 beforeEach(() => {
   storage = new SqliteStorage({ path: ':memory:' });
-  nickToken = addUser(storage, { id: 'nick', telegramId: '111', accounts: ['nick', 'agent'] }).token;
+  nickToken = addUser(storage, { id: 'nick', accounts: ['nick', 'agent'] }).token;
   partnerToken = addUser(storage, { id: 'partner', accounts: ['partner', 'agent'] }).token;
   access = new AccessPolicy(storage);
   scopes = new ScopePolicy(storage);
@@ -24,7 +24,7 @@ afterEach(() => storage.close());
 
 describe('AccessPolicy', () => {
   it('токен определяет пользователя и его аккаунты', () => {
-    expect(access.authenticate(nickToken)).toEqual({ userId: 'nick', telegramId: '111', defaultAccount: 'nick', accounts: ['agent', 'nick'] });
+    expect(access.authenticate(nickToken)).toEqual({ userId: 'nick', defaultAccount: 'nick', accounts: ['agent', 'nick'] });
     expect(access.authenticate(partnerToken).userId).toBe('partner');
   });
 

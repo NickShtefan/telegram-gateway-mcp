@@ -50,13 +50,12 @@ function fakeFactory(overrides: Record<string, unknown> = {}): ClientFactory {
 
 describe('admin', () => {
   it('создаёт пользователя с токеном, в базе только хэш', () => {
-    const { user, token } = addUser(storage, { id: 'nick', telegramId: '111', accounts: ['nick', 'agent'] });
+    const { user, token } = addUser(storage, { id: 'nick', accounts: ['nick', 'agent'] });
     expect(user.defaultAccount).toBe('nick');
     expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
     expect(storage.accounts.hasAccess('nick', 'agent')).toBe(true);
     expect(() => addUser(storage, { id: 'nick' })).toThrow(/already exists/);
     expect(() => addUser(storage, { id: 'Bad Id' })).toThrow(/Invalid user id/);
-    expect(() => addUser(storage, { id: 'x', telegramId: '@name' })).toThrow(/must be a number/);
   });
 
   it('новый токен отменяет старый', () => {
@@ -115,7 +114,7 @@ describe('doctor', () => {
   it('--connect подключает аккаунты, когда демон не запущен', async () => {
     io.prompt = vi.fn(async () => '1');
     await runLogin({ config, storage, io, account: 'agent', phone: '+79991234567', factory: fakeFactory() });
-    addUser(storage, { id: 'nick', accounts: ['agent'], telegramId: '1' });
+    addUser(storage, { id: 'nick', accounts: ['agent'] });
     const checks = await collectChecks({ config, storage, io, connect: true, factory: fakeFactory() });
     expect(checks.some(c => c.level === 'ok' && c.message.startsWith('account agent connects: @agent_acc'))).toBe(true);
   });
@@ -210,7 +209,7 @@ describe('main', () => {
   });
 
   it('user add печатает токен один раз, user list его не показывает', async () => {
-    expect(await main(['user', 'add', 'nick', '--telegram-id', '111', '--account', 'agent'], { io, config, storage })).toBe(0);
+    expect(await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage })).toBe(0);
     const token = out[out.length - 1]!;
     expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
     out.length = 0;

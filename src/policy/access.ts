@@ -9,8 +9,6 @@ import type { Storage } from '../storage/port.js';
 
 export interface Principal {
   userId: string;
-  /** Telegram id человека: туда бот шлёт согласования. */
-  telegramId: string | null;
   defaultAccount: string | null;
   /** Аккаунты, доступные пользователю. */
   accounts: string[];
@@ -41,9 +39,7 @@ export class AccessPolicy {
     const scoped = this.automation?.getScopedToken(hash);
     if (!scoped) return denied();
     const base = this.principalOf(scoped.userId);
-    // У поручения через Business-бота аккаунта шлюза нет: переписка идёт от имени владельца.
-    if (!scoped.scope.accountId) return { ...base, defaultAccount: null, accounts: [], grant: scoped.scope };
-    if (!base.accounts.includes(scoped.scope.accountId)) return denied();
+    if (!scoped.scope.accountId || !base.accounts.includes(scoped.scope.accountId)) return denied();
     return { ...base, defaultAccount: scoped.scope.accountId, accounts: [scoped.scope.accountId], grant: scoped.scope };
   }
 
@@ -52,7 +48,6 @@ export class AccessPolicy {
     if (!user) throw new GatewayError('ACCESS_DENIED', 'Unknown gateway user.');
     return {
       userId: user.id,
-      telegramId: user.telegramId,
       defaultAccount: user.defaultAccount,
       accounts: this.storage.accounts.accountsOf(user.id).map(a => a.id),
     };

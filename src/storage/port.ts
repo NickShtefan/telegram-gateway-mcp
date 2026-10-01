@@ -14,7 +14,7 @@ export interface UserRecord {
   id: string;
   /** SHA-256 от bearer-токена. Сам токен шлюз не хранит. */
   tokenSha256: string;
-  /** Telegram id человека: кому бот согласований шлёт запросы. */
+  /** Telegram id человека. Сейчас не используется: бота согласований нет (решение 23). */
   telegramId: string | null;
   defaultAccount: string | null;
   createdAt: number;

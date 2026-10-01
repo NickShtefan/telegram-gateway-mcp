@@ -65,7 +65,7 @@ sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin login --account agent
 3. Завести пользователей шлюза и выдать им аккаунты. Токен печатается один раз, шлюз хранит только его хэш:
 
 ```bash
-sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add nick --telegram-id <твой id> --account agent
+sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add nick --account agent
 ```
 
 4. Проверить установку:
@@ -82,30 +82,21 @@ sudo launchctl kickstart -k system/com.tg-mcp.gateway
 
 Сессия создаётся входом на этой машине и никуда не копируется (решение 12).
 
-## Бот согласований и запись
+## Запись
 
-Без бота шлюз только читает. Чтобы включить наблюдение, правила, ответы и поручения:
-
-1. Создай нового бота у @BotFather. Старые не подойдут: у токена может быть только один получатель обновлений.
-2. Открой бота в Telegram и нажми Start. Команда `/id` покажет твой Telegram id.
-3. Впиши в `/var/tgmcp/.tg-mcp/.env`:
+Сразу после установки шлюз только читает (`TG_MCP_TOOLSETS=core`). Чтобы агент мог отвечать, писать и вступать в чаты, впиши в `/var/tgmcp/.tg-mcp/.env`:
 
 ```
-TG_MCP_TOOLSETS=core,automate,write
-TG_MCP_APPROVAL_BOT_TOKEN=<токен от BotFather>
+TG_MCP_TOOLSETS=core,write
 ```
 
-4. Привяжи свой Telegram id к пользователю шлюза, если не указал его при создании:
-
-```bash
-sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user telegram nick <твой id>
-```
-
-5. Перезапусти демон:
+и перезапусти демон:
 
 ```bash
 sudo launchctl kickstart -k system/com.tg-mcp.gateway
 ```
+
+Отдельного бота для согласований нет (решение 23): агент показывает тебе предпросмотр, ты соглашаешься, он вызывает `tg_confirm`. Набор `automate` (наблюдение, правила, поручения) добавляй, когда понадобится работа без тебя; вместе с ним нужен runner.
 
 ## Runner под своим пользователем
 
@@ -153,14 +144,14 @@ sudo GH_TOKEN="$(gh auth token)" /opt/telegram-gateway-mcp/install.sh <полн�
 Повторный запуск обновляет код и перезапускает демон. Пользователь, база, `.env` и сессии не трогаются. Что стоит сейчас, записано в `/opt/telegram-gateway-mcp/app/COMMIT`.
 
 - Задачи выгрузки, которые выполнялись в момент перезапуска, возвращаются в очередь. Задача, которую рестарт прерывает третий раз подряд, закрывается с ошибкой.
-- Действие, которое выполнялось в момент перезапуска (человек нажал кнопку, Telegram ещё не ответил), не повторяется: карточка в боте получает пометку «исход неизвестен», проверь в Telegram.
+- Действие, которое выполнялось в момент перезапуска (подтверждение уже пришло, Telegram ещё не ответил), не повторяется: запрос закрывается с пометкой «исход неизвестен», событие об этом есть в `tg_inbox`. Проверь в Telegram.
 - Если поменялся сам установщик, сначала обнови его копию командой `sudo install ...` из первой установки, перед этим прочитав изменения.
 - Лог `/var/log/tg-mcp/daemon.log` больше 10 МБ при обновлении переносится в `daemon.log.1` (хранятся три старых). Между обновлениями лог не ротируется: launchd держит файл открытым.
 
 ## Второй пользователь и общий аккаунт
 
 ```bash
-sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add partner --telegram-id <id второго пользователя> --account partner
+sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add partner --account partner
 ```
 
 ```bash
