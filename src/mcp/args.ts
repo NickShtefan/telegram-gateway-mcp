@@ -4,11 +4,12 @@
  */
 import { GatewayError } from '../core/errors.js';
 
-const RELATIVE_RE = /^(\d{1,4})\s*(m|min|h|d|w)$/i;
-const UNIT_SECONDS: Record<string, number> = { m: 60, min: 60, h: 3600, d: 86_400, w: 604_800 };
+const RELATIVE_RE = /^(\d{1,4})\s*(m|min|h|d|w|mo|y)$/i;
+/** `m` это минуты; месяц пишется `mo` и считается за 30 дней, год за 365. */
+const UNIT_SECONDS: Record<string, number> = { m: 60, min: 60, h: 3600, d: 86_400, w: 604_800, mo: 30 * 86_400, y: 365 * 86_400 };
 
 /**
- * Момент времени: `30d`, `12h`, `2w` (столько назад от сейчас), дата
+ * Момент времени: `30d`, `12h`, `2w`, `6mo`, `1y` (столько назад от сейчас), дата
  * `2026-09-01`, дата и время ISO или unix-секунды. Возвращает unix-секунды.
  */
 export function parseWhen(value: string, nowMs: number, argName: string): number {
@@ -16,7 +17,7 @@ export function parseWhen(value: string, nowMs: number, argName: string): number
   const fail = (): never => {
     throw new GatewayError(
       'INVALID_ARGUMENT',
-      `Invalid "${argName}": "${text.slice(0, 40)}". Use a relative period (30d, 12h, 2w), a date (2026-09-01) or an ISO date-time (2026-09-01T12:00:00Z).`,
+      `Invalid "${argName}": "${text.slice(0, 40)}". Use a relative period (30d, 12h, 2w, 6mo, 1y), a date (2026-09-01) or an ISO date-time (2026-09-01T12:00:00Z).`,
     );
   };
 

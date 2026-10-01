@@ -504,6 +504,10 @@ describe('набор index: локальный индекс и поиск по �
     const list = await agent.call('tg_index', { action: 'list' });
     expect(list.text).toContain('Indexed chats: 1');
     expect(list.text).toContain('@baraholka | account agent | 6 messages | since 2026-08-02 | synced 2026-10-01 12:00');
+    // период можно задать и годами: предел три года
+    expect((await agent.call('tg_index', { chat: '@baraholka', since: '1y' })).text).toContain('covers this chat since 2025-10-01');
+    expect((await agent.call('tg_index', { chat: '@baraholka', since: '9y' })).text).toContain('covers this chat since 2023-10-02');
+    expect((await agent.call('tg_index', { chat: '@baraholka', since: 'давно' })).text).toContain('Use a relative period (30d, 12h, 2w, 6mo, 1y)');
   });
 
   it('страницы выдачи и поиск в одном чате', async () => {

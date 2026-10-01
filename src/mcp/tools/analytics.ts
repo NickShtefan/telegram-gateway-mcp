@@ -88,7 +88,9 @@ const tgChannelStats = defineTool({
 
     if (s.weeks.length > 1) {
       lines.push('', 'By week (Monday, UTC):');
-      for (const w of s.weeks.slice(0, 12)) lines.push(`${w.weekStart} | ${w.posts} ${unit}${w.avgViews !== null ? ` | avg views ${compactNumber(w.avgViews)}` : ''}`);
+      for (const w of s.weeks.slice(0, 12)) {
+        lines.push(`${w.weekStart} | ${w.posts} ${w.posts === 1 ? unit.slice(0, -1) : unit}${w.avgViews !== null ? ` | avg views ${compactNumber(w.avgViews)}` : ''}`);
+      }
     }
     if (s.topPosts.length > 0) {
       lines.push('', 'Top posts by views:');
