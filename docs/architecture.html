@@ -1,0 +1,1413 @@
+<title>Telegram MCP-шлюз</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Onest:wght@400;500;600&family=Unbounded:wght@500;600&display=swap">
+<style>
+/* Layout: layered stack diagram on the left, sticky inspector + request tracer on the right; reading sections below at ~72ch. Color encodes provenance only. */
+:root {
+  --bg: #F1F3F6;
+  --surface: #FFFFFF;
+  --sunken: #E6EAF0;
+  --ink: #121923;
+  --muted: #566274;
+  --line: #D2D8E1;
+  --cs: #3150C4;
+  --cs-tint: #E8EDFB;
+  --helper: #0D7A6F;
+  --helper-tint: #DFF1EE;
+  --new: #A0640E;
+  --new-tint: #FAEFDC;
+  --ext: #637084;
+  --ext-tint: #E8ECF1;
+  --warn: #B23C0B;
+  --warn-tint: #FBE8DE;
+  --font-display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --font-body: "Onest", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1218;
+    --surface: #151C25;
+    --sunken: #1B2430;
+    --ink: #E4E9F0;
+    --muted: #93A0B3;
+    --line: #29333F;
+    --cs: #8AA2FF;
+    --cs-tint: #1B2443;
+    --helper: #45C8B6;
+    --helper-tint: #11302C;
+    --new: #E6AB52;
+    --new-tint: #33270F;
+    --ext: #8794A7;
+    --ext-tint: #1D242E;
+    --warn: #F28B5E;
+    --warn-tint: #3A1E12;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1218;
+  --surface: #151C25;
+  --sunken: #1B2430;
+  --ink: #E4E9F0;
+  --muted: #93A0B3;
+  --line: #29333F;
+  --cs: #8AA2FF;
+  --cs-tint: #1B2443;
+  --helper: #45C8B6;
+  --helper-tint: #11302C;
+  --new: #E6AB52;
+  --new-tint: #33270F;
+  --ext: #8794A7;
+  --ext-tint: #1D242E;
+  --warn: #F28B5E;
+  --warn-tint: #3A1E12;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; }
+@media (max-width: 480px) { .wrap { padding-inline: 16px; } }
+
+a { color: var(--cs); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+p code, li code, td code { background: var(--sunken); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+:focus-visible { outline: 2px solid var(--cs); outline-offset: 2px; }
+
+/* Header */
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+header.top { display: grid; gap: 12px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 4.2vw, 40px); line-height: 1.1; letter-spacing: -0.01em; }
+.lead { max-width: 70ch; font-size: 17px; color: var(--ink); margin: 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stats b { font-weight: 600; }
+.stats .s-cs b { color: var(--cs); }
+.stats .s-helper b { color: var(--helper); }
+.stats .s-new b { color: var(--new); }
+.stats .s-ext b { color: var(--ext); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; }
+nav.toc a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
+nav.toc a:hover { color: var(--ink); border-bottom-color: var(--line); }
+
+section { padding-top: 40px; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 21px; letter-spacing: -0.005em; }
+.sec-head { display: grid; gap: 6px; margin-bottom: 18px; }
+.sec-head p { margin: 0; max-width: 72ch; color: var(--muted); }
+
+/* Controls */
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 14px; }
+.controls .label { font-size: 13px; color: var(--muted); }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 500 13px var(--font-body); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line);
+  padding: 5px 11px; border-radius: 999px; cursor: pointer;
+}
+.chip[aria-pressed="false"] { color: var(--muted); background: transparent; }
+.chip[aria-pressed="false"] .sw { opacity: .35; }
+.sw { width: 11px; height: 11px; border-radius: 3px; border: 1.5px solid var(--p); background: var(--pt); flex: none; }
+.sw.dashed { border-style: dashed; }
+.modes { font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.modes span b { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink); }
+
+/* Provenance palettes */
+[data-prov="cs"] { --p: var(--cs); --pt: var(--cs-tint); }
+[data-prov="helper"] { --p: var(--helper); --pt: var(--helper-tint); }
+[data-prov="new"] { --p: var(--new); --pt: var(--new-tint); }
+[data-prov="ext"], [data-prov="canary"] { --p: var(--ext); --pt: var(--ext-tint); }
+
+/* Cases */
+.cases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
+@media (max-width: 760px) { .cases { grid-template-columns: minmax(0, 1fr); } }
+.case { display: grid; grid-template-rows: auto auto auto auto auto 1fr auto; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.case-k { justify-self: start; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: var(--sunken); color: var(--muted); }
+.case-k.standing { background: var(--new-tint); color: var(--new); }
+.case h3 { font-family: var(--font-display); font-weight: 600; font-size: 16px; line-height: 1.3; }
+.case .ask { margin: 0; font-size: 14px; color: var(--muted); }
+.case .chain { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; background: var(--sunken); border-radius: var(--radius); padding: 7px 9px; overflow-wrap: anywhere; }
+.case h4 { margin: 4px 0 0; font-size: 11px; font-family: var(--font-mono); font-weight: 500; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.case ul { margin: 0; padding-left: 18px; display: grid; gap: 5px; font-size: 13.5px; align-content: start; }
+.case .btn { justify-self: start; margin-top: 4px; }
+
+/* Board */
+.board { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+@media (max-width: 1020px) { .board { grid-template-columns: minmax(0, 1fr); } }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+.layer { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: start; }
+.layer-label { padding-top: 6px; display: grid; gap: 2px; }
+.l-name { font-family: var(--font-display); font-weight: 500; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; }
+.l-hint { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.layer-nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 8px; }
+.pair { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; }
+.pair .layer { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.pair .layer-label { padding-top: 0; }
+.conn { display: flex; align-items: center; gap: 10px; margin-left: 164px; padding-block: 5px; color: var(--muted); font-family: var(--font-mono); font-size: 11.5px; }
+.conn .ar { display: inline-flex; flex-direction: column; align-items: center; color: var(--ext); line-height: 1; }
+.conn .ar i { display: block; width: 1px; height: 14px; background: currentColor; }
+.conn .ar b { font-size: 10px; font-weight: 400; margin-top: -2px; }
+@media (max-width: 640px) {
+  .layer { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .layer-label { padding-top: 0; }
+  .conn { margin-left: 4px; }
+  .pair { grid-template-columns: minmax(0, 1fr); }
+}
+
+.node {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  min-width: 0; text-align: left; cursor: pointer;
+  padding: 8px 10px 9px; border-radius: var(--radius);
+  border: 1px solid var(--p); background: var(--pt); color: var(--ink);
+  font: inherit; transition: opacity .15s ease, box-shadow .15s ease;
+}
+.node[data-prov="new"] { border-style: dashed; }
+.node:hover { box-shadow: inset 0 0 0 1px var(--p); }
+.n-mode { font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--p); }
+.n-name { font-weight: 600; font-size: 13.5px; line-height: 1.25; }
+.n-tech { font-family: var(--font-mono); font-size: 11px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
+.node.is-dim { opacity: .25; }
+.node.is-selected { outline: 2px solid var(--ink); outline-offset: 2px; }
+.node.is-current { box-shadow: 0 0 0 5px var(--sunken), inset 0 0 0 1px var(--p); }
+.n-steps {
+  position: absolute; top: -9px; right: -5px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+  background: var(--ink); color: var(--surface); padding: 1px 6px; border-radius: 9px;
+}
+
+/* Side panel */
+.side { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); display: grid; gap: 14px; max-height: calc(100dvh - 32px); overflow: auto; min-width: 0; }
+@media (max-width: 1020px) { .side { position: static; max-height: none; overflow: visible; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.panel h3 { font-family: var(--font-display); font-weight: 600; font-size: 17px; line-height: 1.25; }
+.insp-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--font-body); padding: 2px 9px; border-radius: 999px; border: 1px solid var(--p); background: var(--pt); color: var(--ink); }
+.pill.mode { border-color: var(--line); background: var(--sunken); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; }
+.insp-tech { font-family: var(--font-mono); font-size: 12px; color: var(--muted); margin: 4px 0 10px; overflow-wrap: anywhere; }
+.panel p { margin: 0 0 10px; font-size: 14px; }
+.panel h4 { margin: 14px 0 6px; font-size: 11px; font-family: var(--font-mono); font-weight: 500; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.src { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.src li { font-size: 13.5px; line-height: 1.45; }
+.src .path { display: block; font-family: var(--font-mono); font-size: 11.5px; color: var(--p); overflow-wrap: anywhere; }
+.src .path[data-repo]::before { content: attr(data-repo) " / "; color: var(--muted); }
+.note-risk { border-left: 0; background: var(--warn-tint); color: var(--ink); padding: 8px 10px; border-radius: var(--radius); font-size: 13.5px; }
+
+/* Tracer */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+.seg button { font: 500 12.5px var(--font-body); color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.seg button[aria-selected="true"] { color: var(--surface); background: var(--ink); border-color: var(--ink); }
+.prompt { font-size: 14px; background: var(--sunken); border-radius: var(--radius); padding: 8px 10px; margin: 0 0 10px; }
+.prompt small { display: block; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: st; }
+ol.steps li { counter-increment: st; }
+ol.steps button {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; width: 100%; text-align: left;
+  font: 13px/1.45 var(--font-body); color: var(--ink); background: transparent; border: 0; border-radius: var(--radius);
+  padding: 6px 6px; cursor: pointer;
+}
+ol.steps button::before { content: counter(st); font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted); padding-top: 1px; font-variant-numeric: tabular-nums; }
+ol.steps button:hover { background: var(--sunken); }
+ol.steps button[aria-current="step"] { background: var(--sunken); box-shadow: inset 2px 0 0 var(--ink); }
+ol.steps button[aria-current="step"]::before { color: var(--ink); }
+.st-node { font-family: var(--font-mono); font-size: 11px; color: var(--muted); display: block; }
+.trace-nav { display: flex; gap: 8px; margin-top: 10px; }
+.btn { font: 500 13px var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--ink); }
+.btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn:disabled { opacity: .4; cursor: default; }
+
+/* Decisions */
+figure { margin: 0 0 22px; }
+.fig-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+.fig-wrap svg { display: block; width: 100%; min-width: 640px; height: auto; color: var(--ink); }
+figcaption { font-size: 13.5px; color: var(--muted); margin-top: 8px; max-width: 80ch; }
+.d-box { fill: var(--surface); stroke: var(--ink); stroke-width: 1; }
+.d-box.gw { fill: var(--new-tint); stroke: var(--new); stroke-width: 1.5; }
+.d-box.tg { fill: var(--ext-tint); stroke: var(--ext); }
+.d-box.bad { fill: var(--warn-tint); stroke: var(--warn); }
+.d-line { stroke: var(--ink); stroke-width: 1.2; fill: none; }
+.d-line.w { stroke: var(--warn); }
+.d-line.g { stroke: var(--new); stroke-width: 1.5; }
+.d-sep { stroke: var(--line); stroke-dasharray: 4 4; }
+.d-head { fill: var(--ink); }
+.d-head.w { fill: var(--warn); }
+.d-head.g { fill: var(--new); }
+.d-t { fill: var(--ink); font: 500 12px var(--font-body); }
+.d-s { fill: var(--muted); font: 11px var(--font-mono); }
+.d-m { fill: var(--ink); font: 600 12px var(--font-mono); }
+.d-w { fill: var(--warn); font: 500 12px var(--font-body); }
+.d-title { fill: var(--ink); font: 600 12.5px var(--font-display); }
+
+.decisions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 36px; }
+@media (max-width: 760px) { .decisions { grid-template-columns: minmax(0, 1fr); } }
+.decisions article { display: grid; gap: 6px; align-content: start; }
+.decisions h3 { font-size: 15.5px; font-weight: 600; font-family: var(--font-body); }
+.decisions p { margin: 0; color: var(--ink); max-width: 62ch; }
+.decisions p.why { color: var(--muted); font-size: 14px; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--sunken); position: sticky; top: 0; }
+td.tool { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+td.mt { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+td.src-cell { font-family: var(--font-mono); font-size: 11.5px; }
+.set { display: inline-block; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); background: var(--sunken); white-space: nowrap; }
+.set.write { border-color: var(--warn); color: var(--warn); background: var(--warn-tint); }
+.linkbtn { font: inherit; color: var(--cs); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-align: left; }
+.prov-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--p); margin-right: 6px; vertical-align: 1px; }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.anti { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.anti li { display: grid; gap: 3px; font-size: 14px; }
+.anti li b { font-weight: 600; }
+.anti li span { color: var(--muted); }
+h3.sub { font-family: var(--font-body); font-weight: 600; font-size: 15px; margin-bottom: 10px; }
+
+/* Connect */
+.tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid var(--line); margin-bottom: 0; }
+.tabs button { font: 500 14px var(--font-body); color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; cursor: pointer; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.tabpanel { padding-top: 14px; display: grid; gap: 12px; }
+.tabpanel p { margin: 0; max-width: 72ch; }
+.code { position: relative; background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.code pre { margin: 0; padding: 14px 16px; overflow-x: auto; font: 12.5px/1.6 var(--font-mono); color: var(--ink); }
+.code .copy { position: absolute; top: 8px; right: 8px; font: 500 12px var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.code .cm { color: var(--muted); }
+.caveat { font-size: 13.5px; color: var(--muted); }
+
+/* Risks */
+.risks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.risks li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.risks li:last-child { border-bottom: 0; }
+@media (max-width: 560px) { .risks li { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+.sev { align-self: start; justify-self: start; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; }
+.sev.hi { background: var(--warn-tint); color: var(--warn); }
+.sev.mid { background: var(--new-tint); color: var(--new); }
+.sev.lo { background: var(--ext-tint); color: var(--ext); }
+.risks b { font-weight: 600; }
+.risks p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+
+/* Plan */
+ol.plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: ph; }
+ol.plan li { counter-increment: ph; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; padding-block: 14px; border-top: 1px solid var(--line); }
+ol.plan li::before { content: counter(ph); font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1; color: var(--muted); padding-top: 2px; }
+ol.plan h3 { font-family: var(--font-body); font-weight: 600; font-size: 15.5px; }
+ol.plan p { margin: 4px 0 0; max-width: 76ch; }
+ol.plan .tools-line { font-family: var(--font-mono); font-size: 12px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }
+
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Черновик архитектуры · по коду из ~/Projects/CODE/Chanel · 1 октября 2026</div>
+    <h1>Telegram MCP-шлюз</h1>
+    <p class="lead">Один демон держит сессию отдельного Telegram-аккаунта и отдаёт её любому агенту как набор MCP-инструментов. Схема собрана под четыре задачи: цены в барахолке, сводка по каналу, ответы на новые посты и переписка с человеком до договорённости. Для двух последних шлюз работает и без агента: сам замечает события и запускает агента. Ядро почти целиком берётся из channel-scope и helper.</p>
+    <div class="stats" id="stats"></div>
+    <nav class="toc" aria-label="Разделы">
+      <a href="#cases">Кейсы</a>
+      <a href="#scheme">Схема</a>
+      <a href="#decisions">Решения</a>
+      <a href="#tools">Инструменты</a>
+      <a href="#borrow">Заимствования</a>
+      <a href="#connect">Подключение</a>
+      <a href="#risks">Риски</a>
+      <a href="#plan">План</a>
+    </nav>
+  </header>
+
+  <section id="cases">
+    <div class="sec-head">
+      <h2>Кейсы</h2>
+      <p>Первые две задачи агент решает сам за один разговор. Две другие постоянные: шлюз должен работать, пока агент не запущен, ловить новые посты и ответы собеседника и будить агента. Мониторинг реагирует на событие и забывает его, а переписка помнит цель и всё, что уже сказано.</p>
+    </div>
+    <div class="cases">
+      <article class="case">
+        <span class="case-k">разовый запрос</span>
+        <h3>Цены в барахолке</h3>
+        <p class="ask">«Зайди в чат барахолки, найди объявления на такую-то тему и дай аналитику по ценам»</p>
+        <div class="chain">tg_resolve → tg_list_topics → tg_search_chat → tg_export (photos=thumb) → код агента → tg_get_media</div>
+        <h4>Что нужно шлюзу</h4>
+        <ul>
+          <li>Темы форумов: барахолки часто разбиты на «Продам», «Куплю», «Обмен».</li>
+          <li>Выгрузка в файл: сотни объявлений не влезут в контекст, медиану и разброс агент считает своим кодом.</li>
+          <li>Разбор цен при выгрузке: «25к», «25 000 ₽», «$300», «торг».</li>
+          <li>Фото объявлений: превью пачкой вместе с выгрузкой, полный альбом по запросу, чтобы агент оценил состояние вещи.</li>
+          <li>Вступление в закрытый чат только с подтверждением. Капчу бота-привратника проходишь ты, не агент.</li>
+        </ul>
+        <button class="btn" type="button" data-go="market">Пройти на схеме</button>
+      </article>
+      <article class="case">
+        <span class="case-k">разовый запрос</span>
+        <h3>Сводка по каналу</h3>
+        <p class="ask">«Зайди на этот канал и расскажи, о чём там говорят»</p>
+        <div class="chain">tg_resolve → tg_read_history (brief) → tg_get_message × 5 → tg_get_comments × 5</div>
+        <h4>Что нужно шлюзу</h4>
+        <ul>
+          <li>Краткий режим ленты: 1-2 строки на пост плюс просмотры, реакции и число комментариев. Месяц постов укладывается в несколько тысяч токенов.</li>
+          <li>Комментарии самых обсуждаемых постов, отсортированные по реакциям.</li>
+          <li>Пометка чужого текста: в комментариях бывают попытки командовать агентом.</li>
+        </ul>
+        <button class="btn" type="button" data-go="digest">Пройти на схеме</button>
+      </article>
+      <article class="case">
+        <span class="case-k standing">постоянная задача</span>
+        <h3>Мониторинг и ответы</h3>
+        <p class="ask">«Следи за этим каналом и, когда выходят посты, отвечай на них в комментариях»</p>
+        <div class="chain">tg_rule_set → наблюдатель → запуск агента → tg_reply → согласование в боте</div>
+        <h4>Что нужно шлюзу</h4>
+        <ul>
+          <li>Наблюдатель за новыми постами, который переживает рестарт и не шлёт дубли.</li>
+          <li>Правило с лимитами: один ответ на пост, N в день, тихие часы.</li>
+          <li>Запуск агента без тебя: <code>claude -p</code>, <code>codex exec</code> или <code>opencode run</code> с токеном только на этот пост.</li>
+          <li>Черновик ответа тебе в Telegram с кнопками, ответ в ветку комментариев.</li>
+        </ul>
+        <button class="btn" type="button" data-go="monitor">Пройти на схеме</button>
+      </article>
+      <article class="case">
+        <span class="case-k standing">поручение</span>
+        <h3>Переписка и договорённость</h3>
+        <p class="ask">«Напиши такому-то аккаунту и договорись с ним о том-то»</p>
+        <div class="chain">tg_task_start → tg_send → ответ собеседника → tg_task_get → tg_send или вопрос тебе → tg_task_update</div>
+        <h4>Что нужно шлюзу</h4>
+        <ul>
+          <li>Поручение с памятью: цель, рамки, срок, вся переписка и состояние. Агент между запусками ничего не помнит, помнит шлюз.</li>
+          <li>Список того, что решаешь только ты: деньги, адрес, личные данные, время встречи, выход за рамки. На этом агент останавливается и спрашивает тебя в боте.</li>
+          <li>Твой ответ в боте текстом уходит агенту как указание.</li>
+          <li>Токен только на этот диалог, лимит новых диалогов в день, одно напоминание, если собеседник молчит.</li>
+        </ul>
+        <button class="btn" type="button" data-go="deal">Пройти на схеме</button>
+      </article>
+    </div>
+
+    <figure>
+      <div class="fig-wrap">
+        <svg viewBox="0 0 790 256" role="img" aria-label="Цикл мониторинга: шлюз замечает новый пост, проверяет правило, запускает агента; агент читает пост через шлюз с токеном на один пост и пишет ответ; черновик приходит в бот на согласование, после подтверждения шлюз публикует ответ в комментариях.">
+          <defs>
+            <marker id="mh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+            <marker id="mhg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head g"/></marker>
+          </defs>
+
+          <rect x="10" y="44" width="155" height="48" rx="5" class="d-box tg"/>
+          <text x="87" y="65" text-anchor="middle" class="d-t">Канал @X</text>
+          <text x="87" y="82" text-anchor="middle" class="d-s">новый пост</text>
+          <rect x="215" y="44" width="155" height="48" rx="5" class="d-box gw"/>
+          <text x="292" y="65" text-anchor="middle" class="d-t">Наблюдатель</text>
+          <text x="292" y="82" text-anchor="middle" class="d-s">updates + опрос</text>
+          <rect x="420" y="44" width="155" height="48" rx="5" class="d-box gw"/>
+          <text x="497" y="65" text-anchor="middle" class="d-t">Правило</text>
+          <text x="497" y="82" text-anchor="middle" class="d-s">draft · 5 в день</text>
+          <rect x="625" y="44" width="155" height="48" rx="5" class="d-box"/>
+          <text x="702" y="65" text-anchor="middle" class="d-t">Агент CLI</text>
+          <text x="702" y="82" text-anchor="middle" class="d-s">headless запуск</text>
+
+          <text x="190" y="61" text-anchor="middle" class="d-s">событие</text>
+          <line x1="165" y1="68" x2="211" y2="68" class="d-line" marker-end="url(#mh)"/>
+          <text x="395" y="61" text-anchor="middle" class="d-s">совпало</text>
+          <line x1="370" y1="68" x2="416" y2="68" class="d-line" marker-end="url(#mh)"/>
+          <text x="600" y="61" text-anchor="middle" class="d-s">spawn</text>
+          <line x1="575" y1="68" x2="621" y2="68" class="d-line" marker-end="url(#mh)"/>
+
+          <line x1="702" y1="92" x2="702" y2="148" class="d-line" marker-end="url(#mh)"/>
+          <text x="712" y="124" class="d-s">вызовы MCP</text>
+
+          <rect x="625" y="152" width="155" height="48" rx="5" class="d-box gw"/>
+          <text x="702" y="173" text-anchor="middle" class="d-t">tg-mcp</text>
+          <text x="702" y="190" text-anchor="middle" class="d-s">токен на 1 пост</text>
+          <rect x="420" y="152" width="155" height="48" rx="5" class="d-box gw"/>
+          <text x="497" y="173" text-anchor="middle" class="d-t">Черновик</text>
+          <text x="497" y="190" text-anchor="middle" class="d-s">в твоём боте</text>
+          <rect x="215" y="152" width="155" height="48" rx="5" class="d-box"/>
+          <text x="292" y="173" text-anchor="middle" class="d-t">Ты</text>
+          <text x="292" y="190" text-anchor="middle" class="d-s">Отправить / Изменить</text>
+          <rect x="10" y="152" width="155" height="48" rx="5" class="d-box tg"/>
+          <text x="87" y="173" text-anchor="middle" class="d-t">Ответ</text>
+          <text x="87" y="190" text-anchor="middle" class="d-s">в комментариях</text>
+
+          <text x="600" y="169" text-anchor="middle" class="d-s">черновик</text>
+          <line x1="625" y1="176" x2="579" y2="176" class="d-line" marker-end="url(#mh)"/>
+          <text x="395" y="169" text-anchor="middle" class="d-s">кнопки</text>
+          <line x1="420" y1="176" x2="374" y2="176" class="d-line" marker-end="url(#mh)"/>
+          <text x="190" y="169" text-anchor="middle" class="d-s">после ✅</text>
+          <line x1="215" y1="176" x2="169" y2="176" class="d-line" marker-end="url(#mh)"/>
+
+          <path d="M702,200 L702,224 L87,224 L87,204" class="d-line g" stroke-dasharray="5 4" marker-end="url(#mhg)"/>
+          <text x="395" y="246" text-anchor="middle" class="d-s">режим auto: без согласования, в пределах лимитов правила</text>
+        </svg>
+      </div>
+      <figcaption>Третий кейс не укладывается в схему «спросил, получил ответ». Шлюз сам замечает пост, проверяет правило и запускает агента. Агент ходит обратно в шлюз с токеном, который разрешает только прочитать этот пост и один раз ответить в его ветке. В режиме draft ответ сначала приходит тебе в бот, в режиме auto уходит сразу, но в пределах лимитов.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="fig-wrap">
+        <svg viewBox="0 0 800 280" role="img" aria-label="Состояния поручения: черновик, ждём ответ, агент думает, вопрос тебе, готово, закрыто. Агент отвечает сам только в рамках, всё остальное уходит к тебе.">
+          <defs>
+            <marker id="sh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+          </defs>
+          <rect x="10" y="100" width="150" height="44" rx="5" class="d-box"/>
+          <text x="85" y="127" text-anchor="middle" class="d-t">Черновик</text>
+          <rect x="210" y="100" width="150" height="44" rx="5" class="d-box"/>
+          <text x="285" y="127" text-anchor="middle" class="d-t">Ждём ответ</text>
+          <rect x="420" y="100" width="150" height="44" rx="5" class="d-box"/>
+          <text x="495" y="127" text-anchor="middle" class="d-t">Агент думает</text>
+          <rect x="420" y="210" width="150" height="44" rx="5" class="d-box gw"/>
+          <text x="495" y="237" text-anchor="middle" class="d-t">Вопрос тебе</text>
+          <rect x="640" y="40" width="150" height="44" rx="5" class="d-box"/>
+          <text x="715" y="67" text-anchor="middle" class="d-t">Готово</text>
+          <rect x="640" y="160" width="150" height="44" rx="5" class="d-box tg"/>
+          <text x="715" y="187" text-anchor="middle" class="d-t">Закрыто</text>
+
+          <text x="185" y="92" text-anchor="middle" class="d-s">✅ старт</text>
+          <line x1="160" y1="122" x2="206" y2="122" class="d-line" marker-end="url(#sh)"/>
+          <text x="390" y="92" text-anchor="middle" class="d-s">пришёл ответ</text>
+          <line x1="360" y1="112" x2="416" y2="112" class="d-line" marker-end="url(#sh)"/>
+          <line x1="420" y1="134" x2="364" y2="134" class="d-line" marker-end="url(#sh)"/>
+          <text x="390" y="162" text-anchor="middle" class="d-s">ответил в рамках</text>
+          <text x="285" y="190" text-anchor="middle" class="d-s">молчит сутки: одно напоминание</text>
+
+          <line x1="480" y1="144" x2="480" y2="206" class="d-line" marker-end="url(#sh)"/>
+          <text x="472" y="180" text-anchor="end" class="d-s">вне рамок</text>
+          <line x1="510" y1="210" x2="510" y2="148" class="d-line" marker-end="url(#sh)"/>
+          <text x="518" y="180" class="d-s">твоё решение</text>
+
+          <line x1="570" y1="112" x2="636" y2="72" class="d-line" marker-end="url(#sh)"/>
+          <text x="715" y="32" text-anchor="middle" class="d-s">договорились → отчёт</text>
+          <line x1="570" y1="134" x2="636" y2="176" class="d-line" marker-end="url(#sh)"/>
+          <text x="715" y="222" text-anchor="middle" class="d-s">отказ · срок · лимит</text>
+
+          <text x="10" y="272" class="d-t">Вопросы, черновики и отчёты приходят тебе в бот; твой ответ текстом уходит агенту как указание.</text>
+        </svg>
+      </div>
+      <figcaption>Поручение живёт в шлюзе, пока не закончится. Агента будит каждое сообщение собеседника. В рамках поручения он отвечает сам (или черновиком в режиме draft), а всё, что за рамками, переводит поручение в состояние «вопрос тебе» и ждёт твоего решения.</figcaption>
+    </figure>
+  </section>
+
+  <section id="scheme">
+    <div class="sec-head">
+      <h2>Схема</h2>
+      <p>Нажми на блок, чтобы увидеть, что он делает и из какого файла его брать. Справа можно пройти один запрос агента через все слои по шагам.</p>
+    </div>
+    <div class="controls">
+      <span class="label">Откуда код:</span>
+      <button class="chip" data-prov="cs" data-filter="cs" aria-pressed="true"><span class="sw"></span>channel-scope</button>
+      <button class="chip" data-prov="helper" data-filter="helper" aria-pressed="true"><span class="sw"></span>helper</button>
+      <button class="chip" data-prov="new" data-filter="new" aria-pressed="true"><span class="sw dashed"></span>пишем заново</button>
+      <button class="chip" data-prov="ext" data-filter="ext" aria-pressed="true"><span class="sw"></span>внешнее</button>
+    </div>
+    <div class="controls modes">
+      <span><b>как есть</b> переносим почти без правок</span>
+      <span><b>адаптация</b> берём логику, меняем зависимости</span>
+      <span><b>паттерн</b> берём подход, код новый</span>
+    </div>
+
+    <div class="board">
+      <div class="diagram" id="diagram" aria-label="Слои MCP-шлюза"></div>
+
+      <aside class="side">
+        <div class="panel" id="inspector" aria-live="polite"></div>
+        <div class="panel" id="tracer">
+          <h3>Путь запроса</h3>
+          <div class="seg" role="tablist" id="scen-tabs" aria-label="Сценарии"></div>
+          <p class="prompt" id="scen-prompt"></p>
+          <ol class="steps" id="scen-steps"></ol>
+          <div class="trace-nav">
+            <button class="btn" id="st-prev">Назад</button>
+            <button class="btn primary" id="st-next">Дальше</button>
+            <button class="btn" id="st-reset">Сбросить</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="decisions">
+    <div class="sec-head">
+      <h2>Ключевые решения</h2>
+      <p>Десять решений, от которых зависит, будет ли шлюз одинаково работать в Claude Code, Codex, OpenCode и Hermes и потянет ли он твои кейсы.</p>
+    </div>
+
+    <figure>
+      <div class="fig-wrap">
+        <svg viewBox="0 0 820 262" role="img" aria-label="Слева три агента запускают свои процессы, и все открывают соединение с одной сессией Telegram. Справа агенты подключаются к одному демону, который держит одно соединение.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+            <marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head w"/></marker>
+            <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head g"/></marker>
+          </defs>
+
+          <text x="10" y="18" class="d-title">Так нельзя: у каждого агента свой процесс</text>
+          <rect x="10" y="40" width="104" height="36" rx="5" class="d-box"/>
+          <text x="62" y="63" text-anchor="middle" class="d-t">Claude Code</text>
+          <rect x="10" y="104" width="104" height="36" rx="5" class="d-box"/>
+          <text x="62" y="127" text-anchor="middle" class="d-t">Codex</text>
+          <rect x="10" y="168" width="104" height="36" rx="5" class="d-box"/>
+          <text x="62" y="191" text-anchor="middle" class="d-t">OpenCode</text>
+
+          <text x="136" y="51" text-anchor="middle" class="d-s">spawn</text>
+          <line x1="114" y1="58" x2="156" y2="58" class="d-line" marker-end="url(#ah)"/>
+          <line x1="114" y1="122" x2="156" y2="122" class="d-line" marker-end="url(#ah)"/>
+          <line x1="114" y1="186" x2="156" y2="186" class="d-line" marker-end="url(#ah)"/>
+
+          <rect x="160" y="40" width="104" height="36" rx="5" class="d-box"/>
+          <text x="212" y="62" text-anchor="middle" class="d-s">tg-mcp stdio</text>
+          <rect x="160" y="104" width="104" height="36" rx="5" class="d-box"/>
+          <text x="212" y="126" text-anchor="middle" class="d-s">tg-mcp stdio</text>
+          <rect x="160" y="168" width="104" height="36" rx="5" class="d-box"/>
+          <text x="212" y="190" text-anchor="middle" class="d-s">tg-mcp stdio</text>
+
+          <line x1="264" y1="58" x2="306" y2="106" class="d-line w" marker-end="url(#ahw)"/>
+          <line x1="264" y1="122" x2="306" y2="122" class="d-line w" marker-end="url(#ahw)"/>
+          <line x1="264" y1="186" x2="306" y2="138" class="d-line w" marker-end="url(#ahw)"/>
+
+          <rect x="310" y="90" width="92" height="64" rx="5" class="d-box bad"/>
+          <text x="356" y="117" text-anchor="middle" class="d-t">Telegram</text>
+          <text x="356" y="135" text-anchor="middle" class="d-s">1 auth key</text>
+
+          <text x="10" y="232" class="d-w">3 соединения с одним ключом авторизации:</text>
+          <text x="10" y="250" class="d-w">риск AUTH_KEY_DUPLICATED и сброса сессии</text>
+
+          <line x1="416" y1="30" x2="416" y2="252" class="d-sep"/>
+
+          <text x="430" y="18" class="d-title">Так надо: сессией владеет один шлюз</text>
+          <rect x="430" y="40" width="104" height="36" rx="5" class="d-box"/>
+          <text x="482" y="63" text-anchor="middle" class="d-t">Claude Code</text>
+          <rect x="430" y="104" width="104" height="36" rx="5" class="d-box"/>
+          <text x="482" y="127" text-anchor="middle" class="d-t">Codex</text>
+          <rect x="430" y="168" width="104" height="36" rx="5" class="d-box"/>
+          <text x="482" y="191" text-anchor="middle" class="d-t">OpenCode</text>
+
+          <text x="540" y="50" class="d-s">HTTP /mcp</text>
+          <line x1="534" y1="58" x2="576" y2="98" class="d-line g" marker-end="url(#ahg)"/>
+          <line x1="534" y1="122" x2="576" y2="120" class="d-line g" marker-end="url(#ahg)"/>
+          <line x1="534" y1="186" x2="576" y2="142" class="d-line g" marker-end="url(#ahg)"/>
+
+          <rect x="580" y="66" width="116" height="110" rx="6" class="d-box gw"/>
+          <text x="638" y="100" text-anchor="middle" class="d-m">tg-mcp serve</text>
+          <text x="638" y="122" text-anchor="middle" class="d-s">сессия · очередь</text>
+          <text x="638" y="140" text-anchor="middle" class="d-s">лимитер · кэш</text>
+          <text x="638" y="158" text-anchor="middle" class="d-s">аудит</text>
+
+          <line x1="696" y1="121" x2="724" y2="121" class="d-line" marker-end="url(#ah)"/>
+          <rect x="728" y="92" width="86" height="58" rx="5" class="d-box tg"/>
+          <text x="771" y="117" text-anchor="middle" class="d-t">Telegram</text>
+          <text x="771" y="135" text-anchor="middle" class="d-s">1 соедин.</text>
+
+          <text x="430" y="232" class="d-t">одно соединение на аккаунт, общий учёт FLOOD_WAIT;</text>
+          <text x="430" y="250" class="d-t">stdio-клиенты ходят в тот же демон через прокладку</text>
+        </svg>
+      </div>
+      <figcaption>Слева три агента запускают по своему процессу, и все три открывают соединение с одной и той же сессией. Справа сессией владеет один долгоживущий демон, агенты подключаются к нему по HTTP, а те, что умеют только stdio, через тонкую прокладку.</figcaption>
+    </figure>
+
+    <div class="decisions">
+      <article>
+        <h3>Сессией владеет один процесс</h3>
+        <p>Демон <code>tg-mcp serve</code> держит MTProto-соединение, очередь и кэш. Агенты подключаются к нему по Streamable HTTP. Для stdio-клиентов есть прокладка <code>tg-mcp stdio</code>: если демон жив, она проксирует, если нет, поднимает ядро у себя под файловой блокировкой.</p>
+        <p class="why">helper уже живёт по этому правилу: одна сессия, одна полоса MTProto-вызовов на все воркеры (<code>gramGate</code>), запрет второго клиента в <code>AGENTS.md</code>. Шлюз распространяет его на всех агентов.</p>
+      </article>
+      <article>
+        <h3>Контракт состоит только из tools</h3>
+        <p>Resources, prompts и elicitation поддерживаются не везде, а tools понимают все. Схемы плоские: строки, числа, enum, без union и вложенных объектов. Имена <code>tg_*</code> в snake_case, в основном наборе не больше 10-12 инструментов.</p>
+        <p class="why">Описания всех инструментов попадают в контекст агента при каждом запуске, поэтому лишние инструменты стоят денег и внимания модели.</p>
+      </article>
+      <article>
+        <h3>Ядро отдельно от MCP</h3>
+        <p>Код из channel-scope выносится в пакет <code>tg-core</code>: пул клиентов, лимитер, резолвер, поиск, медиа. Хранилище подключается через порт, по умолчанию SQLite. channel-scope начинает зависеть от того же ядра.</p>
+        <p class="why">Сейчас сервисы привязаны к Mongoose-моделям. Для шлюза, который ставится через <code>npx</code>, MongoDB лишняя зависимость.</p>
+      </article>
+      <article>
+        <h3>По умолчанию только чтение</h3>
+        <p>Инструменты записи (вступить, реакция, ответ, отправить) живут в отдельном наборе <code>write</code> и выключены. Когда включены, работают в два шага через <code>confirm_token</code>: первый вызов показывает, что будет сделано, второй выполняет. Для мониторинга подтверждается не каждый ответ, а правило целиком: чат, режим, лимиты.</p>
+        <p class="why">Двухшаговое подтверждение работает в любом клиенте, в отличие от elicitation.</p>
+      </article>
+      <article>
+        <h3>Шлюз отдаёт данные, думает агент</h3>
+        <p>Внутри шлюза нет модели и API-ключей. Сводки, анализ цен и тексты ответов пишет агент. Для постоянных задач шлюз тоже не думает сам, а запускает агента командой из правила: <code>claude -p</code>, <code>codex exec</code> или <code>opencode run</code>.</p>
+        <p class="why">Так шлюз не привязан к провайдеру, а в автоматизации работает тот же агент с теми же навыками, что и в разговоре с тобой.</p>
+      </article>
+      <article>
+        <h3>Большие объёмы уходят в файл</h3>
+        <p>Для аналитики по сотням объявлений <code>tg_export</code> возвращает путь к JSONL, число строк и пять примеров. Считает агент своим кодом. Картинки тоже ложатся файлами на диск, а агент открывает только те, что нужны. Для сводок наоборот: краткий режим ленты, чтобы месяц постов поместился в контекст.</p>
+        <p class="why">Все четыре клиента умеют запускать код. Тысяча объявлений в контексте стоит дорого, и модель считает по ним хуже, чем pandas.</p>
+      </article>
+      <article>
+        <h3>Пишет тот, кто подключён</h3>
+        <p>Шлюз не выбирает личность сам. Подключил отдельный аккаунт агента, пишет он; подключил свой личный, значит, это твоё осознанное решение. В канале, где аккаунт админ, можно писать от имени канала. В правиле и поручении аккаунт указывается явно.</p>
+        <p class="why">Ядро channel-scope уже умеет несколько аккаунтов, так что агент и ты можете жить в одном шлюзе, каждый со своей сессией.</p>
+      </article>
+      <article>
+        <h3>Правило и поручение</h3>
+        <p>Правило реагирует на событие и забывает его: вышел пост, агент ответил. Поручение помнит цель, рамки и переписку, пока дело не закончится. Наблюдатель, запуск агента и согласование в боте у них общие.</p>
+        <p class="why">Агент между запусками ничего не помнит, поэтому состояние поручения хранит шлюз, а не агент.</p>
+      </article>
+      <article>
+        <h3>Долгое оформляется задачей</h3>
+        <p>Любой вызов укладывается примерно в 30 секунд. Выгрузка истории, индексация наблюдаемых каналов и обход графа рекомендаций возвращают <code>job_id</code>, прогресс читается через <code>tg_job_status</code>.</p>
+        <p class="why">У клиентов есть таймауты на вызов инструмента, и они разные. Если FLOOD_WAIT длиннее бюджета, шлюз сразу отвечает ошибкой с <code>retry_after</code>, а не висит.</p>
+      </article>
+      <article>
+        <h3>Текст из Telegram считается чужим</h3>
+        <p>Каждое сообщение в выдаче обёрнуто в явные границы с указанием источника, а инструкции сервера говорят агенту не выполнять команды из этого текста. Личные переписки аккаунта закрыты, пока их не добавят в список.</p>
+        <p class="why">Публичные чаты это открытый канал для prompt injection. С включённой записью это уже не теория.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="tools">
+    <div class="sec-head">
+      <h2>Инструменты</h2>
+      <p>Контракт, который видит агент. Наборы включаются переменной <code>TG_MCP_TOOLSETS</code>, по умолчанию <code>core</code>.</p>
+    </div>
+    <div class="controls" id="set-filter">
+      <span class="label">Набор:</span>
+      <button class="chip" data-set="all" aria-pressed="true">все</button>
+      <button class="chip" data-set="core" aria-pressed="false">core</button>
+      <button class="chip" data-set="automate" aria-pressed="false">automate</button>
+      <button class="chip" data-set="write" aria-pressed="false">write</button>
+      <button class="chip" data-set="discover" aria-pressed="false">discover</button>
+      <button class="chip" data-set="index" aria-pressed="false">index</button>
+      <button class="chip" data-set="analytics" aria-pressed="false">analytics</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Инструмент</th><th>Набор</th><th>Что делает</th><th>Методы MTProto</th><th>Откуда код</th></tr></thead>
+        <tbody id="tools-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="borrow">
+    <div class="sec-head">
+      <h2>Что заимствуем</h2>
+      <p>Каждая строка ведёт к конкретному файлу. Кнопка в последнем столбце подсвечивает блок на схеме.</p>
+    </div>
+    <div class="cols">
+      <div class="table-wrap">
+        <table style="min-width:620px">
+          <thead><tr><th>Файл</th><th>Что берём</th><th>Блок</th></tr></thead>
+          <tbody id="borrow-body"></tbody>
+        </table>
+      </div>
+      <div>
+        <h3 class="sub">Что не переносим</h3>
+        <ul class="anti">
+          <li><b>MCP как HTTP-прокси с логином по паролю</b><span><code>mcp/src/index.ts:22</code> логинится в REST через <code>/api/auth/login</code> и держит cookie. В шлюзе ядро внутри процесса, а к демону ходят с bearer-токеном.</span></li>
+          <li><b><code>JSON.stringify(results, null, 2)</code> в каждом ответе</b><span>Отступы и все поля подряд съедают контекст агента. Нужен компактный текстовый формат и курсоры.</span></li>
+          <li><b>Загрузка всего пайплайна ради одного канала</b><span><code>getChannelReport</code>, <code>compareChannels</code>, <code>saveChannelReport</code> тянут весь список и ищут канал на клиенте.</span></li>
+          <li><b>Прямые вызовы клиента мимо лимитера</b><span><code>recommendationsService</code>, <code>forwardAnalysisService</code>, <code>refreshService</code>, <code>viewsSyncService</code> берут клиента напрямую: весь трафик идёт через первый аккаунт и без учёта FLOOD_WAIT.</span></li>
+          <li><b>Глобальный синглтон архиватора</b><span><code>archiveService</code> держит один прогресс на процесс, поэтому идёт одна выгрузка за раз.</span></li>
+          <li><b><code>console.log</code> в сервисах</b><span>В stdio-режиме любая строка в stdout ломает JSON-RPC. Логи только в stderr, логгер GramJS туда же или выключить.</span></li>
+          <li><b><code>--dangerously-skip-permissions</code> в харнессе отчётов</b><span><code>research.ts:173</code>. Терпимо, пока инструменты только читают. С набором <code>write</code> так запускать нельзя.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="connect">
+    <div class="sec-head">
+      <h2>Подключение</h2>
+      <p>Шлюз запускается один раз на машине (или на VPS рядом с агентом), дальше каждый клиент добавляет его одной записью в конфиг.</p>
+    </div>
+    <div class="tabs" role="tablist" id="conn-tabs" aria-label="Клиенты"></div>
+    <div id="conn-panels"></div>
+    <p class="caveat" style="margin-top:14px">Команда <code>tg-mcp install &lt;клиент&gt;</code> будет печатать эти фрагменты сама. Синтаксис конфигов клиентов записан по памяти, перед выпуском пакета его стоит сверить с текущей документацией каждого клиента.</p>
+  </section>
+
+  <section id="risks">
+    <div class="sec-head">
+      <h2>Риски</h2>
+      <p>От самых дорогих к самым мелким.</p>
+    </div>
+    <ul class="risks">
+      <li><span class="sev hi">высокий</span><div><b>Ограничение или бан аккаунта.</b><p>Автоматизация через user-аккаунт Telegram терпит, пока она похожа на человека. Нужен отдельный номер, а не основной аккаунт, консервативные лимиты из <code>rateLimiter</code> (60 в минуту, 500 мс между запросами) и никаких массовых вступлений и рассылок.</p></div></li>
+      <li><span class="sev hi">высокий</span><div><b>Автоответы в чужих каналах.</b><p>Регулярные комментарии под каждым постом чужого канала быстро выглядят как спам: админы банят, антиспам Telegram ограничивает аккаунт. По умолчанию режим draft с согласованием, один ответ на пост, дневной лимит, тихие часы и случайная задержка перед ответом. Режим auto разумен в своих каналах.</p></div></li>
+      <li><span class="sev hi">высокий</span><div><b>Сообщения незнакомым людям.</b><p>Это самое рискованное для аккаунта: после жалоб Telegram оставляет только переписку со взаимными контактами (<code>PEER_FLOOD</code>). Лимит новых диалогов в день, никаких рассылок, агент представляется помощником.</p></div></li>
+      <li><span class="sev hi">высокий</span><div><b>Обязательства от твоего имени.</b><p>В переговорах агент может пообещать лишнее. Всё, что касается денег, адресов, личных данных, времени встречи и выхода за рамки, решаешь ты: поручение переходит в «вопрос тебе». Переводов денег агент не делает вообще.</p></div></li>
+      <li><span class="sev hi">высокий</span><div><b>Одна сессия в нескольких процессах.</b><p>Если Claude Code и Codex одновременно запустят свои копии с одной сессией, Telegram может её сбросить (<code>AUTH_KEY_DUPLICATED</code>). Лечится демоном-владельцем и блокировкой в stdio-режиме. По той же причине шлюзу нужна своя сессия, отдельная от прод-сессии helper.</p></div></li>
+      <li><span class="sev mid">средний</span><div><b>Охват поиска.</b><p><code>messages.searchGlobal</code> ищет по чатам, где состоит аккаунт, а не по всему Telegram. Корпус задаётся подписками аккаунта и локальным индексом. Поиск по хэштегам работает по публичным постам. Полнотекстовый поиск по всем публичным постам Telegram открыл позже и в урезанном виде (Premium, дневная квота); поддержку нужного слоя API в GramJS надо проверить отдельно.</p></div></li>
+      <li><span class="sev mid">средний</span><div><b>Prompt injection из чатов.</b><p>Комментарии и посты пишут посторонние люди. Защита: обёртка недоверенного контента, отдельный набор write, двухшаговое подтверждение, аудит.</p></div></li>
+      <li><span class="sev mid">средний</span><div><b>Личные переписки.</b><p>Агент видит всё, что видит аккаунт. Личные чаты закрыты по умолчанию и открываются только списком.</p></div></li>
+      <li><span class="sev mid">средний</span><div><b>Вступление в закрытые чаты.</b><p>В барахолках часто стоят боты-привратники с капчей. Агент её не проходит: шлюз останавливается и просит вступить вручную. Массовые вступления сами по себе повод для ограничений.</p></div></li>
+      <li><span class="sev mid">средний</span><div><b>Персональные данные продавцов.</b><p>В объявлениях есть имена и телефоны. В выгрузке авторы хэшируются, телефоны маскируются, пока их явно не попросили.</p></div></li>
+      <li><span class="sev mid">средний</span><div><b>Пропущенные посты.</b><p>После переподключения GramJS может потерять часть обновлений. Наблюдатель всегда дочитывает историю с последнего виденного id, а не полагается только на события.</p></div></li>
+      <li><span class="sev lo">низкий</span><div><b>Слишком большие ответы.</b><p>Клиенты режут или предупреждают о больших ответах инструментов (в Claude Code это настраивается через <code>MAX_MCP_OUTPUT_TOKENS</code>). Лимит на символы в сообщении, 20 результатов по умолчанию, курсоры.</p></div></li>
+      <li><span class="sev mid">средний</span><div><b>Зависший запрос GramJS.</b><p>При сбоях сети вызов может не вернуться никогда, и без дедлайна встаёт весь воркер: helper так простоял 9 дней в августе. Дедлайн на каждый вызов, watchdog и перезапуск процесса супервизором берём из helper.</p></div></li>
+      <li><span class="sev lo">низкий</span><div><b>Логи в stdout.</b><p>GramJS по умолчанию пишет свои сообщения в консоль. В stdio-режиме это ломает протокол, поэтому логгер отключается или уводится в stderr.</p></div></li>
+    </ul>
+  </section>
+
+  <section id="plan">
+    <div class="sec-head">
+      <h2>План</h2>
+      <p>Код живёт в монорепо channel-scope: <code>packages/tg-core</code> (вынесенное ядро) и <code>packages/tg-mcp</code> (шлюз). Старый <code>packages/mcp</code> остаётся инструментом CRM-пайплайна.</p>
+    </div>
+    <ol class="plan">
+      <li><div><h3>Вынести ядро</h3><p>Из channel-scope: <code>clientManager</code>, <code>rateLimiter</code>, <code>telegramUtils</code>, <code>processMediaClient</code>. Из helper: <code>gramGate</code>, <code>refreshShared</code> (дедлайны, FLOOD_WAIT, классификация ошибок), <code>gramStartup</code> и <code>gramFatalRecovery</code>, <code>discussion.ts</code> и чтение треда из <code>commentsRefresher</code>, <code>reactionKey</code>, <code>chatId</code>. Всё в <code>tg-core</code>, Mongoose заменяется портом хранилища. Тесты переезжают вместе с кодом: у helper они покрывают как раз комментарии, гейт и старт.</p></div></li>
+      <li><div><h3>Чтение и аналитика: кейсы 1 и 2</h3><p>Демон с HTTP, stdio-прокладка, <code>tg-mcp login</code>, SQLite, скоупы, аудит, обёртка контента. Краткий режим ленты, темы форумов, выгрузка с разбором цен. Готово, когда промпты про барахолку и сводку канала одинаково отрабатывают в <code>claude -p</code>, <code>codex exec</code> и <code>opencode run</code> (по образцу харнесса из <code>research.ts</code>).</p><div class="tools-line">tg_status · tg_resolve · tg_search_messages · tg_search_chat · tg_read_history · tg_get_message · tg_get_comments · tg_list_topics · tg_export · tg_get_media</div></div></li>
+      <li><div><h3>Мониторинг: кейс 3</h3><p>Наблюдатель с дочиткой по <code>minId</code>, правила с лимитами, запуск агента по шаблону команды, согласование через отдельного бота, ответ в комментарии. Только режим draft. Сначала на своём канале.</p><div class="tools-line">tg_rule_set · tg_rules · tg_inbox · tg_reply · tg_join</div></div></li>
+      <li><div><h3>Поручения: кейс 4</h3><p>Поручения с состоянием и перепиской, наблюдатель за личными чатами, вопросы и отчёты в боте, ответ текстом как указание агенту, лимит новых диалогов. Сначала только режим draft.</p><div class="tools-line">tg_task_start · tg_task_get · tg_task_update · tg_tasks · tg_send</div></div></li>
+      <li><div><h3>Расширения</h3><p>Поиск каналов через лимитер, локальный FTS-индекс, аналитика из channel-scope, режим auto для своих каналов, несколько аккаунтов через <code>pickActiveClientId</code>, мост к архивам channel-scope, команда <code>install</code> под каждый клиент.</p><div class="tools-line">tg_find_channels · tg_similar_channels · tg_list_dialogs · tg_forward_sources · tg_watch · tg_job_status · tg_local_search · tg_react · tg_channel_stats</div></div></li>
+    </ol>
+  </section>
+
+  <footer>Схема собрана по исходникам channel-scope (ветка <code>feat/mcp-server</code>), helper (<code>main</code>), canary и tgbot после обновления репозиториев 1 октября 2026. Пути указаны относительно <code>channel-scope/packages/</code>, <code>helper/</code> и <code>canary/</code>. Имя пакета <code>tg-mcp</code> условное.</footer>
+</div>
+
+<script>
+(function () {
+  var LAYERS = [
+    { id: 'clients', name: 'Агенты', hint: 'кто вызывает инструменты' },
+    { id: 'transport', name: 'Транспорт', hint: 'как вызов попадает в шлюз', conn: 'JSON-RPC 2.0: tools/list, tools/call' },
+    { id: 'mcp', name: 'MCP-слой', hint: 'один реестр на все транспорты', conn: 'транспорт не знает об инструментах' },
+    { id: 'policy', name: 'Политики', hint: 'что агенту можно', conn: 'check(scope, tool, peer)' },
+    { id: 'automation', name: 'Автоматизация', hint: 'работает, пока агент не запущен', conn: 'правило = разрешение, выданное заранее' },
+    { id: 'domain', name: 'Сервисы', hint: 'логика поверх MTProto', conn: 'вызов сервиса с разрешённым peer' },
+    { id: 'core', name: 'Ядро tg-core', hint: 'сессия, очередь, кэш', conn: 'rateLimiter.invoke(request, accountId)' },
+    { id: 'storage', name: 'Хранилище', hint: 'один файл, без внешних сервисов', pair: true, conn: 'слева: сессии, кэш, задачи, аудит, индекс · справа: MTProto, одно соединение на аккаунт' },
+    { id: 'telegram', name: 'Telegram', hint: 'дата-центры', pair: true }
+  ];
+
+  var MODE = { asis: 'как есть', adapt: 'адаптация', pattern: 'паттерн', 'new': 'новое', ext: 'внешнее' };
+  var PROV = { cs: 'channel-scope', helper: 'helper', 'new': 'пишем заново', ext: 'внешнее' };
+  var REPO = { cs: 'channel-scope/packages', helper: 'helper', canary: 'canary' };
+
+  var NODES = [
+    { id: 'claude', layer: 'clients', name: 'Claude Code', tech: 'HTTP или stdio', prov: 'ext', mode: 'ext',
+      desc: 'Твой Claude Code, который висит на Telegram-боте. Бот остаётся каналом разговора с тобой, а шлюз даёт агенту отдельный user-аккаунт для чтения Telegram. Поддерживает stdio и Streamable HTTP, умеет resources и prompts, но опираемся только на tools.',
+      src: [{ r: 'cs', p: 'server/src/web/routes/research.ts:173', n: 'уже запускает <code>claude -p --mcp-config</code> для AI-отчётов: готовый шаблон e2e-проверки шлюза' }] },
+    { id: 'codex', layer: 'clients', name: 'Codex CLI', tech: '~/.codex/config.toml', prov: 'ext', mode: 'ext',
+      desc: 'Подключается секцией <code>[mcp_servers.*]</code>, по stdio или по URL. У вызова инструмента есть таймаут, поэтому всё долгое в шлюзе оформлено задачами.' },
+    { id: 'opencode', layer: 'clients', name: 'OpenCode', tech: 'opencode.json', prov: 'ext', mode: 'ext',
+      desc: 'Секция <code>mcp</code>: <code>type: local</code> с командой или <code>type: remote</code> с URL и заголовками. Работает с tools.' },
+    { id: 'hermes', layer: 'clients', name: 'Hermes Agent', tech: '~/.hermes/config.yaml', prov: 'ext', mode: 'ext',
+      desc: 'Раздел <code>mcp_servers</code>, stdio или HTTP, умеет включать и выключать отдельные инструменты. Если MCP почему-то недоступен, может звать CLI <code>tg-mcp</code> через shell.' },
+    { id: 'anyclient', layer: 'clients', name: 'Любой MCP-клиент', tech: 'Cursor, Gemini CLI, ...', prov: 'ext', mode: 'ext',
+      desc: 'Общий знаменатель всех клиентов: tools, плоские JSON-схемы, stdio или HTTP. Всё сверх этого (resources, prompts, elicitation, outputSchema) шлюз отдаёт как бонус, но ни один сценарий на нём не держится.' },
+
+    { id: 'http', layer: 'transport', name: 'Streamable HTTP', tech: '127.0.0.1:7777/mcp · Bearer', prov: 'new', mode: 'pattern',
+      desc: 'Основной вход. Демон слушает localhost или приватную сеть VPS, все агенты подключаются по URL. Авторизация по bearer-токену из <code>TG_MCP_TOKEN</code>.',
+      src: [{ r: 'cs', p: 'server/src/web/server.ts:19', n: 'каркас Express-приложения' },
+            { r: 'cs', p: 'server/src/web/middleware/auth.ts:16', n: 'идея middleware; JWT из cookie заменяется bearer-токеном' }],
+      change: 'По умолчанию слушать только 127.0.0.1 и проверять заголовок Origin.' },
+    { id: 'stdio', layer: 'transport', name: 'stdio-прокладка', tech: 'tg-mcp stdio', prov: 'cs', mode: 'pattern',
+      desc: 'Для клиентов, которые умеют только запускать процесс. Если демон запущен, прокладка проксирует JSON-RPC в него. Если нет, поднимает ядро у себя, но сначала берёт файловую блокировку, чтобы вторая копия не открыла ту же сессию.',
+      src: [{ r: 'cs', p: 'mcp/src/index.ts:725', n: 'StdioServerTransport и порядок старта: сначала connect, логин в фоне, чтобы клиент не ждал' },
+            { r: 'helper', p: 'src/telegram/client/backfillComments.ts:32', n: 'lock-файл против второго процесса на той же сессии, снимается при Ctrl+C' }],
+      change: 'Все логи только в stderr, включая логгер GramJS.',
+      risk: 'Любой <code>console.log</code> в stdout ломает протокол.' },
+    { id: 'cli', layer: 'transport', name: 'CLI', tech: 'login · serve · doctor · install', prov: 'helper', mode: 'adapt',
+      desc: 'Команды для человека и для агентов без MCP. <code>login</code> проводит интерактивный вход (телефон, код, 2FA) и сохраняет зашифрованную сессию. <code>install</code> печатает конфиг под выбранный клиент. <code>search</code> и <code>read</code> повторяют инструменты для shell.',
+      src: [{ r: 'helper', p: 'src/scripts/generateSession.ts:12', n: 'интерактивный вход через <code>client.start</code> и <code>input</code>' },
+            { r: 'cs', p: 'server/src/telegram/client/fetchHistorical.ts:21', n: 'разбор аргументов <code>--channel</code> / <code>--limit</code>' }] },
+
+    { id: 'registry', layer: 'mcp', name: 'Реестр инструментов', tech: 'registerTool + zod', prov: 'cs', mode: 'pattern',
+      desc: 'Инструменты объявлены один раз и не знают о транспорте. Схемы плоские, чтобы их одинаково понимали все клиенты. Аннотации <code>readOnlyHint</code> и <code>destructiveHint</code>, наборы включаются через <code>TG_MCP_TOOLSETS</code>.',
+      src: [{ r: 'cs', p: 'mcp/src/index.ts:101', n: '<code>McpServer</code> с полем <code>instructions</code>' },
+            { r: 'cs', p: 'mcp/src/index.ts:117', n: '<code>registerTool</code>, zod-схемы, <code>readOnlyHint</code>' },
+            { r: 'cs', p: 'mcp/src/helpers.ts', n: 'чистые функции вынесены ради тестов, тесты на vitest' }],
+      change: 'Имена <code>tg_*</code> в snake_case. В core не больше 10-12 инструментов.' },
+    { id: 'formatter', layer: 'mcp', name: 'Форматтер ответов', tech: 'текст + structuredContent', prov: 'new', mode: 'new',
+      desc: 'Компактная выдача: одна строка заголовка на сообщение (чат, автор, дата, просмотры, ответы, ссылка t.me), текст обрезан до лимита, в конце <code>next_cursor</code>. Клиентам с outputSchema тот же ответ отдаётся ещё и структурой.',
+      src: [{ r: 'cs', p: 'mcp/src/index.ts:504', n: 'текстовый отчёт в <code>getChannelReport</code> как отправная точка формата' }],
+      change: 'Не повторять <code>JSON.stringify(results, null, 2)</code>. У ленты два режима: <code>brief</code> (1-2 строки на пост и счётчики) для сводок и <code>full</code> для чтения.' },
+    { id: 'recipes', layer: 'mcp', name: 'Рецепты', tech: 'MCP prompts + skill', prov: 'new', mode: 'new',
+      desc: 'Готовые сценарии под твои кейсы: цены в барахолке, сводка по каналу, ответы в комментариях. Отдаются как MCP prompts (в Claude Code это слеш-команды) и как markdown-файл для AGENTS.md или skills, чтобы работать и там, где prompts не поддерживаются. В рецепте записано, в каком порядке звать инструменты и когда переходить на выгрузку в файл.' },
+    { id: 'paging', layer: 'mcp', name: 'Курсоры и ошибки', tech: 'cursor · retry_after', prov: 'cs', mode: 'adapt',
+      desc: 'Курсор упаковывает <code>offsetRate</code>, <code>offsetPeer</code> и <code>offsetId</code> в непрозрачную строку, агент просто передаёт её обратно. <code>FLOOD_WAIT</code>, <code>CHANNEL_PRIVATE</code> и похожие ошибки превращаются в <code>isError</code> с понятным текстом: что случилось и когда повторить.',
+      src: [{ r: 'cs', p: 'server/src/services/globalSearchService.ts:10', n: '<code>PaginationState</code> и цикл пагинации' },
+            { r: 'cs', p: 'server/src/services/rateLimiter.ts:383', n: '<code>parseFloodWait</code>' }] },
+    { id: 'jobs', layer: 'mcp', name: 'Задачи', tech: 'job_id · tg_job_status', prov: 'cs', mode: 'adapt',
+      desc: 'Всё, что дольше примерно 30 секунд (выгрузка истории за месяцы, индексация, глубокий обход рекомендаций), запускается задачей: инструмент сразу возвращает <code>job_id</code>, прогресс читается отдельным вызовом.',
+      src: [{ r: 'cs', p: 'server/src/services/archiveService.ts:15', n: 'модель <code>ArchiveProgress</code>, пауза и продолжение с <code>minId</code>' },
+            { r: 'cs', p: 'server/src/services/researchService.ts:90', n: 'автоочередь загрузок <code>startDownloadAll</code>' }],
+      change: 'Сейчас архиватор хранит один прогресс на процесс. Нужен менеджер задач с состоянием на каждую задачу.' },
+
+    { id: 'scopes', layer: 'policy', name: 'Скоупы доступа', tech: 'public · joined · dm-allowlist', prov: 'new', mode: 'new',
+      desc: 'Что агенту можно читать. По умолчанию публичные каналы и группы плюс чаты, где аккаунт состоит. Личные переписки закрыты и открываются только списком. Поручение открывает ровно один диалог, с его собеседником, и только на время поручения. Есть denylist.',
+      risk: 'Агент видит всё, что видит аккаунт. Для агента нужен отдельный номер.' },
+    { id: 'writegate', layer: 'policy', name: 'Шлюз записи', tech: 'confirm_token', prov: 'new', mode: 'new',
+      desc: 'Инструменты записи выключены по умолчанию. Когда включены, работают в два шага: первый вызов возвращает превью действия и <code>confirm_token</code>, второй с токеном выполняет. Токен живёт пару минут и привязан к аргументам.' },
+    { id: 'envelope', layer: 'policy', name: 'Недоверенный контент', tech: 'untrusted envelope', prov: 'new', mode: 'new',
+      desc: 'Текст из чатов может содержать инструкции для агента. Каждый фрагмент в выдаче обёрнут в явные границы с указанием источника, а в <code>instructions</code> сервера сказано не выполнять команды из выдачи.' },
+    { id: 'audit', layer: 'policy', name: 'Аудит', tech: 'JSONL / SQLite', prov: 'new', mode: 'new',
+      desc: 'Каждый вызов: время, клиент, инструмент, аргументы, чат, сколько сообщений отдано, длительность, FLOOD_WAIT. Нужен и для настройки лимитов, и чтобы видеть, что агент читал.' },
+
+    { id: 'watcher', layer: 'automation', name: 'Наблюдатель', tech: 'realtime + сверка по расписанию', prov: 'helper', mode: 'adapt',
+      desc: 'Замечает новые посты в чатах из правил. Схема двухслойная, как в helper: быстрый слой ловит события за секунды, медленный по расписанию дочитывает пропущенное за время простоя. Для подписанных каналов быстрый слой это обновления GramJS, для своих каналов можно и Bot API. Медленный слой опрашивает историю с <code>minId</code>, частота зависит от возраста поста. Если в ответе на опрос изменилось число комментариев, тред перечитывается сразу. Для поручений наблюдатель слушает ещё и личные чаты с собеседниками: там аккаунт участник, поэтому обновления приходят надёжно.',
+      src: [{ r: 'helper', p: 'src/telegram/bot/listenerBot.ts:49', n: 'быстрый слой через Bot API: посты, комментарии, реакции (бот должен быть админом)' },
+            { r: 'helper', p: 'src/telegram/workers/statsRefresher.ts:172', n: 'расхождение <code>replies.replies</code> будит перечитку треда' },
+            { r: 'helper', p: 'src/telegram/workers/ageTiers.ts:7', n: 'лестница частоты: 15 минут для свежих постов, реже для старых, стоп после 30 дней' },
+            { r: 'helper', p: 'src/telegram/workers/commentsAgeTiers.ts:32', n: 'эффективный возраст: живой тред на старом посте не выпадает из расписания' },
+            { r: 'helper', p: 'src/telegram/processors/processPost.ts:80', n: '«сохранить пост, потом действие» с защитой от повтора на edited-постах' }],
+      change: 'Для чужих каналов Bot API не подходит, быстрый слой только через GramJS. Последний виденный id хранить в SQLite, чтобы рестарт не давал дублей и пропусков.' },
+    { id: 'rules', layer: 'automation', name: 'Правила', tech: 'чат · триггер · действие · лимиты', prov: 'new', mode: 'new',
+      desc: 'Правило описывает постоянную задачу: какой чат слушать, на что реагировать (новый пост, ключевые слова, пропускать рекламу), какой промпт дать агенту, режим (<code>draft</code> с согласованием или <code>auto</code>) и лимиты: один ответ на пост, N в день, тихие часы. Создать правило может и агент через <code>tg_rule_set</code>, но только с подтверждением, как любую запись.',
+      risk: 'Правило выдаёт постоянное разрешение на запись. Без лимитов оно не сохраняется.' },
+    { id: 'tasks', layer: 'automation', name: 'Поручения', tech: 'цель · рамки · переписка · состояние', prov: 'new', mode: 'new',
+      desc: 'Задача с памятью: написать человеку и довести дело до результата. Шлюз хранит собеседника, цель, рамки своими словами, срок, лимит сообщений, список того, что решаешь только ты, всю переписку и состояние: черновик, ждём ответ, вопрос тебе, готово, закрыто. Каждое сообщение собеседника будит агента; агент читает поручение через <code>tg_task_get</code> и меняет состояние через <code>tg_task_update</code>. Первое сообщение агент по умолчанию начинает с того, что пишет как помощник: так честнее, и собеседник реже жмёт «спам».',
+      change: 'Отличие от правила: правило реагирует на событие и забывает его, поручение помнит всё до конца. Запуск агента, наблюдатель и согласование у них общие.',
+      risk: 'Собеседник может написать что угодно, в том числе «скинь предоплату» или «забудь инструкции». Его сообщения всегда чужой текст, а деньги, адреса и личные данные агент без тебя не трогает.' },
+    { id: 'runner', layer: 'automation', name: 'Запуск агента', tech: 'claude -p · codex exec · opencode run', prov: 'cs', mode: 'adapt',
+      desc: 'Когда правило сработало, шлюз запускает агента без интерфейса: подставляет в шаблон промпта ссылку и текст поста, передаёт адрес шлюза и токен, который разрешает прочитать этот пост и один раз ответить в его ветке. Для поручения токен открывает только один диалог с собеседником и само поручение. Команда запуска задаётся в правиле, поэтому это может быть любой из твоих CLI. Одновременно идёт 1-2 запуска, остальные ждут в очереди.',
+      src: [{ r: 'cs', p: 'server/src/web/routes/research.ts:131', n: 'уже запускает <code>claude -p</code> с <code>--mcp-config</code>, таймаутом и разбором кода выхода' }],
+      change: 'Убрать <code>--dangerously-skip-permissions</code>. Ограничивать агента токеном на стороне шлюза, а не флагами конкретного CLI: так одинаково для всех клиентов.' },
+    { id: 'approval', layer: 'automation', name: 'Согласование и вопросы', tech: 'бот · кнопки · ответ текстом', prov: 'new', mode: 'pattern',
+      desc: 'В режиме draft ответ агента не уходит сразу: шлюз присылает тебе черновик через Telegram-бота с кнопками. «Отправить» публикует от user-аккаунта, «Изменить» принимает твой текст, «Пропустить» закрывает событие. Для поручений сюда же приходят вопросы («Просит 18 000 при лимите 15 000. Предложить 16 000?») и итоговые отчёты; ответ текстом уходит агенту как указание. Согласовывать можно с телефона.',
+      src: [{ r: 'canary', p: 'src/telegram/telegram.js:9', n: 'сообщение с inline-клавиатурой через Bot API' },
+            { r: 'helper', p: 'src/telegram/bot/listenerBot.ts:17', n: 'приём обновлений бота через polling' }],
+      risk: 'У бот-токена может быть только один получатель обновлений. Если твой бот-мост для Claude Code уже его занимает, для согласований нужен второй бот.' },
+    { id: 'inbox', layer: 'automation', name: 'Входящие', tech: 'tg_inbox · push в сессию', prov: 'new', mode: 'new',
+      desc: 'Все события пишутся во входящие. Агент, который сейчас работает, забирает их вызовом <code>tg_inbox</code>, например в цикле <code>/loop</code> Claude Code. В новых версиях Claude Code есть механизм channels, через который MCP-сервер присылает события прямо в открытую сессию; стоит проверить, не на нём ли сделан твой бот-мост. Это только Claude Code, поэтому для остальных клиентов основной путь: запуск агента из правила.' },
+
+    { id: 'resolve', layer: 'domain', name: 'Резолвер', tech: '@name · t.me/... · инвайты', prov: 'cs', mode: 'adapt',
+      desc: 'Превращает всё, что даёт агент, в сущность: <code>@username</code>, <code>t.me/name/123</code>, <code>t.me/c/123/456</code>, <code>t.me/name/123?comment=45</code>, инвайт-ссылки. Отдаёт карточку: тип, участники, описание, группа обсуждений, состоит ли аккаунт.',
+      src: [{ r: 'cs', p: 'server/src/services/telegramUtils.ts:13', n: '<code>getChannelUsername</code> учитывает коллекционные usernames' },
+            { r: 'cs', p: 'server/src/services/telegramUtils.ts:35', n: '<code>getChannelFullInfo</code>: описание, подписчики, <code>linkedChatId</code>' },
+            { r: 'cs', p: 'server/src/services/universalSearchService.ts:264', n: '<code>enrichChannelById</code>: сначала <code>InputChannel</code> с accessHash, при отказе <code>getEntity</code>' },
+            { r: 'helper', p: 'src/telegram/client/gramClient.ts:75', n: '<code>resolvePeer</code> с кэшем InputPeer' },
+            { r: 'helper', p: 'src/telegram/utils/chatId.ts:10', n: 'перевод id между формами <code>-100…</code> (Bot API) и MTProto; нужен для ссылок <code>t.me/c/…</code>' }],
+      change: 'Добавить разбор всех форм t.me-ссылок и <code>messages.checkChatInvite</code>.' },
+    { id: 'search', layer: 'domain', name: 'Поиск сообщений', tech: 'searchGlobal · search · searchPosts', prov: 'cs', mode: 'adapt',
+      desc: 'Три режима: по всем чатам аккаунта (<code>messages.searchGlobal</code> с флагами каналов и групп), внутри одного чата (<code>messages.search</code> с фильтром по автору и датам), по хэштегу в публичных постах (<code>channels.searchPosts</code>).',
+      src: [{ r: 'cs', p: 'server/src/services/globalSearchService.ts:64', n: '<code>searchGlobal</code> с готовой пагинацией' },
+            { r: 'cs', p: 'server/src/services/globalSearchService.ts:144', n: '<code>searchByHashtag</code>' }],
+      change: 'Сейчас обе функции выбрасывают сами сообщения и оставляют только каналы. Для агента нужны сообщения.',
+      risk: '<code>searchGlobal</code> ищет только по чатам, где состоит аккаунт, а не по всему Telegram.' },
+    { id: 'history', layer: 'domain', name: 'Чтение', tech: 'getHistory · getMessages', prov: 'cs', mode: 'adapt',
+      desc: 'Лента чата с курсором, окно по датам, фильтр по теме форума, сообщение по ссылке с контекстом до и после, пакетная дочитка по id (до 100 за вызов). Для сводок есть краткий режим: 1-2 строки на пост плюс просмотры, реакции и число комментариев.',
+      src: [{ r: 'cs', p: 'server/src/services/forwardAnalysisService.ts:56', n: 'цикл <code>GetHistory</code> с <code>offsetId</code>' },
+            { r: 'cs', p: 'server/src/services/archiveService.ts:180', n: '<code>iterMessages</code> с отсечкой <code>since</code>' },
+            { r: 'cs', p: 'server/src/services/refreshService.ts:75', n: '<code>channels.GetMessages</code> пачками по 100' },
+            { r: 'cs', p: 'server/src/telegram/processors/processReactions.ts:8', n: 'нормализация реакций, включая платные' },
+            { r: 'helper', p: 'src/telegram/processors/reactionKey.ts:25', n: 'единый ключ реакции: эмодзи, <code>custom:&lt;id&gt;</code>, <code>paid</code>' }] },
+    { id: 'comments', layer: 'domain', name: 'Комментарии', tech: 'GetDiscussionMessage · GetReplies', prov: 'helper', mode: 'adapt',
+      desc: 'Комментарии к посту живут в связанной группе обсуждений. В helper это уже сделано и работает на @stonksnws: группа находится через <code>GetFullChannel</code>, корень треда через <code>GetDiscussionMessage</code> (копия поста с <code>savedFromMsgId</code>), ветка читается страницами по 100 через <code>GetReplies</code>. Авторы различаются на людей, каналы и анонимов, у медиа комментариев сохраняется <code>groupedId</code> альбома, ошибки разложены по смыслу: комментарии выключены, аккаунт не состоит в закрытой группе, канал недоступен.',
+      src: [{ r: 'helper', p: 'src/telegram/discussion.ts:210', n: '<code>resolveDiscussionPeer</code>: группа обсуждений с кэшем и перепроверкой раз в час' },
+            { r: 'helper', p: 'src/telegram/workers/commentsRefresher.ts:311', n: '<code>resolveRoot</code>: корень треда; он же нужен для ответа в комментариях' },
+            { r: 'helper', p: 'src/telegram/workers/commentsRefresher.ts:405', n: '<code>refreshPostComments</code>: страницы <code>GetReplies</code> с паузой между ними' },
+            { r: 'helper', p: 'src/telegram/workers/commentsRefresher.ts:110', n: '<code>authorFromPeer</code>: человек, канал или аноним' },
+            { r: 'helper', p: 'src/telegram/workers/refreshShared.ts:93', n: 'классификация ошибок: <code>CHANNEL_INVALID</code>, <code>MSG_ID_INVALID</code>, <code>CHANNEL_PRIVATE</code>' }],
+      change: 'Сейчас код заточен под один канал из env и пишет в Mongo. Для шлюза нужна функция «прочитать тред любого канала», без записи в базу. Поиск по слову внутри обсуждения добавить через <code>messages.search</code> с <code>top_msg_id</code>.' },
+    { id: 'topics', layer: 'domain', name: 'Темы форумов', tech: 'getForumTopics · top_msg_id', prov: 'new', mode: 'new',
+      desc: 'Многие барахолки устроены как форум: темы «Продам», «Куплю», «Обмен». Сервис отдаёт список тем, а поиск, лента и выгрузка принимают параметр <code>topic</code>, чтобы не смешивать продажу с покупкой.' },
+    { id: 'export', layer: 'domain', name: 'Выгрузка в файл', tech: 'JSONL · CSV · разбор цен', prov: 'cs', mode: 'adapt',
+      desc: 'Для аналитики по сотням сообщений: инструмент пишет файл на диск и возвращает путь, число строк, колонки и 5 примеров. Считает агент своим кодом. При выгрузке шлюз вытаскивает из текста цену и валюту («25к», «25 000 ₽», «$300», «торг»), тип объявления (продам или куплю) и ссылки. С параметром <code>photos=thumb</code> рядом скачиваются превью фото, а в строке появляется колонка с путями к ним: так агент может отобрать объявления по цене и потом посмотреть фото только нужных. Авторы по умолчанию хэшируются: для поиска повторных объявлений этого хватает.',
+      src: [{ r: 'cs', p: 'server/src/db/export/export.ts:87', n: 'формат выгрузки поста и извлечение ссылок из entities' },
+            { r: 'cs', p: 'server/src/services/archiveService.ts:180', n: 'постраничный проход по истории с отсечкой по дате' }],
+      change: 'Файл должен лежать там, где его видит агент. Если шлюз и агент на одной машине, это просто путь; иначе нужна общая папка.' },
+    { id: 'discover', layer: 'domain', name: 'Поиск каналов', tech: 'contacts.search · рекомендации', prov: 'cs', mode: 'asis',
+      desc: 'Находит каналы по теме: поиск по имени, граф рекомендаций Telegram (обход в ширину до 3 уровней), хэштеги, источники репостов.',
+      src: [{ r: 'cs', p: 'server/src/services/universalSearchService.ts:28', n: '<code>collectChannels</code>: поиск, затем рекомендации, затем хэштеги, с таймаутами' },
+            { r: 'cs', p: 'server/src/services/recommendationsService.ts:97', n: '<code>getRecursiveRecommendationsLight</code>' },
+            { r: 'cs', p: 'server/src/services/forwardAnalysisService.ts:21', n: '<code>analyzeForwards</code>' }],
+      change: 'Эти функции берут клиента напрямую. Перевести все вызовы на <code>rateLimiter.invoke</code>.' },
+    { id: 'media', layer: 'domain', name: 'Изображения и медиа', tech: 'фото · альбомы · размеры · превью видео', prov: 'cs', mode: 'adapt',
+      desc: 'Скачивает картинки для анализа: фото объявлений, графики и скриншоты из постов. Умеет брать альбом целиком (объявление в барахолке обычно из 3-10 фото), выбирать размер (превью около 320 px для быстрого просмотра или полный для деталей) и для видео отдавать только кадр-превью. Файлы кладутся в <code>media/&lt;чат&gt;/&lt;id&gt;/</code>, в ответе пути. Клиентам, которые принимают картинки в ответе инструмента, их можно отдать сразу как image-контент, остальные открывают файл сами. Повторное скачивание берётся из кэша по id фото.',
+      src: [{ r: 'cs', p: 'server/src/telegram/processors/processMediaClient.ts:63', n: '<code>extractMediaMetadata</code>: тип, размеры, длительность, <code>media_group_id</code> для альбомов' },
+            { r: 'cs', p: 'server/src/telegram/processors/processMediaClient.ts:33', n: '<code>downloadWithRetry</code> с повторами' },
+            { r: 'cs', p: 'server/src/telegram/processors/processMediaClient.ts:25', n: '<code>isDcRedirectError</code>, покрыт тестом: файл живёт в другом дата-центре' },
+            { r: 'cs', p: 'server/src/services/archiveService.ts:345', n: 'пакетное скачивание в 3 потока с учётом постоянных ошибок' },
+            { r: 'cs', p: 'server/src/web/server.ts:35', n: 'раздача <code>/media</code> по HTTP: пригодится, если агент на другой машине' }],
+      change: 'Добавить выбор размера (параметр <code>thumb</code> у <code>downloadMedia</code> в GramJS), скачивание альбома по <code>grouped_id</code>, лимит размера файла и квоту на папку с очисткой старого.',
+      risk: 'Картинки дорогие для модели: каждая стоит сотни или тысячи токенов. По умолчанию превью, полный размер только по запросу.' },
+    { id: 'index', layer: 'domain', name: 'Локальный индекс', tech: 'watchlist → SQLite FTS5', prov: 'cs', mode: 'adapt',
+      desc: 'Наблюдаемые чаты синхронизируются в локальную базу: первая выгрузка задачей, дальше дочитка новых по <code>minId</code> и обновление просмотров по корзинам свежести. Поиск по индексу мгновенный и не тратит лимиты Telegram.',
+      src: [{ r: 'cs', p: 'server/src/services/archiveService.ts:180', n: 'пакетная вставка и Set уже сохранённых id' },
+            { r: 'cs', p: 'server/src/services/viewsSyncService.ts:6', n: 'корзины hot / warm / cool / cold' },
+            { r: 'cs', p: 'server/src/services/refreshService.ts:13', n: 'блокировка на канал' }] },
+    { id: 'analytics', layer: 'domain', name: 'Аналитика', tech: 'score · bot risk · niche', prov: 'cs', mode: 'asis',
+      desc: 'Готовые расчёты из channel-scope: скоринг канала, риск накрутки, ниша, оценка цены рекламы. Отдельный набор <code>analytics</code>, включается по желанию.',
+      src: [{ r: 'cs', p: 'server/src/services/analyzeChannel.ts:43', n: '<code>analyzeChannel</code>' },
+            { r: 'cs', p: 'server/src/services/scoring.ts:104', n: '<code>computeScore</code>' },
+            { r: 'cs', p: 'server/src/services/botDetection.ts:24', n: '<code>detectBotRisk</code>' },
+            { r: 'cs', p: 'server/src/services/detectNiche.ts:53', n: '<code>detectNiche</code>' }] },
+    { id: 'write', layer: 'domain', name: 'Действия', tech: 'join · react · reply · send', prov: 'helper', mode: 'adapt',
+      desc: 'Вступить в чат, поставить реакцию, ответить в комментариях, отправить сообщение. Для ответа под постом <code>messages.getDiscussionMessage</code> находит копию поста в группе обсуждений, дальше <code>sendMessage</code> ответом на неё. Пишет тот аккаунт, который подключён к шлюзу: отдельный аккаунт агента или твой личный, если ты подключил его сам. В канале, где аккаунт админ, можно писать от имени канала (<code>send_as</code>). В правиле и поручении аккаунт и режим отправителя указываются явно. Все вызовы проходят через шлюз записи и пишутся в аудит.',
+      risk: 'Сообщения незнакомым людям самое опасное действие для аккаунта: после жалоб Telegram разрешает писать только взаимным контактам (<code>PEER_FLOOD</code>). Лимит новых диалогов в день и никаких рассылок.',
+      src: [{ r: 'helper', p: 'src/telegram/processors/sendRandomReaction.ts:16', n: '<code>SendReaction</code> с отдельной обработкой FLOOD_WAIT' },
+            { r: 'cs', p: 'server/src/services/autoEmojiService.ts:12', n: 'реакция с задержкой от назначенного аккаунта' }] },
+
+    { id: 'session', layer: 'core', name: 'Хранилище сессий', tech: 'AES-256-GCM', prov: 'cs', mode: 'adapt',
+      desc: 'StringSession хранится зашифрованной, ключ из <code>SESSION_ENCRYPTION_KEY</code>. Для самого простого режима сессию можно передать через <code>STRING_SESSION</code>, как в helper.',
+      src: [{ r: 'cs', p: 'server/src/services/clientManager.ts:31', n: '<code>encrypt</code> / <code>decrypt</code> (строка 44)' },
+            { r: 'cs', p: 'server/src/db/models/ClientSession.ts', n: 'схема хранения: sessionString + iv' },
+            { r: 'helper', p: 'src/telegram/client/gramClient.ts:21', n: 'режим <code>STRING_SESSION</code> из env' }],
+      change: 'Mongoose заменить портом хранилища (SQLite или файл).',
+      risk: 'У шлюза должна быть своя сессия. <code>helper/AGENTS.md</code> прямо запрещает второй клиент на прод-<code>STRING_SESSION</code> helper.' },
+    { id: 'auth', layer: 'core', name: 'Вход в аккаунт', tech: 'код · 2FA · миграция DC', prov: 'cs', mode: 'asis',
+      desc: 'Сценарий входа с ожиданием кода и пароля (таймаут 5 минут) и правильным порядком для миграции между DC: <code>client.start</code> без предварительного <code>connect</code>. Вызывается из <code>tg-mcp login</code>, а не из инструментов: агент не видит код подтверждения.',
+      src: [{ r: 'cs', p: 'server/src/services/clientManager.ts:124', n: '<code>startAuth</code> с resolver-ами кода и пароля' },
+            { r: 'helper', p: 'src/scripts/generateSession.ts:34', n: 'консольный вариант того же входа' }] },
+    { id: 'pool', layer: 'core', name: 'Пул клиентов', tech: 'getClient · dedup · timeout', prov: 'cs', mode: 'asis',
+      desc: 'Одно подключение на аккаунт, параллельные попытки подключиться склеиваются в одну, <code>connect</code> ограничен 30 секундами. При старте проверка <code>getMe</code>, как в helper.',
+      src: [{ r: 'cs', p: 'server/src/services/clientManager.ts:67', n: '<code>getClient</code> с <code>pendingConnections</code>' },
+            { r: 'cs', p: 'server/src/services/clientManager.ts:86', n: '<code>connectClient</code> с <code>withTimeout</code>' },
+            { r: 'helper', p: 'src/telegram/client/gramClient.ts:44', n: '<code>connect</code> без интерактива и проверка <code>getMe</code>' }],
+      change: 'Логгер GramJS выключить или увести в stderr.' },
+    { id: 'limiter', layer: 'core', name: 'Лимитер', tech: 'очередь · FLOOD_WAIT · 60/мин', prov: 'cs', mode: 'asis',
+      desc: 'Самая ценная часть. Воркер на каждый аккаунт, общая очередь, 60 запросов в минуту и 500 мс между запросами. <code>FLOOD_WAIT</code> ставит аккаунт на паузу, запрос без привязки забирает другой аккаунт, до 3 повторов. <code>pickActiveClientId</code> выбирает наименее загруженный аккаунт.',
+      src: [{ r: 'cs', p: 'server/src/services/rateLimiter.ts:68', n: '<code>invoke(request, clientId)</code>' },
+            { r: 'cs', p: 'server/src/services/rateLimiter.ts:103', n: '<code>pickActiveClientId</code>' },
+            { r: 'cs', p: 'server/src/services/rateLimiter.ts:287', n: '<code>executeRequest</code>: разбор FLOOD_WAIT и повтор' },
+            { r: 'cs', p: 'server/src/services/rateLimiter.ts:148', n: '<code>_setClientResolver</code>: уже развязан с Mongo для тестов' },
+            { r: 'helper', p: 'src/telegram/client/gramGate.ts:15', n: '<code>runExclusive</code>: одна полоса на сессию, дедлайн внутри полосы' },
+            { r: 'helper', p: 'src/telegram/workers/refreshShared.ts:78', n: '<code>getFloodWaitSeconds</code> и кап: паузу дольше 5 минут не пережидаем, пропускаем' }],
+      change: 'В лимитере channel-scope нет дедлайна на сам вызов: зависший <code>invoke</code> держит воркер аккаунта вечно. helper на этом простоял с 3 по 12 августа, поэтому дедлайн и кап FLOOD_WAIT берём оттуда. Ещё нужен бюджет ожидания (если пауза длиннее таймаута клиента, сразу ошибка с <code>retry_after</code>) и приоритет вызовов агента над фоновыми.' },
+    { id: 'recovery', layer: 'core', name: 'Страж зависаний', tech: 'дедлайны · watchdog · перезапуск', prov: 'helper', mode: 'asis',
+      desc: 'GramJS при сбоях сети может повиснуть так, что промис не завершится никогда, а отменить такой запрос безопасно нельзя. В helper на это три ответа: дедлайн на каждый вызов, watchdog, который замечает залипшие тики, и выход процесса с кодом 1, после которого Docker поднимает его с чистого листа. Второй клиент внутри процесса не создаётся, чтобы не получить <code>AUTH_KEY_DUPLICATED</code>.',
+      src: [{ r: 'helper', p: 'src/telegram/workers/refreshShared.ts:50', n: '<code>runStage</code>: полоса, дедлайн, перезапуск при зависании' },
+            { r: 'helper', p: 'src/telegram/client/gramStartup.ts:37', n: 'старт клиента с дедлайном 2 минуты' },
+            { r: 'helper', p: 'src/telegram/client/gramFatalRecovery.ts:9', n: 'выход для перезапуска вместо попыток лечить сессию на месте' },
+            { r: 'helper', p: 'src/telegram/workers/statsRefresher.ts:229', n: 'watchdog: счёт пропущенных тиков и эскалация в error' }],
+      change: 'Шлюз обязан жить под супервизором (Docker <code>restart: unless-stopped</code> или systemd <code>Restart=always</code>). Агенты при этом видят короткий обрыв: stdio-прокладка и HTTP-клиенты должны переподключаться.' },
+    { id: 'entities', layer: 'core', name: 'Кэш сущностей', tech: 'accessHash на аккаунт', prov: 'helper', mode: 'adapt',
+      desc: 'accessHash привязан к сессии, поэтому кэш хранится отдельно для каждого аккаунта и переживает рестарт. Экономит <code>contacts.resolveUsername</code>, у которого жёсткие лимиты.',
+      src: [{ r: 'helper', p: 'src/telegram/client/gramClient.ts:6', n: '<code>peerCache</code>' },
+            { r: 'cs', p: 'server/src/services/universalSearchService.ts:269', n: 'комментарий о том, что accessHash нельзя переносить между клиентами' }],
+      change: 'Сделать кэш постоянным (SQLite) и ключевать по аккаунту.' },
+    { id: 'rcache', layer: 'core', name: 'Кэш ответов', tech: 'TTL, минуты', prov: 'new', mode: 'new',
+      desc: 'Короткий кэш на результаты поиска и карточки каналов, чтобы агент, повторяющий тот же запрос, не тратил лимит.' },
+
+    { id: 'sqlite', layer: 'storage', name: 'SQLite', tech: 'sessions · entities · jobs · audit · fts', prov: 'new', mode: 'new',
+      desc: 'Один файл без внешних сервисов, поэтому шлюз ставится через <code>npx</code>. Таблицы: сессии, кэш сущностей, задачи, аудит, сообщения с FTS5.',
+      change: 'channel-scope сейчас целиком на MongoDB; для шлюза Mongo остаётся только как опциональный мост.' },
+    { id: 'bridge', layer: 'storage', name: 'Мост к архивам', tech: 'Mongo telegram_public', prov: 'helper', mode: 'adapt',
+      desc: 'Опционально: читать то, что уже собрано, без запросов в Telegram. helper хранит по @stonksnws посты со статистикой, комментарии с авторами и удалениями и реакции конкретных людей на комментарии, включая твои. channel-scope хранит выкачанные каналы из исследований.',
+      src: [{ r: 'helper', p: 'src/db/models/Comment.ts', n: 'комментарии: автор, тред, медиа, реакции, <code>deletedAt</code>' },
+            { r: 'helper', p: 'src/db/models/CommentReactionActor.ts', n: 'кто и чем отреагировал, флаг <code>isOwner</code>' },
+            { r: 'cs', p: 'server/src/db/models/Post.ts', n: 'схема поста с медиа, реакциями и viewsHistory' }],
+      risk: 'Данные о том, кто поставил реакцию, неполные: сбор начат 13 августа 2026, анонимные реакции без автора. Итоговые счётчики брать только из <code>Comment.reactions</code>.' },
+
+    { id: 'mtproto', layer: 'telegram', name: 'Telegram MTProto', tech: 'GramJS · DC', prov: 'ext', mode: 'ext',
+      desc: 'Все запросы уходят одним соединением на аккаунт. Основные методы: <code>messages.searchGlobal</code>, <code>messages.search</code>, <code>messages.getHistory</code>, <code>messages.getReplies</code>, <code>channels.getFullChannel</code>, <code>channels.searchPosts</code>, <code>channels.getChannelRecommendations</code>, <code>contacts.resolveUsername</code>, <code>contacts.search</code>.' }
+  ];
+
+  var SCENARIOS = [
+    { id: 'market', name: 'Барахолка', prompt: 'Зайди в чат барахолки (ссылка), найди объявления о продаже iPhone 15 за месяц и дай аналитику по ценам.',
+      steps: [
+        ['claude', 'Агент вызывает <code>tg_resolve</code> со ссылкой на чат.'],
+        ['http', 'Вызов приходит в демон.'],
+        ['scopes', 'Публичная группа: читать можно без вступления. Будь чат закрытым, понадобился бы <code>tg_join</code> через шлюз записи, а капчу при входе проходишь ты.'],
+        ['resolve', 'Карточка: супергруппа с темами, аккаунт в ней не состоит.'],
+        ['topics', '<code>tg_list_topics</code> находит тему «Продам».'],
+        ['search', '<code>tg_search_chat</code> по «iphone 15» в этой теме за 30 дней: первая страница и общее число совпадений.'],
+        ['export', 'Совпадений несколько сотен, агент вызывает <code>tg_export</code> с теми же фильтрами и <code>photos=thumb</code>. Шлюз выделяет цены и тип объявления, хэширует авторов.'],
+        ['limiter', 'Страницы по 100 сообщений и превью фото идут через очередь аккаунта.'],
+        ['mtproto', 'Telegram отдаёт сообщения и файлы.'],
+        ['formatter', 'Ответ: путь к JSONL, число строк, доля объявлений с найденной ценой, пять примеров.'],
+        ['claude', 'Агент считает своим кодом: медиана и разброс по объёму памяти, выбросы, повторные объявления одного продавца.'],
+        ['media', 'Для пяти самых дешёвых агент берёт полные альбомы через <code>tg_get_media</code> и смотрит фото: нет ли следов ремонта и не чужие ли это картинки.'],
+        ['claude', 'Ответ тебе: таблица цен, ссылки на самые выгодные объявления и что видно на фото.']
+      ] },
+    { id: 'digest', name: 'Сводка канала', prompt: 'Зайди на @канал и расскажи, о чём там говорили за последний месяц.',
+      steps: [
+        ['codex', 'Codex вызывает <code>tg_resolve</code>: канал, подписчики, включены ли комментарии.'],
+        ['http', 'Запрос приходит в тот же демон, что обслуживает Claude Code.'],
+        ['resolve', 'accessHash берётся из кэша сущностей, если канал уже встречался.'],
+        ['history', '<code>tg_read_history</code> за 30 дней в режиме <code>brief</code>: по 1-2 строки на пост плюс просмотры, реакции и число комментариев.'],
+        ['limiter', 'Пара страниц через очередь аккаунта.'],
+        ['mtproto', 'Telegram отдаёт историю.'],
+        ['formatter', 'Месяц постов в кратком виде укладывается в несколько тысяч токенов.'],
+        ['codex', 'Агент выбирает 5 самых обсуждаемых постов и читает их целиком через <code>tg_get_message</code>.'],
+        ['media', 'В двух из них главное на картинке (график, скриншот). Агент скачивает их через <code>tg_get_media</code> и смотрит.'],
+        ['comments', '<code>tg_get_comments</code> по каждому посту: 30 комментариев с наибольшим числом реакций.'],
+        ['envelope', 'Комментарии помечены как чужой текст: если кто-то напишет «игнорируй инструкции», агент это просто процитирует.'],
+        ['codex', 'Сводка: главные темы, тон, о чём спорят в комментариях, ссылки на ключевые посты.']
+      ] },
+    { id: 'monitor', name: 'Мониторинг', prompt: 'Следи за @канал и на каждый новый пост отвечай в комментариях.',
+      steps: [
+        ['claude', 'Агент вызывает <code>tg_rule_set</code>: чат, триггер «новый пост», промпт для ответа, режим draft, не больше 5 ответов в день.'],
+        ['writegate', 'Правило даёт постоянное право на запись, поэтому сначала превью и <code>confirm_token</code>. Ты подтверждаешь один раз.'],
+        ['rules', 'Правило сохранено в SQLite, дальше разговор с агентом не нужен.'],
+        ['watcher', 'Шлюз подписывается на обновления канала, а если аккаунт не подписан, опрашивает историю раз в минуту.'],
+        ['mtproto', 'Выходит новый пост.'],
+        ['watcher', 'Пост ещё не встречался: событие уходит во входящие и на проверку правил.'],
+        ['rules', 'Правило совпало, пост не рекламный, лимит на сегодня не исчерпан.'],
+        ['runner', 'Шлюз запускает <code>claude -p</code> (или <code>codex exec</code>) с промптом из правила и токеном только на этот пост.'],
+        ['comments', 'Запущенный агент читает пост, картинку к нему и уже оставленные комментарии.'],
+        ['writegate', 'Агент вызывает <code>tg_reply</code>. Шлюз проверяет токен: та же ветка, первый ответ, лимит не превышен. Режим draft, поэтому ответ задерживается.'],
+        ['approval', 'Черновик приходит тебе в бота с кнопками «Отправить», «Изменить», «Пропустить».'],
+        ['write', 'После «Отправить»: <code>getDiscussionMessage</code> и <code>sendMessage</code> в группу обсуждений ответом на пост.'],
+        ['audit', 'В аудите: какой пост, какой ответ, кто согласовал.']
+      ] },
+    { id: 'deal', name: 'Договорённость', prompt: 'Напиши продавцу из объявления и договорись купить велосипед не дороже 15 000 ₽, самовывоз в выходные.',
+      steps: [
+        ['claude', 'Агент вызывает <code>tg_task_start</code>: собеседник, цель, рамки, что решаешь только ты (деньги сверх лимита, адрес, время встречи), срок 3 дня, черновик первого сообщения.'],
+        ['writegate', 'Поручение даёт право писать человеку, поэтому превью и <code>confirm_token</code>. Ты подтверждаешь поручение и первое сообщение.'],
+        ['tasks', 'Поручение сохранено в состоянии «ждём ответ».'],
+        ['write', 'Первое сообщение уходит от аккаунта агента: он пишет, что он помощник покупателя, и спрашивает, продаётся ли велосипед.'],
+        ['watcher', 'Ответ продавца приходит обновлением личного чата.'],
+        ['tasks', 'Сообщение добавлено в переписку поручения.'],
+        ['runner', 'Шлюз запускает агента с токеном только на этот диалог.'],
+        ['claude', 'Агент читает цель и переписку через <code>tg_task_get</code>. Продавец просит 18 000 ₽.'],
+        ['envelope', 'Сообщения продавца помечены как чужой текст: «скиньте предоплату на карту» остаётся его просьбой, а не командой агенту.'],
+        ['tasks', 'Цена выше рамок: агент переводит поручение в «вопрос тебе» через <code>tg_task_update</code>.'],
+        ['approval', 'В бот приходит: «Просит 18 000, лимит 15 000. Предложить 16 000?» Ты отвечаешь: «да, но не выше 16».'],
+        ['runner', 'Шлюз снова запускает агента, твой ответ приходит как указание.'],
+        ['write', 'Агент предлагает 16 000 ₽ через <code>tg_send</code>, в новых рамках.'],
+        ['tasks', 'Продавец согласен, время самовывоза в рамках: поручение «готово».'],
+        ['approval', 'Отчёт тебе в бот: цена, время, контакт, что осталось сделать тебе.']
+      ] }
+  ];
+
+  var TOOLS = [
+    ['tg_status', 'core', 'Какой аккаунт подключён, лимиты, активные паузы FLOOD_WAIT, включённые наборы', 'users.getUsers (self)', 'helper gramClient.ts:45', 'pool'],
+    ['tg_resolve', 'core', 'Карточка по @username, ссылке t.me или инвайту', 'contacts.resolveUsername, channels.getFullChannel, messages.checkChatInvite', 'telegramUtils.ts, universalSearchService.ts:264', 'resolve'],
+    ['tg_search_messages', 'core', 'Поиск по всем чатам аккаунта; запрос с # ищет по публичным постам', 'messages.searchGlobal, channels.searchPosts', 'globalSearchService.ts', 'search'],
+    ['tg_search_chat', 'core', 'Поиск внутри одного чата: слово, автор, даты, тема форума', 'messages.search', 'новое, пагинация из globalSearchService', 'search'],
+    ['tg_read_history', 'core', 'Лента чата: курсор или окно дат, режим brief или full', 'messages.getHistory', 'forwardAnalysisService.ts:56, archiveService.ts:180', 'history'],
+    ['tg_get_message', 'core', 'Сообщение по ссылке плюс контекст до и после', 'channels.getMessages, messages.getHistory', 'refreshService.ts:75', 'history'],
+    ['tg_get_comments', 'core', 'Комментарии к посту, с поиском и сортировкой по реакциям', 'messages.getDiscussionMessage, messages.getReplies, messages.search', 'helper commentsRefresher.ts, discussion.ts', 'comments'],
+    ['tg_list_topics', 'core', 'Темы форума в группе', 'getForumTopics', 'новое', 'topics'],
+    ['tg_export', 'core', 'Выгрузка по фильтрам в JSONL или CSV: цены, тип объявления, превью фото', 'messages.search, messages.getHistory, upload.getFile', 'db/export/export.ts, archiveService.ts:180', 'export'],
+    ['tg_get_media', 'core', 'Фото, альбом целиком или превью видео; размер thumb или full; путь к файлу или картинка прямо в ответе', 'upload.getFile', 'processMediaClient.ts, archiveService.ts:345', 'media'],
+    ['tg_rule_set', 'automate', 'Создать или изменить правило мониторинга; только с подтверждением', '-', 'новое', 'rules'],
+    ['tg_rules', 'automate', 'Список правил, лимиты и последние срабатывания', '-', 'новое', 'rules'],
+    ['tg_inbox', 'automate', 'Новые события с момента курсора', '-', 'новое', 'inbox'],
+    ['tg_task_start', 'automate', 'Начать поручение: собеседник, цель, рамки, что решаешь ты, срок, первое сообщение; только с подтверждением', '-', 'новое', 'tasks'],
+    ['tg_task_get', 'automate', 'Цель, рамки, состояние и переписка поручения; для запущенного агента', 'messages.getHistory', 'новое', 'tasks'],
+    ['tg_task_update', 'automate', 'Сменить состояние: ждём ответ, вопрос тебе, готово, закрыто; итог и отчёт', '-', 'новое', 'tasks'],
+    ['tg_tasks', 'automate', 'Список поручений и их состояние, остановка поручения', '-', 'новое', 'tasks'],
+    ['tg_reply', 'write', 'Ответить в комментариях к посту, от своего имени или от имени канала', 'messages.getDiscussionMessage, messages.sendMessage', 'helper commentsRefresher.ts:311 + новое', 'write'],
+    ['tg_join', 'write', 'Вступить в канал или группу', 'channels.joinChannel, messages.importChatInvite', 'новое', 'write'],
+    ['tg_react', 'write', 'Поставить реакцию', 'messages.sendReaction', 'helper sendRandomReaction.ts:16', 'write'],
+    ['tg_send', 'write', 'Написать человеку или в чат; внутри поручения только его собеседнику', 'messages.sendMessage', 'новое', 'write'],
+    ['tg_find_channels', 'discover', 'Каналы по теме: имя, рекомендации, хэштеги', 'contacts.search, channels.getChannelRecommendations', 'universalSearchService.ts:28', 'discover'],
+    ['tg_similar_channels', 'discover', 'Похожие каналы, обход графа на 1-3 уровня', 'channels.getChannelRecommendations', 'recommendationsService.ts:97', 'discover'],
+    ['tg_list_dialogs', 'discover', 'Чаты аккаунта и непрочитанное, через фильтр скоупов', 'messages.getDialogs', 'новое', 'scopes'],
+    ['tg_forward_sources', 'discover', 'Из каких каналов берутся репосты', 'messages.getHistory', 'forwardAnalysisService.ts:21', 'discover'],
+    ['tg_watch', 'index', 'Добавить чат в локальный индекс, выгрузка задачей', 'messages.getHistory', 'archiveService.ts, viewsSyncService.ts', 'index'],
+    ['tg_job_status', 'index', 'Прогресс фоновой задачи', '-', 'archiveService.ts:15', 'jobs'],
+    ['tg_local_search', 'index', 'Полнотекстовый поиск по индексу без запросов в Telegram', '-', 'новое, SQLite FTS5', 'sqlite'],
+    ['tg_channel_stats', 'analytics', 'Скоринг, риск накрутки, ниша, цена рекламы', 'channels.getFullChannel + история', 'analyzeChannel.ts, botDetection.ts', 'analytics']
+  ];
+
+  var CONN = [
+    { id: 'server', name: 'Шлюз', text: 'Запускается один раз. На VPS удобнее всего как systemd-юнит, так же, как сейчас деплоится channel-scope.',
+      code: '<span class="cm"># один раз: вход в отдельный Telegram-аккаунт (телефон, код, 2FA)</span>\nnpx tg-mcp login\n\n<span class="cm"># демон, который владеет сессией</span>\nTG_MCP_TOKEN=... npx tg-mcp serve --host 127.0.0.1 --port 7777 \\\n  --toolsets core,automate --media-dir ~/tg-mcp/media\n\n<span class="cm"># проверка: сессия, лимиты, доступность</span>\nnpx tg-mcp doctor' },
+    { id: 'rule', name: 'Правило', text: 'Так выглядит правило для третьего кейса. Его можно записать в файл руками или создать из агента через <code>tg_rule_set</code>, тогда оно пройдёт подтверждение.',
+      code: '<span class="cm"># ~/tg-mcp/rules.yaml</span>\nrules:\n  - id: reply-new-posts\n    chat: "@channel"\n    trigger: new_post\n    skip_ads: true\n    mode: draft              <span class="cm"># draft: черновик в бота, auto: сразу</span>\n    limits:\n      per_post: 1\n      per_day: 5\n      quiet_hours: "23:00-09:00"\n      delay_sec: [60, 300]   <span class="cm"># случайная пауза перед ответом</span>\n    agent:\n      command: ["claude", "-p", "{prompt}", "--mcp-config", "~/tg-mcp/agent.mcp.json"]\n      timeout_sec: 120\n    prompt: |\n      Прочитай пост {post_link}, картинку к нему и комментарии.\n      Напиши короткий ответ по существу и отправь через tg_reply.\n\napproval:\n  bot_token_env: TG_MCP_APPROVAL_BOT_TOKEN   <span class="cm"># отдельный бот, не бот-мост</span>\n  chat_id: &lt;твой id&gt;' },
+    { id: 'task', name: 'Поручение', text: 'Так выглядят аргументы <code>tg_task_start</code> для четвёртого кейса. Схема плоская: строки, числа и список значений из фиксированного набора.',
+      code: '{\n  "peer": "@seller_username",\n  "account": "agent",\n  "goal": "Купить велосипед из объявления t.me/baraholka/123",\n  "limits": "До 15 000 ₽. Самовывоз в субботу или воскресенье днём.",\n  "ask_me_before": ["over_limits", "money_transfer", "address", "personal_data"],\n  "first_message": "Здравствуйте! Пишу как помощник покупателя по объявлению о велосипеде. Он ещё продаётся?",\n  "mode": "draft",\n  "deadline": "3d",\n  "max_messages": 20,\n  "reminder_after": "24h"\n}' },
+    { id: 'claude', name: 'Claude Code', text: 'Через HTTP к демону. Вариант со stdio подходит, если демон не нужен: прокладка поднимет ядро сама.',
+      code: 'claude mcp add --transport http telegram http://127.0.0.1:7777/mcp \\\n  --header "Authorization: Bearer $TG_MCP_TOKEN"\n\n<span class="cm"># вариант без отдельного демона</span>\nclaude mcp add telegram -- npx -y tg-mcp stdio' },
+    { id: 'codex', name: 'Codex', text: 'Запись в <code>~/.codex/config.toml</code>. Таймаут вызова стоит поднять: выгрузка с фото может идти дольше минуты.',
+      code: '<span class="cm"># ~/.codex/config.toml</span>\n[mcp_servers.telegram]\nurl = "http://127.0.0.1:7777/mcp"\nbearer_token_env_var = "TG_MCP_TOKEN"\ntool_timeout_sec = 90\n\n<span class="cm"># или через stdio-прокладку</span>\n<span class="cm"># [mcp_servers.telegram]</span>\n<span class="cm"># command = "npx"</span>\n<span class="cm"># args = ["-y", "tg-mcp", "stdio"]</span>' },
+    { id: 'opencode', name: 'OpenCode', text: 'Запись в <code>opencode.json</code> проекта или в глобальный конфиг.',
+      code: '{\n  "$schema": "https://opencode.ai/config.json",\n  "mcp": {\n    "telegram": {\n      "type": "remote",\n      "url": "http://127.0.0.1:7777/mcp",\n      "headers": { "Authorization": "Bearer {env:TG_MCP_TOKEN}" }\n    }\n  }\n}' },
+    { id: 'hermes', name: 'Hermes', text: 'Раздел <code>mcp_servers</code> в <code>~/.hermes/config.yaml</code>.',
+      code: '<span class="cm"># ~/.hermes/config.yaml</span>\nmcp_servers:\n  telegram:\n    url: "http://127.0.0.1:7777/mcp"\n    headers:\n      Authorization: "Bearer &lt;TG_MCP_TOKEN&gt;"' },
+    { id: 'any', name: 'Любой stdio', text: 'Минимальная запись, которую понимает почти любой MCP-клиент.',
+      code: '{\n  "command": "npx",\n  "args": ["-y", "tg-mcp", "stdio"]\n}' }
+  ];
+
+  var byId = {};
+  NODES.forEach(function (n) { byId[n.id] = n; });
+
+  var state = { selected: 'runner', scenario: 'market', step: -1, prov: { cs: true, helper: true, 'new': true, ext: true } };
+  var nodeEls = {};
+
+  function el(tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+
+  /* Stats */
+  (function () {
+    var c = { cs: 0, helper: 0, 'new': 0, ext: 0 };
+    NODES.forEach(function (n) { c[n.prov]++; });
+    document.getElementById('stats').innerHTML =
+      '<span><b>' + NODES.length + '</b> компонента</span>' +
+      '<span class="s-cs"><b>' + c.cs + '</b> из channel-scope</span>' +
+      '<span class="s-helper"><b>' + c.helper + '</b> из helper</span>' +
+      '<span class="s-new"><b>' + c['new'] + '</b> пишем заново</span>' +
+      '<span class="s-ext"><b>' + c.ext + '</b> внешних</span>';
+  })();
+
+  /* Diagram */
+  function buildLayer(layer) {
+    var box = el('div', 'layer');
+    var lab = el('div', 'layer-label');
+    lab.appendChild(el('span', 'l-name', layer.name));
+    lab.appendChild(el('span', 'l-hint', layer.hint));
+    box.appendChild(lab);
+    var grid = el('div', 'layer-nodes');
+    NODES.filter(function (n) { return n.layer === layer.id; }).forEach(function (n) {
+      var b = el('button', 'node');
+      b.type = 'button';
+      b.dataset.prov = n.prov;
+      b.dataset.id = n.id;
+      b.innerHTML = '<span class="n-mode">' + MODE[n.mode] + '</span><span class="n-name">' + n.name + '</span><span class="n-tech">' + n.tech + '</span>';
+      b.addEventListener('click', function () { state.step = -1; select(n.id, true); renderSteps(); });
+      nodeEls[n.id] = b;
+      grid.appendChild(b);
+    });
+    box.appendChild(grid);
+    return box;
+  }
+  function buildConn(text) {
+    var c = el('div', 'conn');
+    c.innerHTML = '<span class="ar" aria-hidden="true"><i></i><b>▼</b></span><span>' + text + '</span>';
+    return c;
+  }
+  (function () {
+    var d = document.getElementById('diagram');
+    var pair = null;
+    LAYERS.forEach(function (L) {
+      if (L.conn) d.appendChild(buildConn(L.conn));
+      if (L.pair) {
+        if (!pair) { pair = el('div', 'pair'); d.appendChild(pair); }
+        pair.appendChild(buildLayer(L));
+      } else {
+        d.appendChild(buildLayer(L));
+      }
+    });
+  })();
+
+  function stepMap() {
+    var s = SCENARIOS.filter(function (x) { return x.id === state.scenario; })[0];
+    var m = {};
+    s.steps.forEach(function (st, i) { (m[st[0]] = m[st[0]] || []).push(i + 1); });
+    return { s: s, m: m };
+  }
+
+  function paint() {
+    var sm = stepMap();
+    var cur = state.step >= 0 ? sm.s.steps[state.step][0] : null;
+    Object.keys(nodeEls).forEach(function (id) {
+      var b = nodeEls[id], n = byId[id];
+      b.classList.toggle('is-dim', !state.prov[n.prov]);
+      b.classList.toggle('is-selected', id === state.selected);
+      b.classList.toggle('is-current', id === cur);
+      b.setAttribute('aria-pressed', id === state.selected ? 'true' : 'false');
+      var old = b.querySelector('.n-steps');
+      if (old) old.remove();
+      if (sm.m[id]) {
+        var badge = el('span', 'n-steps', sm.m[id].join('·'));
+        badge.setAttribute('aria-hidden', 'true');
+        b.appendChild(badge);
+      }
+    });
+  }
+
+  function renderInspector(id) {
+    var n = byId[id];
+    var h = '<div class="eyebrow">' + LAYERS.filter(function (l) { return l.id === n.layer; })[0].name + '</div>';
+    h += '<h3>' + n.name + '</h3>';
+    h += '<div class="insp-meta"><span class="pill" data-prov="' + n.prov + '">' + PROV[n.prov] + '</span><span class="pill mode">' + MODE[n.mode] + '</span></div>';
+    h += '<div class="insp-tech">' + n.tech + '</div>';
+    h += '<p>' + n.desc + '</p>';
+    if (n.src && n.src.length) {
+      h += '<h4>Откуда берём</h4><ul class="src">';
+      n.src.forEach(function (s) {
+        h += '<li data-prov="' + s.r + '"><span class="path" data-repo="' + REPO[s.r] + '">' + s.p + '</span>' + s.n + '</li>';
+      });
+      h += '</ul>';
+    }
+    if (n.change) h += '<h4>Что поменять</h4><p>' + n.change + '</p>';
+    if (n.risk) h += '<h4>Риск</h4><p class="note-risk">' + n.risk + '</p>';
+    document.getElementById('inspector').innerHTML = h;
+  }
+
+  var narrow = window.matchMedia ? window.matchMedia('(max-width: 1020px)') : { matches: false };
+  function select(id, fromUser) {
+    state.selected = id;
+    renderInspector(id);
+    paint();
+    if (fromUser && narrow.matches) {
+      var insp = document.getElementById('inspector');
+      try { insp.scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ }
+    }
+  }
+
+  /* Filters */
+  document.querySelectorAll('[data-filter]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var k = b.dataset.filter;
+      state.prov[k] = !state.prov[k];
+      b.setAttribute('aria-pressed', state.prov[k] ? 'true' : 'false');
+      paint();
+    });
+  });
+
+  /* Tracer */
+  var tabs = document.getElementById('scen-tabs');
+  SCENARIOS.forEach(function (s) {
+    var b = el('button', null, s.name);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.dataset.s = s.id;
+    b.addEventListener('click', function () { state.scenario = s.id; state.step = -1; renderScenario(); paint(); });
+    tabs.appendChild(b);
+  });
+
+  function renderSteps() {
+    var sm = stepMap();
+    var ol = document.getElementById('scen-steps');
+    ol.querySelectorAll('button').forEach(function (b, i) {
+      if (i === state.step) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+    });
+    document.getElementById('st-prev').disabled = state.step <= 0;
+    document.getElementById('st-next').disabled = state.step >= sm.s.steps.length - 1;
+    document.getElementById('st-next').textContent = state.step < 0 ? 'Начать' : 'Дальше';
+  }
+
+  function goStep(i) {
+    var sm = stepMap();
+    state.step = Math.max(0, Math.min(i, sm.s.steps.length - 1));
+    select(sm.s.steps[state.step][0], false);
+    renderSteps();
+  }
+
+  function renderScenario() {
+    var sm = stepMap();
+    tabs.querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-selected', b.dataset.s === state.scenario ? 'true' : 'false');
+    });
+    document.getElementById('scen-prompt').innerHTML = '<small>Просьба к агенту</small>' + sm.s.prompt;
+    var ol = document.getElementById('scen-steps');
+    ol.innerHTML = '';
+    sm.s.steps.forEach(function (st, i) {
+      var li = el('li');
+      var b = el('button', null, '<span>' + st[1] + '<span class="st-node">' + byId[st[0]].name + '</span></span>');
+      b.type = 'button';
+      b.addEventListener('click', function () { goStep(i); });
+      li.appendChild(b);
+      ol.appendChild(li);
+    });
+    renderSteps();
+  }
+
+  document.querySelectorAll('[data-go]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.scenario = b.dataset.go; state.step = -1;
+      renderScenario(); goStep(0);
+      var d = document.getElementById('scheme');
+      try { d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { d.scrollIntoView(); }
+    });
+  });
+  document.getElementById('st-next').addEventListener('click', function () { goStep(state.step + 1); });
+  document.getElementById('st-prev').addEventListener('click', function () { goStep(state.step - 1); });
+  document.getElementById('st-reset').addEventListener('click', function () { state.step = -1; renderSteps(); paint(); });
+
+  /* Tools table */
+  var toolsBody = document.getElementById('tools-body');
+  function renderTools(set) {
+    toolsBody.innerHTML = '';
+    TOOLS.filter(function (t) { return set === 'all' || t[1] === set; }).forEach(function (t) {
+      var tr = el('tr');
+      var node = byId[t[5]];
+      tr.innerHTML = '<td class="tool">' + t[0] + '</td>' +
+        '<td><span class="set' + (t[1] === 'write' ? ' write' : '') + '">' + t[1] + '</span></td>' +
+        '<td>' + t[2] + '</td>' +
+        '<td class="mt">' + t[3] + '</td>' +
+        '<td class="src-cell" data-prov="' + node.prov + '"><span class="prov-dot"></span>' + t[4] + '</td>';
+      toolsBody.appendChild(tr);
+    });
+  }
+  document.querySelectorAll('#set-filter [data-set]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#set-filter [data-set]').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      renderTools(b.dataset.set);
+    });
+  });
+  renderTools('all');
+
+  /* Borrow table */
+  (function () {
+    var rows = [];
+    NODES.forEach(function (n) {
+      (n.src || []).forEach(function (s) { rows.push({ r: s.r, p: s.p, note: s.n, node: n }); });
+    });
+    rows.sort(function (a, b) { return a.r === b.r ? (a.p < b.p ? -1 : a.p > b.p ? 1 : 0) : (a.r === 'cs' ? -1 : 1); });
+    var tb = document.getElementById('borrow-body');
+    rows.forEach(function (row) {
+      var tr = el('tr');
+      tr.innerHTML = '<td class="src-cell" data-prov="' + row.r + '"><span class="prov-dot"></span>' + (row.r === 'helper' ? 'helper/' : '') + row.p + '</td>' +
+        '<td>' + row.note + '</td>' +
+        '<td></td>';
+      var btn = el('button', 'linkbtn', row.node.name);
+      btn.type = 'button';
+      btn.addEventListener('click', function () {
+        state.step = -1;
+        select(row.node.id, false);
+        renderSteps();
+        var d = document.getElementById('scheme');
+        try { d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { d.scrollIntoView(); }
+      });
+      tr.lastChild.appendChild(btn);
+      tb.appendChild(tr);
+    });
+  })();
+
+  /* Connect tabs */
+  (function () {
+    var t = document.getElementById('conn-tabs');
+    var p = document.getElementById('conn-panels');
+    CONN.forEach(function (c, i) {
+      var b = el('button', null, c.name);
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      b.setAttribute('aria-controls', 'cp-' + c.id);
+      b.id = 'ct-' + c.id;
+      t.appendChild(b);
+      var panel = el('div', 'tabpanel');
+      panel.id = 'cp-' + c.id;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', 'ct-' + c.id);
+      panel.hidden = i !== 0;
+      panel.appendChild(el('p', null, c.text));
+      var code = el('div', 'code');
+      var pre = el('pre');
+      pre.innerHTML = c.code;
+      code.appendChild(pre);
+      var cp = el('button', 'copy', 'Копировать');
+      cp.type = 'button';
+      cp.addEventListener('click', function () {
+        var txt = pre.textContent;
+        var done = function () { cp.textContent = 'Скопировано'; setTimeout(function () { cp.textContent = 'Копировать'; }, 1600); };
+        var fallback = function () {
+          try {
+            var r = document.createRange(); r.selectNodeContents(pre);
+            var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+            cp.textContent = 'Выделено, нажми Cmd+C';
+          } catch (e) { /* ignore */ }
+        };
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(txt).then(done, fallback);
+          } else { fallback(); }
+        } catch (e) { fallback(); }
+      });
+      code.appendChild(cp);
+      panel.appendChild(code);
+      p.appendChild(panel);
+      b.addEventListener('click', function () {
+        t.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
+        p.querySelectorAll('.tabpanel').forEach(function (x) { x.hidden = x.id !== 'cp-' + c.id; });
+      });
+    });
+  })();
+
+  renderScenario();
+  select(state.selected, false);
+})();
+</script>
