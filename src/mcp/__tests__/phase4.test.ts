@@ -1,4 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { removeAccount } from '../../cli/admin.js';
+import { createLogger } from '../../core/log.js';
+import { HistoryService } from '../../services/history.js';
+import { JobManager } from '../../services/jobs.js';
+import { buildMatch, IndexStore, LocalIndexService } from '../../services/localIndex.js';
 import { collapseAlbums, computeStats } from '../../services/stats.js';
 import { normalizeMessages } from '../../services/messages.js';
 import { makeTestGateway, type TestClient, type TestGateway } from '../../__tests__/helpers/gateway.js';
@@ -387,5 +392,286 @@ describe('набор analytics: статистика канала', () => {
     gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow', source: 'owner' });
     expect((await agent.call('tg_channel_stats', { chat: '@seller' })).text).toContain('not for people');
     expect((await nick.tools()).map(t => t.name)).not.toContain('tg_channel_stats');
+  });
+});
+
+describe('набор index: локальный индекс и поиск по нему', () => {
+  const INDEX = ['core', 'index'];
+  const FLEA = 700;
+  let agent: TestClient;
+  /** Лента чата, от новых к старым. */
+  let feed: Array<Record<string, unknown>>;
+  const flea = () => rawChannel(FLEA, { username: 'baraholka', title: 'Барахолка', broadcast: false, megagroup: true });
+  const at = (daysAgo: number) => NOW_SEC - Math.round(daysAgo * DAY);
+  const msg = (id: number, daysAgo: number, text: string, extra: Record<string, unknown> = {}) =>
+    rawMessage(FLEA, id, { date: at(daysAgo), message: text, fromId: { className: 'PeerUser', userId: 42n }, ...extra });
+  const historyCalls = () => gw.tg.callsOf('messages.GetHistory').length;
+
+  beforeEach(async () => {
+    agent = await gw.client('nick', INDEX);
+    feed = [
+      msg(110, 1, 'Продам велосипеды Stels, два штуки, по 12 000 руб'),
+      msg(109, 2, 'Куплю iPhone 15 Pro, бу'),
+      msg(108, 5, 'ВЕЛОСИПЕД детский отдам даром'),
+      { className: 'MessageService', id: 107, peerId: { className: 'PeerChannel', channelId: BigInt(FLEA) }, date: at(6), action: { className: 'MessageActionChatAddUser' } },
+      msg(106, 10, 'Сдам квартиру в Лимассоле, 1200 евро'),
+      msg(105, 20, 'Продам самокат и шлем'),
+      msg(104, 45, 'Старое объявление: велосипедный насос'),
+      msg(103, 80, 'Совсем старое: продам лыжи'),
+    ];
+    gw.tg.on('contacts.ResolveUsername', (req: { username: string }) => {
+      if (req.username.toLowerCase() === 'stonksnws') return { peer: { className: 'PeerChannel', channelId: 500n }, chats: [rawChannel(500, { username: 'stonksnws', title: 'Stonks' })], users: [] };
+      return { peer: { className: 'PeerChannel', channelId: BigInt(FLEA) }, chats: [flea()], users: [] };
+    });
+    gw.tg.on('messages.GetHistory', (req: { offsetId: number; limit: number }) => {
+      const start = req.offsetId === 0 ? 0 : feed.findIndex(m => (m.id as number) < req.offsetId);
+      const slice = start === -1 ? [] : feed.slice(start, start + req.limit);
+      return { messages: slice, chats: [flea()], users: [rawUser(42, { username: 'seller', firstName: 'Иван' })] };
+    });
+  });
+
+  afterEach(async () => {
+    await agent.close();
+  });
+
+  it('индексация и поиск: формы слова, регистр, все слова запроса, без обращений к Telegram', async () => {
+    const indexed = await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    expect(indexed.isError, indexed.text).toBe(false);
+    // за 30 дней пять сообщений, служебное в индекс не идёт
+    expect(indexed.text).toContain('Indexed @baraholka: 5 messages in the local index (5 new,');
+    expect(indexed.text).toContain('The index covers this chat since 2026-09-01 12:00 UTC');
+    expect(gw.tg.last('messages.GetHistory').options).toMatchObject({ priority: 'background' });
+
+    const before = gw.tg.calls.length;
+    const bikes = await agent.call('tg_local_search', { query: 'велосипед' });
+    expect(bikes.text).toContain('Local search "велосипед": 2 of 2 matches in 1 indexed chat(s)');
+    expect(bikes.text).toContain('#110');
+    expect(bikes.text).toContain('#108');
+    expect(bikes.text).toContain('https://t.me/baraholka/110');
+    expect(bikes.text).toMatch(/> Продам велосипеды Stels/);
+    expect(bikes.text).toContain('Index last synced: 2026-10-01 12:00 UTC');
+    // сообщение старше периода в индекс не попало
+    expect(bikes.text).not.toContain('насос');
+
+    expect((await agent.call('tg_local_search', { query: 'ПРОДАМ самокат' })).text).toContain('1 of 1 matches');
+    expect((await agent.call('tg_local_search', { query: 'продам квартиру' })).text).toContain('0 of 0 matches');
+    expect((await agent.call('tg_local_search', { query: 'продам', since: '3d' })).text).toContain('1 of 1 matches');
+    expect((await agent.call('tg_local_search', { query: 'велосипед', mode: 'full' })).text).toContain('<<<TG:');
+    // ни одного запроса к Telegram за все поиски
+    expect(gw.tg.calls.length).toBe(before);
+  });
+
+  it('короткие слова и знаки запроса не ломают поиск', async () => {
+    await agent.call('tg_index', { chat: '@baraholka' });
+    const short = await agent.call('tg_local_search', { query: 'iphone бу' });
+    expect(short.isError, short.text).toBe(false);
+    expect(short.text).toContain('#109');
+    expect(short.text).toContain('shorter than 3 characters');
+    expect((await agent.call('tg_local_search', { query: 'iphone 15' })).text).toContain('#109');
+    expect((await agent.call('tg_local_search', { query: 'бу' })).text).toContain('at least one query word of 3 or more characters');
+    // операторы FTS остаются текстом
+    const odd = await agent.call('tg_local_search', { query: '"велосипед" OR NEAR( * продам' });
+    expect(odd.isError, odd.text).toBe(false);
+    expect(buildMatch('a"b  велосипед')).toEqual({ match: '"a""b" "велосипед"', short: [] });
+  });
+
+  it('повторный запуск дочитывает новое, обновляет изменённое и почти не ходит в Telegram', async () => {
+    await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    const callsAfterFirst = historyCalls();
+
+    // новое объявление, а у вчерашнего автор поправил текст
+    feed.unshift(msg(111, 0.1, 'Продам гитару Yamaha'));
+    feed[1] = msg(110, 1, 'ПРОДАНО. Велики ушли');
+    clock += 3600 * 1000;
+    const again = await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    expect(again.text).toContain('6 messages in the local index (1 new,');
+    expect(historyCalls() - callsAfterFirst).toBe(1);
+
+    expect((await agent.call('tg_local_search', { query: 'гитару' })).text).toContain('#111');
+    expect((await agent.call('tg_local_search', { query: 'Stels' })).text).toContain('0 of 0 matches');
+    expect((await agent.call('tg_local_search', { query: 'продано' })).text).toContain('#110');
+  });
+
+  it('период можно продлить назад: дочитывается только хвост', async () => {
+    await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    expect((await agent.call('tg_local_search', { query: 'насос' })).text).toContain('0 of 0 matches');
+    const wider = await agent.call('tg_index', { chat: '@baraholka', since: '60d' });
+    expect(wider.text).toContain('6 messages in the local index (1 new,');
+    expect(wider.text).toContain('covers this chat since 2026-08-02');
+    expect((await agent.call('tg_local_search', { query: 'насос' })).text).toContain('#104');
+    expect((await agent.call('tg_local_search', { query: 'лыжи' })).text).toContain('0 of 0 matches');
+
+    const list = await agent.call('tg_index', { action: 'list' });
+    expect(list.text).toContain('Indexed chats: 1');
+    expect(list.text).toContain('@baraholka | account agent | 6 messages | since 2026-08-02 | synced 2026-10-01 12:00');
+  });
+
+  it('страницы выдачи и поиск в одном чате', async () => {
+    feed = Array.from({ length: 25 }, (_, i) => msg(300 - i, 1 + i * 0.1, `Продам стул номер ${i}`));
+    await agent.call('tg_index', { chat: '@baraholka' });
+    const first = await agent.call('tg_local_search', { query: 'стул', limit: 10 });
+    expect(first.text).toContain('10 of 25 matches');
+    const cursor = first.text.match(/next_cursor: (\S+)/)![1]!;
+    const second = await agent.call('tg_local_search', { query: 'стул', limit: 10, cursor });
+    expect(second.text).toContain('#290');
+    expect(second.text).not.toContain('#291 ');
+    expect((await agent.call('tg_local_search', { query: 'стол', cursor })).text).toContain('cursor belongs to another query');
+
+    expect((await agent.call('tg_local_search', { query: 'стул', chat: '@baraholka', limit: 50 })).text).toContain('25 of 25 matches');
+    const notIndexed = await agent.call('tg_local_search', { query: 'стул', chat: '@stonksnws' });
+    expect(notIndexed.isError).toBe(true);
+    expect(notIndexed.text).toContain('@stonksnws is not indexed');
+  });
+
+  it('доступ: общий аккаунт делит индекс, закрытый чат не ищется, удалить может только создатель', async () => {
+    await agent.call('tg_index', { chat: '@baraholka' });
+    const partner = await gw.client('partner', INDEX);
+    // общий аккаунт agent: второй пользователь ищет по тому же индексу
+    expect((await partner.call('tg_local_search', { query: 'велосипед', account: 'agent' })).text).toContain('3 of 3 matches');
+    const denied = await partner.call('tg_index', { action: 'remove', chat: '@baraholka', account: 'agent' });
+    expect(denied.isError).toBe(true);
+    expect(denied.text).toContain('was created by nick');
+
+    // владелец закрыл чат первому пользователю: индекс для него пропадает из поиска и списка
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000700', effect: 'deny', source: 'owner' });
+    expect((await agent.call('tg_local_search', { query: 'велосипед' })).text).toContain('Nothing is indexed yet');
+    expect((await agent.call('tg_index', { action: 'list' })).text).toContain('Indexed chats: 0');
+    expect((await partner.call('tg_local_search', { query: 'велосипед', account: 'agent' })).text).toContain('3 of 3 matches');
+    await partner.close();
+    expect((await nick.tools()).map(t => t.name)).not.toContain('tg_local_search');
+  });
+
+  it('удаление индекса и удаление аккаунта убирают текст из базы', async () => {
+    await agent.call('tg_index', { chat: '@baraholka' });
+    const count = (table: string) => Number((gw.storage.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n);
+    // по умолчанию 90 дней: семь сообщений, служебное не в счёт
+    expect(count('indexed_messages')).toBe(7);
+    expect(count('indexed_fts')).toBe(7);
+
+    const removed = await agent.call('tg_index', { action: 'remove', chat: '@baraholka' });
+    expect(removed.text).toContain('7 messages deleted from the gateway');
+    expect(count('indexed_messages')).toBe(0);
+    expect(count('indexed_fts')).toBe(0);
+    expect((await agent.call('tg_index', { action: 'remove', chat: '@baraholka' })).text).toContain('is not indexed');
+
+    await agent.call('tg_index', { chat: '@baraholka' });
+    expect(count('indexed_fts')).toBe(7);
+    removeAccount(gw.storage, 'agent');
+    expect(count('indexed_messages')).toBe(0);
+    expect(count('indexed_fts')).toBe(0);
+    expect(count('indexed_chats')).toBe(0);
+  });
+
+  it('долгая индексация возвращает job_id; вторая задача на тот же чат не запускается', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => (release = r));
+    const page = { messages: [msg(1, 1, 'Продам стол')], chats: [flea()], users: [] };
+    gw.tg.on('messages.GetHistory', async () => {
+      await gate;
+      return page;
+    });
+    await agent.call('tg_resolve', { ref: '@baraholka' });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const pending = agent.call('tg_index', { chat: '@baraholka' });
+      await vi.advanceTimersByTimeAsync(21_000);
+      const started = await pending;
+      expect(started.text).toContain('Indexing of @baraholka is running');
+      const jobId = started.text.match(/job_id: (job_[0-9a-f]+)/)![1]!;
+
+      const second = agent.call('tg_index', { chat: '@baraholka' });
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect((await second).text).toContain(jobId);
+      expect(gw.storage.jobs.list({ limit: 10 }).filter(j => j.kind === 'index')).toHaveLength(1);
+
+      release();
+      await vi.advanceTimersByTimeAsync(10);
+      expect((await agent.call('tg_index', { job_id: jobId })).text).toContain('Indexed @baraholka: 1 messages');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('предел за запуск: большой чат индексируется за несколько запусков без дыр', async () => {
+    feed = Array.from({ length: 450 }, (_, i) => msg(1000 - i, 1 + i * 0.05, `Объявление номер ${1000 - i}`));
+    await agent.call('tg_resolve', { ref: '@baraholka' });
+    const store = new IndexStore(gw.storage, () => clock);
+    const service = new LocalIndexService({ storage: gw.storage, store, history: new HistoryService(gw.tg), now: () => clock, maxPerRun: 200 });
+    const jobs = new JobManager({ storage: gw.storage, log: createLogger('test', { level: 'silent' }) });
+    jobs.register('index', ctx => service.run(ctx));
+    const run = async () => {
+      const job = jobs.start({ userId: 'nick', accountId: 'agent', kind: 'index', params: { accountId: 'agent', chatKey: '-1000000000700', sinceTs: at(60) } });
+      return (await jobs.waitFor(job.id, 'nick', 5_000)).result as { partial: boolean; messages: number; sinceTs: number };
+    };
+
+    const first = await run();
+    expect(first).toMatchObject({ partial: true, messages: 200 });
+    // покрытие честное: только до самого старого прочитанного сообщения
+    expect(first.sinceTs).toBe(at(1 + 199 * 0.05));
+    // следующие запуски сначала перечитывают свежую голову, потом идут дальше вглубь
+    const second = await run();
+    expect(second).toMatchObject({ partial: true, messages: 300 });
+    let last = second;
+    let runs = 2;
+    while (last.partial && runs < 8) {
+      last = await run();
+      runs++;
+    }
+    expect(runs).toBe(4);
+    expect(last).toMatchObject({ partial: false, messages: 450, sinceTs: at(60) });
+    expect(store.get('agent', '-1000000000700')).toMatchObject({ newestId: 1000, oldestId: 551, messages: 450 });
+    jobs.stop();
+  });
+});
+
+describe('контракт всех наборов', () => {
+  it('у каждого инструмента плоская схема, короткое описание и верная пометка чтения', async () => {
+    const everything = await gw.client('nick', ['core', 'discover', 'analytics', 'index', 'automate', 'write']);
+    const tools = await everything.tools();
+    await everything.close();
+    expect(tools.map(t => t.name).sort()).toEqual([
+      'tg_channel_stats',
+      'tg_confirm',
+      'tg_export',
+      'tg_find_channels',
+      'tg_forward_sources',
+      'tg_get_comments',
+      'tg_get_media',
+      'tg_get_message',
+      'tg_inbox',
+      'tg_index',
+      'tg_join',
+      'tg_list_dialogs',
+      'tg_list_topics',
+      'tg_local_search',
+      'tg_react',
+      'tg_read_history',
+      'tg_reply',
+      'tg_resolve',
+      'tg_rule_set',
+      'tg_rules',
+      'tg_search_chat',
+      'tg_search_messages',
+      'tg_send',
+      'tg_similar_channels',
+      'tg_status',
+      'tg_task_get',
+      'tg_task_start',
+      'tg_task_update',
+      'tg_tasks',
+      'tg_watch',
+    ]);
+    const writes = new Set(['tg_confirm', 'tg_join', 'tg_react', 'tg_reply', 'tg_rule_set', 'tg_send', 'tg_task_start', 'tg_task_update', 'tg_tasks']);
+    for (const tool of tools) {
+      expect(tool.annotations?.readOnlyHint, tool.name).toBe(!writes.has(tool.name));
+      const schema = JSON.stringify(tool.inputSchema);
+      expect(schema, tool.name).not.toMatch(/anyOf|oneOf|allOf/);
+      const props = (tool.inputSchema.properties ?? {}) as Record<string, { type?: string; items?: { type?: string } }>;
+      for (const [name, prop] of Object.entries(props)) {
+        expect(['string', 'number', 'integer', 'boolean', 'array'], `${tool.name}.${name}`).toContain(prop.type);
+        if (prop.type === 'array') expect(['string', 'number', 'integer'], `${tool.name}.${name}`).toContain(prop.items?.type);
+      }
+      expect((tool.description ?? '').length, tool.name).toBeLessThan(520);
+    }
   });
 });

@@ -13,6 +13,7 @@ import { DiscoverService } from './discover.js';
 import { ExportService } from './export.js';
 import { HistoryService } from './history.js';
 import { JobManager } from './jobs.js';
+import { IndexStore, LocalIndexService } from './localIndex.js';
 import { MediaService } from './media.js';
 import { Resolver } from './resolve.js';
 import { SearchService } from './search.js';
@@ -34,6 +35,8 @@ export interface GatewayServices {
   discover: DiscoverService;
   stats: StatsService;
   snapshots: SnapshotStore;
+  localIndex: LocalIndexService;
+  indexStore: IndexStore;
   topics: TopicsService;
   media: MediaService;
   exporter: ExportService;
@@ -60,6 +63,9 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
   if (!(storage instanceof SqliteStorage)) throw new GatewayError('UNAVAILABLE', 'The gateway needs the SQLite storage.');
   const resolver = new Resolver({ tg, entities: storage.entities, now });
   const snapshots = new SnapshotStore(storage, now);
+  const indexStore = new IndexStore(storage, now);
+  const localIndex = new LocalIndexService({ storage, store: indexStore, history, now });
+  jobs.register('index', context => localIndex.run(context));
 
   return {
     runtime,
@@ -74,6 +80,8 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
     discover: new DiscoverService(tg, storage.entities, history),
     stats: new StatsService({ history, resolver, snapshots, now }),
     snapshots,
+    localIndex,
+    indexStore,
     topics: new TopicsService(tg),
     media,
     exporter,
