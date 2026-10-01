@@ -178,6 +178,26 @@ describe('HistoryService', () => {
     expect(result.raw).toHaveLength(1);
   });
 
+  it('личный чат: исходящие подписаны аккаунтом, входящие собеседником', async () => {
+    const dialog = { ...chat, peerKey: '42', kind: 'user' as const, accessHash: '9', username: 'seller', title: 'Ivan' };
+    const peerId = { className: 'PeerUser', userId: 42n };
+    const reply = () => ({
+      messages: [
+        { className: 'Message', id: 6, peerId, out: true, date: 2, message: 'ещё продаёте?' },
+        { className: 'Message', id: 5, peerId, date: 1, message: 'привет' },
+      ],
+      users: [rawUser(42, { username: 'seller' })],
+      chats: [],
+    });
+    tg.on('messages.GetHistory', reply).on('messages.GetMessages', reply);
+    const history = new HistoryService(tg);
+    const authors = (messages: Array<{ author: { peerKey: string | null; username: string | null } }>) => messages.map(m => [m.author.peerKey, m.author.username]);
+    const expected = [['1001', 'agent_acc'], ['42', 'seller']];
+    expect(authors((await history.page(ACC, dialog, { limit: 10 })).messages)).toEqual(expected);
+    expect(authors((await history.byIds(ACC, dialog, [5, 6])).messages)).toEqual(expected);
+    expect(authors((await history.around(ACC, dialog, 5, 1, 1)).messages)).toEqual(expected);
+  });
+
   it('контекст вокруг сообщения', async () => {
     tg.on('messages.GetHistory', () => page([12, 11, 10, 9, 8]));
     await new HistoryService(tg).around(ACC, chat, 10, 2, 2);
@@ -255,6 +275,21 @@ describe('SearchService', () => {
     expect(req).toMatchObject({ q: 'iphone', topMsgId: 5, minDate: 100, maxDate: 200, limit: 2 });
     expect(req.fromId.className).toBe('InputPeerUser');
     expect(req.peer.className).toBe('InputPeerChannel');
+  });
+
+  it('поиск в личном чате различает, кто что написал', async () => {
+    const peerId = { className: 'PeerUser', userId: 42n };
+    tg.on('messages.Search', () => ({
+      messages: [
+        { className: 'Message', id: 6, peerId, out: true, date: 2, message: 'цена 65к?' },
+        { className: 'Message', id: 5, peerId, date: 1, message: 'цена 70к' },
+      ],
+      users: [rawUser(42, { username: 'seller' })],
+      chats: [],
+    }));
+    const dialog = { ...chat, peerKey: '42', kind: 'user' as const, accessHash: '9', username: 'seller', title: 'Ivan' };
+    const result = await new SearchService(tg, storage.entities).inChat(ACC, dialog, { query: 'цена', limit: 10 });
+    expect(result.messages.map(m => m.author.username)).toEqual(['agent_acc', 'seller']);
   });
 });
 

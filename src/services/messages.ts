@@ -5,6 +5,8 @@
  * Разбор медиа перенесён из channel-scope `processMediaClient.ts`
  * (extractMediaMetadata), авторы из helper `commentsRefresher.ts` (authorFromPeer).
  */
+import { parsePeerKey } from '../core/chatId.js';
+import type { AccountIdentity } from '../core/clientPool.js';
 import { peerKeyOfPeer } from '../core/entities.js';
 import { normalizeReactions, type ReactionCount } from '../core/reactions.js';
 
@@ -160,6 +162,17 @@ export function authorFromPeer(fromId: unknown, index: EntityIndex, postAuthor?:
   return { kind: 'anonymous', peerKey: null, name: postAuthor ?? null, username: null, bot: false };
 }
 
+/**
+ * Автор сообщения личного чата. Telegram не присылает там `fromId`: своё
+ * сообщение узнаётся по флагу `out`, остальные написал собеседник.
+ */
+function privateAuthor(out: boolean, chatKey: string, index: EntityIndex, self?: AccountIdentity): AuthorDto {
+  if (!out) return authorFromPeer({ userId: chatKey }, index);
+  if (!self) return { kind: 'user', peerKey: null, name: null, username: null, bot: false };
+  const known = authorFromPeer({ userId: self.tgUserId }, index);
+  return known.name || known.username ? known : { ...known, name: self.displayName, username: self.username };
+}
+
 interface RawAttribute {
   className?: string;
   fileName?: string;
@@ -278,8 +291,9 @@ interface RawMessage {
 /**
  * Сообщение teleproto -> MessageDto. Возвращает null для MessageEmpty и мусора.
  * `chatKeyFallback` нужен для личных чатов, где у сообщения может не быть peerId.
+ * `self` это аккаунт, которым читается чат: им подписываются свои сообщения личного чата.
  */
-export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallback?: string): MessageDto | null {
+export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallback?: string, self?: AccountIdentity): MessageDto | null {
   const m = raw as RawMessage | null;
   if (!m || typeof m !== 'object' || typeof m.id !== 'number') return null;
   if (m.className !== 'Message' && m.className !== 'MessageService') return null;
@@ -288,12 +302,14 @@ export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallba
   if (!chatKey) return null;
 
   const text = typeof m.message === 'string' ? m.message : '';
-  // Пост канала без fromId написан самим каналом.
+  // Пост канала без fromId написан самим каналом, сообщение личного чата одним из двух собеседников.
   const author = m.fromId
     ? authorFromPeer(m.fromId, index, m.postAuthor)
     : m.post
       ? authorFromPeer(m.peerId, index, m.postAuthor)
-      : authorFromPeer(null, index, m.postAuthor);
+      : parsePeerKey(chatKey).kind === 'user'
+        ? privateAuthor(m.out === true, chatKey, index, self)
+        : authorFromPeer(null, index, m.postAuthor);
 
   let topicId: number | null = null;
   if (m.replyTo?.forumTopic) {
@@ -335,13 +351,13 @@ export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallba
 }
 
 /** Все сообщения из ответа Telegram, в исходном порядке. */
-export function normalizeMessages(result: unknown, chatKeyFallback?: string): MessageDto[] {
+export function normalizeMessages(result: unknown, chatKeyFallback?: string, self?: AccountIdentity): MessageDto[] {
   const r = result as { messages?: unknown } | null;
   if (!r || !Array.isArray(r.messages)) return [];
   const index = indexEntities(result);
   const out: MessageDto[] = [];
   for (const raw of r.messages) {
-    const dto = normalizeMessage(raw, index, chatKeyFallback);
+    const dto = normalizeMessage(raw, index, chatKeyFallback, self);
     if (dto) out.push(dto);
   }
   return out;

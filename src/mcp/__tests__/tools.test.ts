@@ -285,6 +285,24 @@ describe('безопасность', () => {
     await partner.close();
   });
 
+  it('в открытой личной переписке видно, кто что написал', async () => {
+    const peerId = { className: 'PeerUser', userId: 42n };
+    gw.tg.on('messages.GetHistory', () => ({
+      messages: [
+        { className: 'Message', id: 6, peerId, out: true, date: 1_790_000_100, message: 'Здравствуйте, ещё продаёте?' },
+        { className: 'Message', id: 5, peerId, date: 1_790_000_000, message: 'Привет' },
+      ],
+      users: [rawUser(42, { username: 'seller', firstName: 'Ivan' })],
+      chats: [],
+    }));
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow' });
+    const reply = await nick.call('tg_read_history', { chat: '@seller' });
+    expect(reply.isError).toBe(false);
+    expect(reply.text).toContain('#6 | 2026-09-21 14:15 | @agent_acc (this account)');
+    expect(reply.text).toContain('#5 | 2026-09-21 14:13 | @seller');
+    expect(reply.text).not.toContain('anonymous');
+  });
+
   it('карточку человека показать можно, служебные чаты нельзя', async () => {
     gw.tg.on('users.GetFullUser', () => ({ fullUser: { about: 'Продаю велосипеды' }, users: [rawUser(42, { username: 'seller' })] }));
     const card = await nick.call('tg_resolve', { ref: '@seller' });

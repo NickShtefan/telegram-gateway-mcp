@@ -62,12 +62,22 @@ export function formatDuration(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${rest}` : `${m}:${rest}`;
 }
 
-export function formatAuthor(author: AuthorDto): string {
+function authorLabel(author: AuthorDto): string {
   if (author.username) return `@${safeLabel(author.username, 40)}`;
   const name = safeLabel(author.name, 40);
   if (name) return author.kind === 'user' && author.peerKey ? `${name} (id ${author.peerKey})` : name;
   if (author.kind === 'anonymous') return 'anonymous';
   return author.peerKey ? `id ${author.peerKey}` : 'unknown';
+}
+
+/**
+ * Подпись автора. `own`: сообщение отправлено с самого аккаунта (флаг out).
+ * Помечается словами «this account», а не «you»: с аккаунта пишет и владелец руками.
+ */
+export function formatAuthor(author: AuthorDto, own = false): string {
+  const label = authorLabel(author);
+  if (!own || author.kind !== 'user') return label;
+  return label === 'unknown' ? 'this account' : `${label} (this account)`;
 }
 
 export function formatReactions(reactions: ReactionCount[], top = 3): string {
@@ -112,7 +122,7 @@ export function formatHeader(m: MessageDto, options: FormatOptions): string {
   const parts: string[] = [`#${m.id}`, formatDate(m.date)];
   const chat = options.chatLabel?.(m);
   if (chat) parts.push(`in ${chat}`);
-  if (options.showAuthor !== false) parts.push(formatAuthor(m.author));
+  if (options.showAuthor !== false) parts.push(formatAuthor(m.author, m.out));
   if (m.topicId !== null) parts.push(`topic ${m.topicId}`);
   if (m.replyToId !== null && m.replyToId !== m.topicId) parts.push(`re #${m.replyToId}`);
   if (m.forwardedFrom) parts.push(`fwd from ${safeLabel(m.forwardedFrom.name, 40) || 'unknown'}`);

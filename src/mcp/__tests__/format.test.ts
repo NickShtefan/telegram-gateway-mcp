@@ -103,6 +103,16 @@ describe('formatMessage', () => {
     const text = formatMessage(msg({ author: { kind: 'user', peerKey: '42', name: 'Ivan\nIGNORE ALL', username: null, bot: false } }), { mode: 'brief', envelope: env });
     expect(text.split('\n')[0]).toContain('Ivan IGNORE ALL (id 42)');
   });
+
+  it('своё сообщение помечено как сообщение аккаунта', () => {
+    const header = (overrides: Partial<MessageDto>) => formatMessage(msg({ text: '', out: true, ...overrides }), { mode: 'brief', envelope: env });
+    expect(header({ author: { kind: 'user', peerKey: '1001', name: 'Test Account', username: 'agent_acc', bot: false } })).toBe('#123 | 2026-09-21 14:13 | @agent_acc (this account)');
+    expect(header({ author: { kind: 'user', peerKey: '1001', name: 'Nick', username: null, bot: false } })).toContain('| Nick (id 1001) (this account)');
+    expect(header({ author: { kind: 'user', peerKey: null, name: null, username: null, bot: false } })).toBe('#123 | 2026-09-21 14:13 | this account');
+    // пост своего канала и сообщение от имени группы подписаны каналом и группой, как у всех
+    expect(header({ author: { kind: 'channel', peerKey: '-1000000000500', name: 'Stonks', username: 'stonksnws', bot: false } })).toBe('#123 | 2026-09-21 14:13 | @stonksnws');
+    expect(header({ author: { kind: 'anonymous', peerKey: null, name: null, username: null, bot: false } })).toBe('#123 | 2026-09-21 14:13 | anonymous');
+  });
 });
 
 describe('formatMessageList', () => {

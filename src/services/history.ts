@@ -8,6 +8,7 @@
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
+import type { AccountIdentity } from '../core/clientPool.js';
 import { toInputChannel, toInputPeer } from '../core/entities.js';
 import { GatewayError } from '../core/errors.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
@@ -48,6 +49,11 @@ function rawMessages(result: unknown): RawMessage[] {
 export class HistoryService {
   constructor(private readonly tg: Tg) {}
 
+  /** В личном чате автора своих сообщений Telegram не присылает: нормализатору нужен сам аккаунт. */
+  private async selfIn(accountId: string, chat: EntityRecord): Promise<AccountIdentity | undefined> {
+    return chat.kind === 'user' ? this.tg.whoami(accountId) : undefined;
+  }
+
   async page(accountId: string, chat: EntityRecord, params: HistoryParams, options?: TgCallOptions): Promise<HistoryPage> {
     const limit = Math.min(Math.max(1, params.limit), PAGE_MAX);
     const offsetId = params.offsetId ?? 0;
@@ -61,7 +67,7 @@ export class HistoryService {
       : await this.tg.invoke(accountId, new Api.messages.GetHistory(common), options);
 
     const fetched = rawMessages(result);
-    const dtos = normalizeMessages(result, chat.peerKey);
+    const dtos = normalizeMessages(result, chat.peerKey, await this.selfIn(accountId, chat));
 
     let reachedMinDate = false;
     let kept = dtos;
@@ -95,7 +101,8 @@ export class HistoryService {
 
     // messages.GetMessages ищет по id во всех личных чатах и группах аккаунта:
     // оставляем только сообщения запрошенного чата, иначе это обход скоупов.
-    const dtos = normalizeMessages(result, chat.kind === 'channel' ? chat.peerKey : undefined).filter(m => m.chatKey === chat.peerKey);
+    const self = await this.selfIn(accountId, chat);
+    const dtos = normalizeMessages(result, chat.kind === 'channel' ? chat.peerKey : undefined, self).filter(m => m.chatKey === chat.peerKey);
     const keptIds = new Set(dtos.map(m => m.id));
     return {
       messages: dtos,
@@ -133,7 +140,8 @@ export class HistoryService {
     const result = topicId
       ? await this.tg.invoke(accountId, new Api.messages.GetReplies({ ...common, msgId: topicId }), options)
       : await this.tg.invoke(accountId, new Api.messages.GetHistory(common), options);
-    return { messages: normalizeMessages(result, chat.peerKey), raw: rawMessages(result), total: null, nextOffsetId: null };
+    const self = await this.selfIn(accountId, chat);
+    return { messages: normalizeMessages(result, chat.peerKey, self), raw: rawMessages(result), total: null, nextOffsetId: null };
   }
 
   /**

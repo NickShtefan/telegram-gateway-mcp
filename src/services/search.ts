@@ -128,7 +128,9 @@ export class SearchService {
       options,
     );
     const raw = Array.isArray((result as SliceLike).messages) ? ((result as SliceLike).messages as unknown[]) : [];
-    const messages = normalizeMessages(result, chat.peerKey);
+    // Поиск в личном чате: свои сообщения приходят без fromId и подписываются аккаунтом.
+    const self = chat.kind === 'user' ? await this.tg.whoami(accountId) : undefined;
+    const messages = normalizeMessages(result, chat.peerKey, self);
     const last = raw[raw.length - 1] as { id?: number } | undefined;
     return {
       messages,

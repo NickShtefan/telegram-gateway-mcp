@@ -113,6 +113,44 @@ describe('normalizeMessages', () => {
   });
 });
 
+describe('личный чат: fromId не приходит', () => {
+  const ME = { tgUserId: '1001', username: 'agent_acc', displayName: 'Test Account' };
+  const peer = { className: 'PeerUser', userId: 42n };
+  const dialog = {
+    users: [{ className: 'User', id: 42n, username: 'seller', firstName: 'Ivan', lastName: 'Petrov' }],
+    messages: [
+      { className: 'Message', id: 6, peerId: peer, out: true, date: 1_790_000_100, message: 'Здравствуйте, ещё продаёте?' },
+      { className: 'Message', id: 5, peerId: peer, date: 1_790_000_000, message: 'Привет' },
+    ],
+  };
+
+  it('входящее написал собеседник, исходящее сам аккаунт', () => {
+    const [mine, theirs] = normalizeMessages(dialog, '42', ME);
+    expect(theirs).toMatchObject({ out: false, author: { kind: 'user', peerKey: '42', name: 'Ivan Petrov', username: 'seller' } });
+    expect(mine).toMatchObject({ out: true, author: { kind: 'user', peerKey: '1001', name: 'Test Account', username: 'agent_acc' } });
+  });
+
+  it('свой аккаунт из ответа Telegram важнее сохранённой личности', () => {
+    const withSelf = { ...dialog, users: [...dialog.users, { className: 'User', id: 1001n, self: true, username: 'renamed_acc', firstName: 'Nick' }] };
+    expect(normalizeMessages(withSelf, '42', ME)[0]!.author).toMatchObject({ peerKey: '1001', name: 'Nick', username: 'renamed_acc' });
+  });
+
+  it('без личности аккаунта исходящее остаётся человеком без имени, а не анонимом', () => {
+    expect(normalizeMessages(dialog, '42')[0]!.author).toEqual({ kind: 'user', peerKey: null, name: null, username: null, bot: false });
+  });
+
+  it('служебное сообщение и сообщение без peerId подписаны так же', () => {
+    const index = indexEntities(dialog);
+    expect(normalizeMessage({ className: 'MessageService', id: 7, peerId: peer, date: 1, action: { className: 'MessageActionPhoneCall' } }, index)?.author.peerKey).toBe('42');
+    expect(normalizeMessage({ className: 'Message', id: 8, date: 1, message: 'hi' }, index, '42')?.author.username).toBe('seller');
+  });
+
+  it('группа без fromId остаётся анонимной: это админ от имени группы', () => {
+    const dto = normalizeMessage({ className: 'Message', id: 9, peerId: { className: 'PeerChannel', channelId: 600n }, out: true, date: 1, message: 'x', postAuthor: 'Админ' }, indexEntities(response), undefined, ME);
+    expect(dto?.author).toMatchObject({ kind: 'anonymous', peerKey: null, name: 'Админ' });
+  });
+});
+
 describe('normalizeMedia', () => {
   const doc = (attributes: unknown[], extra: Record<string, unknown> = {}) => ({
     className: 'MessageMediaDocument',
