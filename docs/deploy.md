@@ -78,10 +78,22 @@ sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin doctor
 
 ## Запись
 
-Сразу после установки шлюз только читает (`TG_MCP_TOOLSETS=core`). Чтобы агент мог отвечать, писать и вступать в чаты, впиши в `/var/tgmcp/.tg-mcp/.env`:
+Сразу после установки шлюз только читает (`TG_MCP_TOOLSETS=core`). Остальные наборы включаются строкой в `/var/tgmcp/.tg-mcp/.env`. Чтение без записи, со всеми возможностями:
 
 ```
-TG_MCP_TOOLSETS=core,write
+TG_MCP_TOOLSETS=core,discover,analytics,index
+```
+
+Чтобы агент мог отвечать, писать, ставить реакции и вступать в чаты, добавь `write`:
+
+```
+TG_MCP_TOOLSETS=core,discover,analytics,index,write
+```
+
+Одной командой, без редактора:
+
+```bash
+sudo -u tgmcp sed -i '' 's/^TG_MCP_TOOLSETS=.*/TG_MCP_TOOLSETS=core,discover,analytics,index/' /var/tgmcp/.tg-mcp/.env
 ```
 
 и перезапусти демон:
