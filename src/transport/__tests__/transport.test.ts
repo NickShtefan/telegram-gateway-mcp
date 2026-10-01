@@ -103,7 +103,7 @@ describe('HTTP: вход демона', () => {
     };
     const nick = await connect(gw.tokens.nick);
     const partner = await connect(gw.tokens.partner);
-    expect((await nick.listTools()).tools).toHaveLength(10);
+    expect((await nick.listTools()).tools).toHaveLength(11);
     const text = async (c: Client) => ((await c.callTool({ name: 'tg_status', arguments: {} })) as { content: Array<{ text: string }> }).content[0]!.text;
     expect(await text(nick)).toContain('Gateway user: nick');
     expect(await text(partner)).toContain('Gateway user: partner');
@@ -150,7 +150,7 @@ describe('stdio-прокладка', () => {
     expect(replies).toHaveLength(3);
     const byId = new Map(replies.map(r => [r.id, r]));
     expect((byId.get(1)!.result as { serverInfo: { name: string } }).serverInfo.name).toBe('telegram-gateway');
-    expect((byId.get(2)!.result as { tools: unknown[] }).tools).toHaveLength(10);
+    expect((byId.get(2)!.result as { tools: unknown[] }).tools).toHaveLength(11);
     expect(JSON.stringify(byId.get(3))).toContain('Gateway user: nick');
   });
 

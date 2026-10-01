@@ -38,13 +38,14 @@ afterEach(async () => {
 });
 
 describe('контракт инструментов', () => {
-  it('основной набор: десять инструментов tg_* с плоскими схемами и пометкой чтения', async () => {
+  it('основной набор: одиннадцать инструментов tg_* с плоскими схемами и пометкой чтения', async () => {
     const tools = await nick.tools();
     expect(tools.map(t => t.name).sort()).toEqual([
       'tg_export',
       'tg_get_comments',
       'tg_get_media',
       'tg_get_message',
+      'tg_list_dialogs',
       'tg_list_topics',
       'tg_read_history',
       'tg_resolve',
