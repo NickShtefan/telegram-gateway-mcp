@@ -151,6 +151,11 @@ const RULES: Rule[] = [
     message: 'Message not found: it was deleted, or comments are disabled for this post.',
   },
   {
+    match: /REACTION_INVALID|REACTION_EMPTY|REACTIONS_TOO_MANY/,
+    code: 'INVALID_ARGUMENT',
+    message: 'This reaction is not allowed here: the chat permits only some emoji (or none), and custom or paid reactions are not supported. Try a common one.',
+  },
+  {
     match: /INVITE_HASH_EXPIRED|INVITE_HASH_INVALID|INVITE_HASH_EMPTY/,
     code: 'INVITE_INVALID',
     message: 'The invite link is invalid or expired.',

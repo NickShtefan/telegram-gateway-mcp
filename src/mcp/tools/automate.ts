@@ -11,7 +11,7 @@ import type { InboxEvent } from '../../automation/store.js';
 import { GatewayError } from '../../core/errors.js';
 import { createEnvelope, safeLabel } from '../../policy/envelope.js';
 import { messageLink, parseRef } from '../../services/links.js';
-import { assertMessageText } from '../../services/write.js';
+import { assertMessageText, normalizeReactionEmoji } from '../../services/write.js';
 import { clampLimit } from '../args.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import { formatDate } from '../format.js';
@@ -372,4 +372,49 @@ const tgJoin = defineTool({
 });
 
 export const AUTOMATE_TOOLS: ToolDef[] = [tgWatch, tgInbox, tgRuleSet, tgRules] as unknown as ToolDef[];
-export const WRITE_TOOLS: ToolDef[] = [tgReply, tgJoin] as unknown as ToolDef[];
+const tgReact = defineTool({
+  name: 'tg_react',
+  toolset: 'write',
+  title: 'React to a message',
+  description:
+    'Prepares an emoji reaction to a post, a message or a comment and returns a preview with an approval_id; the reaction is set only after tg_confirm, which you call after the owner agrees. remove=true takes the account\'s reaction off. Only standard emoji: custom and paid reactions are not supported.',
+  input: {
+    link: z.string().optional().describe('t.me link to the message (a comment link works too).'),
+    chat: z.string().optional().describe('Chat, when "link" is not given.'),
+    id: z.number().int().positive().max(2_147_483_647).optional().describe('Message id, when "link" is not given.'),
+    emoji: z.string().optional().describe('One emoji. Required unless remove=true.'),
+    remove: z.boolean().optional().describe('true removes the reaction of the account from this message.'),
+    account: accountArg,
+  },
+  readOnly: false,
+  handler: async (args, ctx) => {
+    const { automation } = ctx.services;
+    if (ctx.principal.grant) throw new GatewayError('ACCESS_DENIED', 'An unattended run cannot set reactions.');
+    const emoji = args.remove === true ? null : normalizeReactionEmoji(args.emoji);
+    const where = await locateMessage(ctx, args);
+    if (emoji !== null) automation.write.assertCanReact(where.accountId);
+
+    const waiting = automation.store
+      .listApprovals(ctx.principal.userId, ['pending', 'executing'], 100)
+      .find(a => a.kind === 'react' && a.payload.accountId === where.accountId && a.payload.chatKey === where.chat.peerKey && a.payload.messageId === where.messageId);
+    if (waiting) {
+      throw new GatewayError('LIMIT_REACHED', `A reaction to this message is already prepared (${waiting.id}). Confirm or reject it with tg_confirm first.`);
+    }
+
+    const link = where.commentOf
+      ? messageLink({ username: where.commentOf.chat.username, peerKey: where.commentOf.chat.peerKey, messageId: where.commentOf.postId, commentId: where.messageId })
+      : messageLink({ username: where.chat.username, peerKey: where.chat.peerKey, messageId: where.messageId });
+    const target = link ?? `message #${where.messageId} in ${chatLabel(where.chat)}`;
+    const approval = automation.approvals.request({
+      userId: ctx.principal.userId,
+      accountId: where.accountId,
+      kind: 'react',
+      source: 'tool',
+      payload: { accountId: where.accountId, chatKey: where.chat.peerKey, messageId: where.messageId, emoji, where: target },
+      title: emoji !== null ? `Set the reaction ${emoji} on ${target}` : `Remove the account's reaction from ${target}`,
+    });
+    return { accountId: where.accountId, peerKey: where.chat.peerKey, text: `The reaction is prepared.\n${confirmNote(approval, ctx)}` };
+  },
+});
+
+export const WRITE_TOOLS: ToolDef[] = [tgReply, tgJoin, tgReact] as unknown as ToolDef[];

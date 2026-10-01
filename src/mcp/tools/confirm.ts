@@ -71,7 +71,7 @@ const tgConfirm = defineTool({
   alsoIn: ['automate'],
   title: 'Confirm, reject or list write requests',
   description:
-    'Second step of every write tool (tg_reply, tg_send, tg_join, tg_rule_set, tg_task_start): those only prepare a request and return a preview with an approval_id, and nothing happens in Telegram until tg_confirm approves it. Call it only after the owner has seen the preview and clearly agreed. action=list shows requests waiting for a decision, including drafts prepared by unattended runs of rules and tasks.',
+    'Second step of every write tool (tg_reply, tg_send, tg_react, tg_join, tg_rule_set, tg_task_start): those only prepare a request and return a preview with an approval_id, and nothing happens in Telegram until tg_confirm approves it. Call it only after the owner has seen the preview and clearly agreed. action=list shows requests waiting for a decision, including drafts prepared by unattended runs of rules and tasks.',
   input: {
     action: z.enum(['approve', 'reject', 'list']).optional().describe('approve (default), reject, or list.'),
     approval_id: z.string().optional().describe('Request id like ap_1a2b3c4d5e. Required for approve and reject.'),

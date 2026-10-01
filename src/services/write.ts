@@ -25,9 +25,24 @@ export interface WriteLimits {
   /** Новые диалоги: люди, которым аккаунт ещё не писал. */
   newDialogsPerDay: number;
   joinsPerDay: number;
+  reactionsPerDay: number;
 }
 
-export const DEFAULT_WRITE_LIMITS: WriteLimits = { repliesPerDay: 20, newDialogsPerDay: 5, joinsPerDay: 5 };
+export const DEFAULT_WRITE_LIMITS: WriteLimits = { repliesPerDay: 20, newDialogsPerDay: 5, joinsPerDay: 5, reactionsPerDay: 30 };
+
+const VARIATION_SELECTOR = String.fromCharCode(0xfe0f);
+
+/**
+ * Эмодзи реакции в том виде, в каком его принимает Telegram: без селектора
+ * варианта (сердце приходит с клавиатуры с ним, а в списке реакций оно без него).
+ */
+export function normalizeReactionEmoji(raw: unknown): string {
+  const emoji = typeof raw === 'string' ? raw.trim().split(VARIATION_SELECTOR).join('') : '';
+  if (!emoji || emoji.length > 16 || !/^\p{Extended_Pictographic}/u.test(emoji) || /[\p{L}\p{N}\s]/u.test(emoji)) {
+    throw new GatewayError('INVALID_ARGUMENT', 'A reaction is one emoji, for example a thumbs up or a heart.');
+  }
+  return emoji;
+}
 
 export interface WriteContext {
   userId: string;
@@ -216,6 +231,38 @@ export class WriteService {
       messageId,
       link: messageId !== null && peer.kind === 'channel' ? messageLink({ username: peer.username, peerKey: peer.peerKey, messageId }) : null,
     };
+  }
+
+  /** Дневной предел реакций: реакции под каждым постом подряд выглядят как накрутка. */
+  assertCanReact(accountId: string): void {
+    if (this.deps.store.writesSince(accountId, 'react', dayStart(this.now())) >= this.limits.reactionsPerDay) {
+      throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.reactionsPerDay} reactions for this account is reached.`);
+    }
+  }
+
+  /** Ставит реакцию на сообщение; `emoji = null` снимает свою реакцию. */
+  async react(context: WriteContext, chat: EntityRecord, messageId: number, emoji: string | null): Promise<void> {
+    if (emoji !== null) this.assertCanReact(context.accountId);
+    await this.deps.tg.invoke(
+      context.accountId,
+      new Api.messages.SendReaction({
+        peer: toInputPeer(chat),
+        msgId: messageId,
+        reaction: emoji !== null ? [new Api.ReactionEmoji({ emoticon: normalizeReactionEmoji(emoji) })] : [],
+      }),
+      { write: true },
+    );
+    if (emoji === null) return;
+    this.record({
+      ts: this.now(),
+      userId: context.userId,
+      accountId: context.accountId,
+      kind: 'react',
+      chatKey: chat.peerKey,
+      postId: messageId,
+      sentMessageId: null,
+      source: context.source,
+    });
   }
 
   /** Вступление в публичный чат или по инвайту. Капчу привратника шлюз не проходит. */

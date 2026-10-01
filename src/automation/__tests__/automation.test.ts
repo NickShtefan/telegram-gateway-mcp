@@ -243,6 +243,86 @@ describe('запись в два шага: предпросмотр и tg_confir
   });
 });
 
+describe('реакции', () => {
+  const HEART = String.fromCharCode(0x2764);
+  const SELECTOR = String.fromCharCode(0xfe0f);
+
+  beforeEach(() => {
+    gw.tg.on('messages.SendReaction', () => ({ className: 'Updates', updates: [] }));
+  });
+
+  it('реакция ставится только после подтверждения', async () => {
+    const reply = await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', emoji: '👍' });
+    expect(reply.isError, reply.text).toBe(false);
+    expect(reply.text).toContain('Set the reaction 👍 on https://t.me/stonksnws/10');
+    expect(reply.text).toContain('Account: agent (@agent_acc)');
+    expect(gw.tg.callsOf('messages.SendReaction')).toHaveLength(0);
+
+    const done = await confirm(approvalIdOf(reply.text));
+    expect(done.text).toBe('Done: Reaction 👍 is set on https://t.me/stonksnws/10');
+    const call = gw.tg.last('messages.SendReaction');
+    expect(call.request.peer.className).toBe('InputPeerChannel');
+    expect(String(call.request.peer.channelId)).toBe(String(CHANNEL));
+    expect(call.request.msgId).toBe(10);
+    expect(call.request.reaction.map((r: { emoticon: string }) => r.emoticon)).toEqual(['👍']);
+    expect(call.options).toMatchObject({ write: true });
+    // запрос собран настоящими классами GramJS и сериализуется
+    expect(() => call.request.getBytes()).not.toThrow();
+    expect(store().writesSince('agent', 'react', 0)).toBe(1);
+    expect((await nick.call('tg_inbox')).text).toContain('react executed');
+  });
+
+  it('сердце с клавиатуры приводится к виду, который принимает Telegram', async () => {
+    const reply = await nick.call('tg_react', { chat: '@stonksnws', id: 10, emoji: HEART + SELECTOR });
+    await confirm(approvalIdOf(reply.text));
+    const sent = gw.tg.last('messages.SendReaction').request.reaction[0].emoticon as string;
+    expect(sent).toBe(HEART);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('реакцией может быть только один эмодзи', async () => {
+    for (const emoji of ['ok', '', '👍 привет', '+1']) {
+      const reply = await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', emoji });
+      expect(reply.isError, emoji).toBe(true);
+      expect(reply.text).toContain('A reaction is one emoji');
+    }
+    expect((await nick.call('tg_react', { link: 'https://t.me/stonksnws/10' })).text).toContain('A reaction is one emoji');
+    expect(approvals().pending('nick')).toHaveLength(0);
+  });
+
+  it('remove снимает реакцию и не тратит дневной лимит; второй запрос на то же сообщение не создаётся', async () => {
+    const reply = await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', remove: true });
+    expect(reply.text).toContain("Remove the account's reaction from https://t.me/stonksnws/10");
+    expect((await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', emoji: '🔥' })).text).toContain('already prepared');
+    expect((await confirm(approvalIdOf(reply.text))).text).toBe('Done: The reaction is removed from https://t.me/stonksnws/10');
+    expect(gw.tg.last('messages.SendReaction').request.reaction).toEqual([]);
+    expect(store().writesSince('agent', 'react', 0)).toBe(0);
+  });
+
+  it('дневной лимит реакций и отказ Telegram по набору разрешённых эмодзи', async () => {
+    gw.tg.on('messages.SendReaction', () => {
+      throw telegramError('REACTION_INVALID', 'messages.SendReaction');
+    });
+    const failed = await confirm(approvalIdOf((await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', emoji: '🤡' })).text));
+    expect(failed.isError).toBe(true);
+    expect(failed.text).toContain('Error: INVALID_ARGUMENT');
+    expect(failed.text).toContain('This reaction is not allowed here');
+    expect(store().writesSince('agent', 'react', 0)).toBe(0);
+
+    for (let i = 1; i <= 30; i++) store().recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'react', chatKey: '-1000000000500', postId: i, sentMessageId: null, source: 'tool' });
+    const limited = await nick.call('tg_react', { link: 'https://t.me/stonksnws/11', emoji: '👍' });
+    expect(limited.isError).toBe(true);
+    expect(limited.text).toContain('Daily limit of 30 reactions');
+  });
+
+  it('запуск без человека реакции не ставит: инструмента у него нет', async () => {
+    expect((await nick.tools()).map(t => t.name)).toContain('tg_react');
+    const { RULE_TOOLS } = await import('../rules.js');
+    const { TASK_TOOLS } = await import('../tasks.js');
+    expect([...RULE_TOOLS, ...TASK_TOOLS]).not.toContain('tg_react');
+  });
+});
+
 describe('исходы записи, которые Telegram сообщает ошибкой', () => {
   const join = async () => {
     gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: 900 }, chats: [channel({ left: true })] }));

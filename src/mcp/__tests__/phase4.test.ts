@@ -85,6 +85,8 @@ describe('tg_list_dialogs: чаты аккаунта', () => {
     expect(calls.map(c => c.folderId)).toEqual([0, 1]);
     expect(calls[0]!.offsetPeer.className).toBe('InputPeerEmpty');
     expect(calls[0]!.limit).toBe(100);
+    // запросы собраны настоящими классами GramJS и сериализуются
+    for (const call of gw.tg.callsOf('messages.GetDialogs')) expect(() => call.request.getBytes()).not.toThrow();
   });
 
   it('фильтр по названию и типу; чат из списка дальше открывается по id', async () => {

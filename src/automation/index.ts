@@ -78,6 +78,12 @@ export function buildAutomation(deps: AutomationDeps): Automation {
     { editable: true },
   );
 
+  approvals.register('react', async approval => {
+    const p = approval.payload as { accountId: string; chatKey: string; messageId: number; emoji: string | null; where: string };
+    await write.react({ userId: approval.userId, accountId: p.accountId, source: approval.source }, chatOf(p.accountId, p.chatKey), p.messageId, p.emoji);
+    return { summary: p.emoji ? `Reaction ${p.emoji} is set on ${p.where}` : `The reaction is removed from ${p.where}` };
+  });
+
   approvals.register(
     'join',
     async approval => {
