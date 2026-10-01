@@ -10,10 +10,13 @@
 - Плоские JSON-схемы: строки, числа, boolean, enum и массивы из них. Без union, `anyOf` и вложенных объектов.
 - Имена `tg_*` в snake_case. В `core` не больше 10-12 инструментов: описания всех инструментов попадают в контекст агента.
 - Аннотации: `readOnlyHint` для чтения, `destructiveHint` для записи.
-- Ответ компактным текстом (одна строка заголовка на сообщение: чат, автор, дата, просмотры, ответы, ссылка t.me), текст обрезан до лимита, в конце `next_cursor`. Для клиентов с outputSchema тот же ответ дублируется в `structuredContent`.
+- Ответ компактным текстом (одна строка заголовка на сообщение: чат, автор, дата, просмотры, ответы, ссылка t.me), текст обрезан до лимита, в конце `next_cursor`. `structuredContent` пока не отдаётся (решение 20).
 - Ошибки как `isError` с понятным текстом и `retry_after` для FLOOD_WAIT.
 - Любой вызов укладывается примерно в 30 секунд, долгое оформляется задачей (`job_id`).
-- Текст из Telegram всегда помечен как чужой (untrusted envelope).
+- Текст из Telegram всегда помечен как чужой (untrusted envelope): блок между `<<<TG:метка` и `TG:метка>>>` или строка с `> `. Метка случайная для каждого ответа.
+- Даты в аргументах: `30d`, `12h`, `2w`, `2026-09-01` или ISO. Время в ответах UTC.
+- `tg_status` доступен при любом составе наборов.
+- Точные схемы аргументов: `src/mcp/tools/core.ts`. Таблицы ниже описывают назначение, код первичен.
 - Вызов идёт от пользователя, которого шлюз узнаёт по bearer-токену. У инструментов, которые ходят в Telegram, необязательный параметр `account`: по умолчанию аккаунт пользователя, доступны только свои и общие аккаунты (решение 16).
 
 ## core: основной, включён по умолчанию
@@ -28,7 +31,7 @@
 | `tg_get_message` | Сообщение по ссылке плюс контекст до и после | channels.getMessages, messages.getHistory | refreshService.ts:75 | Чтение |
 | `tg_get_comments` | Комментарии к посту, с поиском и сортировкой по реакциям | messages.getDiscussionMessage, messages.getReplies, messages.search | helper commentsRefresher.ts, discussion.ts | Комментарии |
 | `tg_list_topics` | Темы форума в группе | getForumTopics | новое | Темы форумов |
-| `tg_export` | Выгрузка по фильтрам в JSONL или CSV: цены, тип объявления, превью фото | messages.search, messages.getHistory, upload.getFile | db/export/export.ts, archiveService.ts:180 | Выгрузка в файл |
+| `tg_export` | Выгрузка по фильтрам в JSONL или CSV: цены, тип объявления, превью фото. Долгая выгрузка возвращает `job_id`, статус читается тем же инструментом | messages.search, messages.getHistory, upload.getFile | db/export/export.ts, archiveService.ts:180 | Выгрузка в файл |
 | `tg_get_media` | Фото, альбом целиком или превью видео; размер thumb или full; путь к файлу или картинка прямо в ответе | upload.getFile | processMediaClient.ts, archiveService.ts:345 | Изображения и медиа |
 
 ## automate: правила, поручения, входящие

@@ -2,7 +2,7 @@
 
 > Сгенерировано из данных интерактивной схемы (`docs/architecture.html`) 1 октября 2026. Дальше файл правится вручную.
 
-Шлюз запускается один раз, каждый клиент добавляет его одной записью. Синтаксис конфигов клиентов записан по памяти: перед выпуском сверить с текущей документацией каждого клиента. Команды `tg-mcp` пока гипотетические.
+Шлюз запускается один раз, каждый клиент добавляет его одной записью. Установка на лабораторную машину описана в [deploy.md](deploy.md). Конфиги Codex и OpenCode проверены 1 октября 2026 ([findings.md](findings.md)); Hermes записан по памяти. Правила, поручения и runner (фазы 2 и 3) пока описывают план, а не готовые команды.
 
 ## Шлюз
 
@@ -139,8 +139,17 @@ tool_timeout_sec = 90
 
 # или через stdio-прокладку
 # [mcp_servers.telegram]
-# command = "tg-mcp"
+# command = "/opt/telegram-gateway-mcp/bin/tg-mcp"
 # args = ["stdio"]
+```
+
+Разовый запуск без правки конфига (проверено):
+
+```bash
+TG_MCP_TOKEN=... codex exec --skip-git-repo-check \
+  -c 'mcp_servers.telegram.url="http://127.0.0.1:7777/mcp"' \
+  -c 'mcp_servers.telegram.bearer_token_env_var="TG_MCP_TOKEN"' \
+  "Call tg_status and tell me which accounts I have."
 ```
 
 ## OpenCode

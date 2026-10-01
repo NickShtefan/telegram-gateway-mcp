@@ -12,11 +12,14 @@ import {
   describeAccounts,
   describeUsers,
   grantAccount,
+  listScopes,
   removeAccount,
+  removeScope,
   removeUser,
   revokeAccount,
   rotateToken,
   setDefaultAccount,
+  setScope,
 } from './admin.js';
 import { runDoctor } from './doctor.js';
 import { terminalIo, type CliIo } from './io.js';
@@ -45,6 +48,9 @@ Usage:
   tg-mcp account grant <account> <user>
   tg-mcp account revoke <account> <user>
   tg-mcp account remove <account>
+  tg-mcp scope list <user> <account>
+  tg-mcp scope allow|deny <user> <account> <chat>  open a private chat to a user, or close any chat
+  tg-mcp scope remove <user> <account> <chat>
 
 State lives in TG_MCP_HOME (default ~/.tg-mcp). Telegram API credentials go to <home>/.env as TG_API_ID and TG_API_HASH.`;
 
@@ -146,6 +152,9 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
 
       case 'account':
         return accountCommand(rest, getStorage(), io);
+
+      case 'scope':
+        return scopeCommand(rest, getStorage(), io);
 
       default:
         throw new GatewayError('INVALID_ARGUMENT', `Unknown command "${command}". Run "tg-mcp help" for usage.`);
@@ -253,5 +262,30 @@ function accountCommand(args: string[], storage: Storage, io: CliIo): number {
     }
     default:
       throw new GatewayError('INVALID_ARGUMENT', 'Usage: tg-mcp account list|grant|revoke|remove');
+  }
+}
+
+function scopeCommand(args: string[], storage: Storage, io: CliIo): number {
+  const [sub, user, account, chat] = args;
+  switch (sub) {
+    case 'list': {
+      const rules = listScopes(storage, need(user, 'user id'), need(account, 'account id'));
+      if (rules.length === 0) io.out('No scope rules: channels and groups are open, private chats and Telegram service chats are closed.');
+      for (const r of rules) io.out(`${r.effect}  ${/^-?\d+$/.test(r.target) ? r.target : '@' + r.target}  (${r.source})`);
+      return 0;
+    }
+    case 'allow':
+    case 'deny': {
+      const target = setScope(storage, need(user, 'user id'), need(account, 'account id'), need(chat, 'chat'), sub);
+      io.out(`${sub === 'allow' ? 'Opened' : 'Closed'} ${target} for user "${user}" on account "${account}".`);
+      return 0;
+    }
+    case 'remove': {
+      const removed = removeScope(storage, need(user, 'user id'), need(account, 'account id'), need(chat, 'chat'));
+      io.out(removed > 0 ? 'Rule removed.' : 'No such rule.');
+      return 0;
+    }
+    default:
+      throw new GatewayError('INVALID_ARGUMENT', 'Usage: tg-mcp scope list|allow|deny|remove <user> <account> [chat]');
   }
 }

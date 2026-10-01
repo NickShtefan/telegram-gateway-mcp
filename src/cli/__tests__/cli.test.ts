@@ -173,4 +173,19 @@ describe('main', () => {
     expect(out.join('\n')).toContain('agent  no session  -  users: [nick, partner]  shared');
     expect(await main(['account', 'grant', 'agent', 'ghost'], { io, config, storage })).toBe(1);
   });
+
+  it('scope: владелец открывает личный чат и закрывает канал', async () => {
+    await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage });
+    out.length = 0;
+    expect(await main(['scope', 'allow', 'nick', 'agent', '@Seller'], { io, config, storage })).toBe(0);
+    expect(await main(['scope', 'deny', 'nick', 'agent', '-1001782171896'], { io, config, storage })).toBe(0);
+    expect(await main(['scope', 'list', 'nick', 'agent'], { io, config, storage })).toBe(0);
+    expect(out.join('\n')).toContain('allow  @seller  (owner)');
+    expect(out.join('\n')).toContain('deny  -1001782171896  (owner)');
+    expect(await main(['scope', 'remove', 'nick', 'agent', 't.me/seller'], { io, config, storage })).toBe(0);
+    expect(storage.scopes.list('nick', 'agent')).toHaveLength(1);
+    // чужой аккаунт и инвайт не принимаются
+    expect(await main(['scope', 'allow', 'nick', 'other', '@x_user'], { io, config, storage })).toBe(1);
+    expect(await main(['scope', 'allow', 'nick', 'agent', 't.me/+AbCdEf'], { io, config, storage })).toBe(1);
+  });
 });

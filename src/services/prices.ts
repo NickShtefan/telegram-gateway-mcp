@@ -49,8 +49,12 @@ const WE = String.raw`(?![\p{L}\p{N}_])`;
 // Телефоны
 // ---------------------------------------------------------------------------
 
-/** Разделитель между группами цифр телефона: пробел, дефис или дефис в пробелах. */
-const PHONE_GAP = String.raw`(?:[ \u00A0\u202F]?[\-\u2013]?[ \u00A0\u202F]?)`;
+/**
+ * Разделитель между группами цифр телефона: пробел, дефис или дефис в пробелах.
+ * Дефисом считаются и его типографские двойники: неразрывный дефис (U+2011),
+ * цифровое тире (U+2012), короткое тире (U+2013), минус (U+2212).
+ */
+const PHONE_GAP = String.raw`(?:[ \u00A0\u202F]?[\-\u2011\u2012\u2013\u2212]?[ \u00A0\u202F]?)`;
 
 /**
  * Телефон. Две формы:
@@ -58,14 +62,16 @@ const PHONE_GAP = String.raw`(?:[ \u00A0\u202F]?[\-\u2013]?[ \u00A0\u202F]?)`;
  *    дефис и скобки (`+7 999 123-45-67`, `+1 (415) 555-2671`).
  * 2. Без плюса: ровно 11 цифр, первая 7 или 8, код из трёх цифр подряд
  *    (можно в скобках) начинается на 0, 3, 4, 7, 8 или 9: `8 (999) 123-45-67`,
- *    `89991234567`, белорусское `8 029 ...`. Ограничение на код отсекает цены
- *    вида `8 500 000`.
+ *    `89991234567`, белорусское `8 029 ...`. Остальные семь цифр идут группами
+ *    3-2-2, 3-4, 2-2-3 или 4-3 (или слитно). Ограничения на код и на группы
+ *    отсекают цены вида `8 500 000` и `7 800 000 4 000 000`.
  * Слева не должно быть буквы, цифры, `_`, `+`, `#` (это id и хэштеги), справа
  * не должно быть цифры (так отпадают карты из 16 цифр и длинные id).
  */
 const PHONE_SRC =
   String.raw`(?<![\p{L}\p{N}_+#])(?:(\+\d(?:${PHONE_GAP}\(?\d\)?){9,14})` +
-  String.raw`|[78]${PHONE_GAP}\(?[034789]\d{2}\)?(?:${PHONE_GAP}\d){7})(?!\d)`;
+  String.raw`|[78]${PHONE_GAP}\(?[034789]\d{2}\)?${PHONE_GAP}` +
+  String.raw`(?:\d{3}${PHONE_GAP}\d{2}${PHONE_GAP}\d{2}|\d{3}${PHONE_GAP}\d{4}|\d{2}${PHONE_GAP}\d{2}${PHONE_GAP}\d{3}|\d{4}${PHONE_GAP}\d{3}))(?!\d)`;
 
 /**
  * Длина номера вместе с кодом страны. Нужна, чтобы международный номер не
@@ -197,7 +203,9 @@ function parseNumber(raw: string): ParsedNumber | null {
     return m ? { value: Number(`${m[1]}.${m[2]}`), form: 'decimal', decimals: 2 } : null;
   }
   // `25.000`, `1.500.000`, `25,000`: один и тот же разделитель, группы по три цифры.
+  // Три группы через запятую с трёхзначной первой (`500,600,700`) это перечисление, а не сотни миллионов.
   if (/^[1-9]\d{0,2}(?:\.\d{3})+$/.test(s) || /^[1-9]\d{0,2}(?:,\d{3})+$/.test(s)) {
+    if (/^\d{3},\d{3},/.test(s)) return null;
     return { value: Number(s.replace(/[.,]/g, '')), form: 'grouped', decimals: 0 };
   }
   // `1,5`, `2.5`, `999.90`: дробь с одной или двумя цифрами после разделителя.
@@ -207,28 +215,38 @@ function parseNumber(raw: string): ParsedNumber | null {
 }
 
 /** Объёмы памяти: в `256 100 000 руб` первая группа это гигабайты, а не миллионы. */
-const STORAGE_SIZES = new Set(['32', '64', '128', '256', '512']);
+const STORAGE_SIZES = new Set(['64', '128', '256', '512']);
 
 /**
- * Слово перед числом, после которого первая группа цифр это номер модели:
- * `iPhone 15 100 000 руб` читается как 100 000, а не 15 100 000.
+ * Слово перед числом, после которого одна-две цифры это номер модели:
+ * `iPhone 15 100 000 руб` читается как 100 000, а не 15 100 000. Здесь только
+ * слова, за которыми обычно идёт номер (Pro, Max, MacBook сюда не входят:
+ * после них сразу пишут цену).
  */
 const GADGET_BEFORE_RE = new RegExp(
-  String.raw`${WB}(?:iphone|айфон\p{L}*|ipad|айпад\p{L}*|galaxy|note|redmi|poco|pixel|xiaomi|honor|realme|oneplus|huawei|series|watch|pro|max|plus|ultra|mini|air|macbook|playstation|ps|xbox)[${SP}]$`,
+  String.raw`${WB}(?:iphone|айфон\p{L}*|ipad|айпад\p{L}*|galaxy|note|redmi|poco|pixel|xiaomi|honor|realme|oneplus|huawei|series|watch|playstation|ps|xbox)[${SP}]$`,
   'iu',
 );
 
+/** Число с разрядами через пробел: первая группа, вторая группа, есть ли третья. */
+const SPACED_GROUPS_RE = new RegExp(String.raw`^(\d{1,3})[${SP}](\d{3})([${SP}]\d{3})?`, 'u');
+
 /**
- * Сколько символов в начале числа с пробелами относится к модели или объёму
- * памяти. Срабатывает только когда групп три и больше (иначе `25 000` после
- * слова Samsung потеряло бы тысячи).
+ * Первая группа числа с пробелами может быть номером модели (`iPhone 15`) или
+ * объёмом памяти (`256`), приклеившимся к цене.
+ * - Групп три и больше: первая группа отрезается, `skip` это её длина с пробелом.
+ * - Групп две (`iPhone 12 500$`, `256 500$`): понять, где цена, нельзя, число
+ *   помечается как неоднозначное и ценой не считается. Круглые `128 000`
+ *   остаются ценой.
  */
-function modelPrefixLength(raw: string, before: string): number {
-  const m = new RegExp(`^(\\d{1,3})[${SP}]\\d{3}[${SP}]\\d{3}`, 'u').exec(raw);
-  if (!m) return 0;
+function modelPrefix(raw: string, before: string): { skip: number; ambiguous: boolean } {
+  const m = SPACED_GROUPS_RE.exec(raw);
+  if (!m) return { skip: 0, ambiguous: false };
   const first = m[1]!;
-  if (STORAGE_SIZES.has(first) || (first.length <= 2 && GADGET_BEFORE_RE.test(before))) return first.length + 1;
-  return 0;
+  const model = first.length <= 2 && GADGET_BEFORE_RE.test(before);
+  const storage = STORAGE_SIZES.has(first);
+  if (m[3] !== undefined) return { skip: model || storage ? first.length + 1 : 0, ambiguous: false };
+  return { skip: 0, ambiguous: model || (storage && m[2] !== '000') };
 }
 
 // ---------------------------------------------------------------------------
@@ -381,12 +399,28 @@ const UNIT_RE = new RegExp(
 
 /**
  * Слово перед числом, после которого число точно не цена: пробег, артикул,
- * код, id, номер, телефон, модель, размер, рост, вес, память, объём, лот.
+ * код, id, номер, телефон, ИНН, IMEI, модель, лот, знак номера.
  */
 const NOT_PRICE_BEFORE_RE = new RegExp(
-  String.raw`(?:${WB}(?:пробег\p{L}*|артикул\p{L}*|арт|код|id|ид|номер|тел|телефон|инн|imei|модел\p{L}|размер\p{L}*|рост|вес|памят\p{L}|объ[её]м\p{L}*|лот)|№)[\s:.#№${DASH}]*$`,
+  String.raw`(?:${WB}(?:пробег\p{L}*|артикул\p{L}*|арт|код|id|ид|номер|тел|телефон|инн|imei|модел\p{L}|лот)|№)[\s:.#№${DASH}]*$`,
   'iu',
 );
+
+/**
+ * Слово перед числом, после которого маленькое число (меньше 1000) это
+ * характеристика, а не цена: размер, рост, вес, память, объём. `размер 46р`
+ * не цена, а `42 размер 2500 руб` цена.
+ */
+const MEASURE_BEFORE_RE = new RegExp(
+  String.raw`${WB}(?:размер\p{L}*|рост|вес|памят\p{L}|объ[её]м\p{L}*)[\s:.${DASH}]*$`,
+  'iu',
+);
+
+/**
+ * После числа через пробел идёт слово: для голого числа меньше 10 это
+ * количество, а не цена. Слово "до" перед числом не в счёт: это диапазон.
+ */
+const COUNT_FOLLOW_RE = /^[ \t]+(?!до\s+\d)\p{L}/iu;
 
 /** Число приклеено к букве, цифре, `_`, `#`, `@`, косой черте: `M2`, `A52`, `#123`, ссылка. */
 const GLUED_BEFORE_RE = /(?:[\p{L}\p{N}_#@/\\×]|\d[.,:])$/u;
@@ -420,10 +454,11 @@ const EACH_BEFORE_RE = new RegExp(String.raw`${WB}по\s$`, 'iu');
 
 /**
  * Что должно идти после `25 к` с пробелом, чтобы это был множитель, а не
- * предлог ("приеду в 5 к вам") или корпус дома ("д. 25 к. 2"): конец строки,
- * знак препинания, эмодзи или слово "торг". Буква или цифра не годятся.
+ * предлог ("приеду в 5 к вам") или корпус дома ("д. 25 к. 2"): конец текста,
+ * знак препинания, эмодзи, слово "торг" или точка и новое предложение с
+ * заглавной буквы. Строчная буква или цифра не годятся.
  */
-const SPACED_K_FOLLOW_RE = /^\.?[ \t]*(?:$|[^\p{L}\p{N} \t]|торг)/iu;
+const SPACED_K_FOLLOW_RE = /^\.?[ \t]*(?:$|[^\p{L}\p{N} \t.]|[Тт][Оо][Рр][Гг])|^\.[ \t]+\p{Lu}/u;
 
 /** Слова рядом с `4к`, `2к`, `8k`, по которым это разрешение экрана, а не цена. */
 const RESOLUTION_CONTEXT_RE = new RegExp(
@@ -440,6 +475,8 @@ const RESOLUTION_P = new Set([480, 720, 1080, 1440, 2160]);
 
 /** `2к квартира`, `1к.кв`: число комнат, а не тысячи. */
 const FLAT_FOLLOW_RE = /^[.-]?\s?(?:кв|комн)/iu;
+/** Слова рядом с `3к`, по которым это число комнат: "меняю 2к квартиру на 3к". */
+const FLAT_CONTEXT_RE = new RegExp(String.raw`${WB}(?:квартир|комнат|однушк|двушк|тр[её]шк|студи)`, 'iu');
 
 /** "от" перед нижней границей диапазона: `от 20 до 25 тыс`. */
 const FROM_BEFORE_RE = new RegExp(String.raw`${WB}от\s+$`, 'iu');
@@ -531,10 +568,12 @@ function buildAtoms(text: string): Atom[] {
       continue;
     }
 
-    const skip = modelPrefixLength(raw, text.slice(Math.max(0, numStart - 24), numStart));
-    if (skip > 0) {
-      numStart += skip;
-      raw = raw.slice(skip);
+    // До двух проходов: `iPhone 15 256 100 000 руб` теряет сначала модель, потом память.
+    let model = modelPrefix(raw, text.slice(Math.max(0, numStart - 24), numStart));
+    for (let pass = 0; pass < 2 && model.skip > 0; pass++) {
+      numStart += model.skip;
+      raw = raw.slice(model.skip);
+      model = modelPrefix(raw, text.slice(Math.max(0, numStart - 24), numStart));
     }
 
     const parsed = BROKEN_TAIL_RE.test(text.slice(numEnd, numEnd + 2)) ? null : parseNumber(raw);
@@ -550,20 +589,30 @@ function buildAtoms(text: string): Atom[] {
     const after = text.slice(suffix.end, suffix.end + 32);
 
     const keyword: Keyword = STRONG_KEYWORD_RE.test(before) ? 'strong' : WEAK_KEYWORD_RE.test(before) ? 'weak' : null;
-    const blockedByWord = NOT_PRICE_BEFORE_RE.test(before);
+    const blockedByWord =
+      NOT_PRICE_BEFORE_RE.test(before) ||
+      (parsed.value * (suffix.mult ?? 1) < 1000 && MEASURE_BEFORE_RE.test(before));
     const glued = !prefix && GLUED_BEFORE_RE.test(before);
     const unitAfter = suffix.currency === null && !prefix && UNIT_RE.test(after);
+    // "отдам за 1 шоколадку", "цена 3 пачки": маленькое голое число перед словом это количество.
+    const countAfter =
+      suffix.mult === null && suffix.currency === null && !prefix && parsed.value < 10 && COUNT_FOLLOW_RE.test(after);
+    // `15 000 т.р.`, `25000к`: тысячи тысяч и тысячи миллионов так не пишут, смысл неясен.
+    const oddMult = suffix.mult !== null && parsed.value >= (suffix.mult === 1e6 ? 1000 : 10000);
 
     let shakyMult = false;
     if (suffix.mult !== null && suffix.style !== 'word') {
       if (suffix.style === 'letter-spaced' && !SPACED_K_FOLLOW_RE.test(after)) shakyMult = true;
       if (suffix.style === 'letter' && parsed.value <= 5 && FLAT_FOLLOW_RE.test(after)) shakyMult = true;
+      const lineBefore = before.slice(before.lastIndexOf('\n') + 1).slice(-32);
+      const lineAfter = after.split('\n')[0]!.slice(0, 24);
       if (RESOLUTION_K.has(parsed.value)) {
-        const lineBefore = before.slice(before.lastIndexOf('\n') + 1).slice(-32);
-        const lineAfter = after.split('\n')[0]!.slice(0, 24);
         if (IN_BEFORE_RE.test(before) || RESOLUTION_CONTEXT_RE.test(lineBefore) || RESOLUTION_CONTEXT_RE.test(lineAfter)) {
           shakyMult = true;
         }
+      }
+      if (Number.isInteger(parsed.value) && parsed.value <= 5) {
+        if (FLAT_CONTEXT_RE.test(lineBefore) || FLAT_CONTEXT_RE.test(lineAfter)) shakyMult = true;
       }
     }
 
@@ -585,7 +634,7 @@ function buildAtoms(text: string): Atom[] {
       currency: suffix.currency ?? (prefix ? (PREFIX_CURRENCIES[prefix[1]!] ?? null) : null),
       suffixed: suffix.mult !== null || suffix.currency !== null,
       keyword,
-      blocked: blockedByWord || glued || unitAfter,
+      blocked: blockedByWord || glued || unitAfter || countAfter || oddMult || model.ambiguous,
       blockedByWord,
       shakyMult,
       shakyCurrency,

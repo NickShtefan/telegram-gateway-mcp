@@ -4,7 +4,8 @@
  */
 import { randomToken, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
-import type { AccountRecord, Storage, UserRecord } from '../storage/port.js';
+import { parseRef } from '../services/links.js';
+import type { AccountRecord, ScopeEffect, ScopeRule, Storage, UserRecord } from '../storage/port.js';
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
@@ -147,4 +148,40 @@ export function describeAccounts(storage: Storage): AccountView[] {
       shared: users.length > 1,
     };
   });
+}
+
+/** Цель правила скоупа: username без @ в нижнем регистре или ключ чата. */
+export function scopeTarget(chat: string): string {
+  const parsed = parseRef(chat);
+  if (parsed.chat.type === 'username') return parsed.chat.username.toLowerCase();
+  if (parsed.chat.type === 'peer') return parsed.chat.peerKey;
+  throw new GatewayError('INVALID_ARGUMENT', 'A scope rule needs a @username or a numeric chat id, not an invite link.');
+}
+
+function assertUserAccount(storage: Storage, userId: string, accountId: string): void {
+  if (!storage.users.get(userId)) throw new GatewayError('NOT_FOUND', `User "${userId}" does not exist.`);
+  if (!storage.accounts.hasAccess(userId, accountId)) {
+    throw new GatewayError('ACCESS_DENIED', `User "${userId}" has no access to account "${accountId}".`);
+  }
+}
+
+/**
+ * Открывает (allow) или закрывает (deny) чат пользователю на аккаунте.
+ * Личные переписки закрыты, пока владелец не открыл их явно.
+ */
+export function setScope(storage: Storage, userId: string, accountId: string, chat: string, effect: ScopeEffect): string {
+  assertUserAccount(storage, userId, accountId);
+  const target = scopeTarget(chat);
+  storage.scopes.put({ userId, accountId, target, effect, source: 'owner' });
+  return target;
+}
+
+export function removeScope(storage: Storage, userId: string, accountId: string, chat: string): number {
+  assertUserAccount(storage, userId, accountId);
+  return storage.scopes.remove(userId, accountId, scopeTarget(chat), 'owner');
+}
+
+export function listScopes(storage: Storage, userId: string, accountId: string): ScopeRule[] {
+  assertUserAccount(storage, userId, accountId);
+  return storage.scopes.list(userId, accountId);
 }

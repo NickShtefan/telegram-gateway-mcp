@@ -2,7 +2,7 @@
 
 Telegram MCP-шлюз. Один долгоживущий демон держит сессию Telegram-аккаунта и отдаёт её агентам (Claude Code, Codex, OpenCode, Hermes и любым MCP-клиентам) как набор инструментов: поиск по каналам и чатам, чтение истории и комментариев, скачивание картинок, мониторинг с ответами и переписка с людьми по поручению.
 
-**Статус:** проектирование. Кода шлюза пока нет, есть архитектура, решения, план и снимок исходников, которые будем переиспользовать.
+**Статус:** фазы 0 и 1 написаны и покрыты тестами (ядро, вход, чтение, поиск, комментарии, выгрузка, медиа, HTTP-демон, stdio-прокладка). Живая проверка на Telegram ждёт тестового номера. Текущее состояние: [docs/plan.md](docs/plan.md).
 
 **Репозиторий:** приватный `telegram-gateway-mcp`, в npm не публикуется. Демон работает на лабораторной машине `macbook-pro-lab.local` рядом с агентами. Пользуются двое, владелец и жена владельца: у каждого свои аккаунты Telegram, есть общие.
 
@@ -34,12 +34,27 @@ Telegram MCP-шлюз. Один долгоживущий демон держит
 | [docs/connect.md](docs/connect.md) | Конфиги клиентов, пример правила и поручения. |
 | [docs/borrow-map.md](docs/borrow-map.md) | Какой файл из соседних репозиториев в какой компонент идёт, и что не переносим. |
 | [docs/risks.md](docs/risks.md) | Риски от самых дорогих. |
-| [docs/plan.md](docs/plan.md) | Фазы работ и предлагаемая структура кода. |
+| [docs/plan.md](docs/plan.md) | Фазы работ, статус и структура кода. |
+| [docs/deploy.md](docs/deploy.md) | Установка на лабораторную машину, обновление, запуск при разработке. |
+| [scripts/lab-install.sh](scripts/lab-install.sh) | Боевая установка под отдельным пользователем macOS (запускает владелец, нужен sudo). |
+| `src/` | Код шлюза: `core`, `storage`, `policy`, `services`, `mcp`, `transport`, `cli`. |
 | [docs/open-questions.md](docs/open-questions.md) | Что решено и что ещё нужно решить. |
 | [docs/findings.md](docs/findings.md) | Заметки по изучению кода соседних репозиториев и факты, которые надо проверить. |
 | [docs/prior-art.md](docs/prior-art.md) | Готовые Telegram MCP-серверы, мосты к агентам, Business-боты, правила Telegram: что взять и чего не повторять. |
 | [reference/](reference/) | Снимок исходников channel-scope, helper и canary (только чтение). Коммиты в [reference/SNAPSHOT.md](reference/SNAPSHOT.md). |
 | [scripts/sync-reference.sh](scripts/sync-reference.sh) | Обновить снимок по списку [reference/MANIFEST.txt](reference/MANIFEST.txt). |
+
+## Быстрый старт для разработки
+
+```bash
+npm ci && npm run build && npm test
+```
+
+```bash
+node dist/cli/index.js help
+```
+
+Состояние лежит в `~/.tg-mcp` (или в `TG_MCP_HOME`). Учётные данные приложения Telegram кладутся в `<папка>/.env` как `TG_API_ID` и `TG_API_HASH`.
 
 ## Соседние репозитории
 

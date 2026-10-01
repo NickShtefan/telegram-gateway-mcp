@@ -51,14 +51,26 @@
 - blog: контент блога, к проекту не относится.
 - helper_old: старый архив. `git fetch` падает на битой ссылке `refs/heads/main 2` (похоже на дубликат файла от Finder или iCloud). Не трогали.
 
+## Проверено при реализации (1 октября 2026)
+
+По установленному GramJS 2.26.22 (слой 198) и прогонам клиентов.
+
+- **Темы форумов:** `channels.GetForumTopics`, чтение темы через `messages.GetReplies` с id темы.
+- **`channels.SearchPosts`** в этом слое принимает только `hashtag`. Поиска по тексту публичных постов в GramJS 2.26.22 нет; `CheckSearchPostsFlood` тоже нет.
+- **`thumb` у `downloadMedia`** принимает индекс, букву типа размера (`m` это около 320 px) или объект размера. Шлюз передаёт букву.
+- **`channels.GetSendAs`** есть, у `messages.SendMessage` есть `sendAs`.
+- **`node:sqlite`** работает под vitest без обходных путей, FTS5 есть на обеих машинах.
+- **Codex 0.144:** `codex exec -c 'mcp_servers.telegram.url="..."' -c 'mcp_servers.telegram.bearer_token_env_var="TG_MCP_TOKEN"'` подключается по Streamable HTTP и вызывает инструмент. Проверено на лабораторной машине.
+- **OpenCode 1.3.6:** `opencode.json` с `"type": "remote"`, `url` и `headers` подключается (`opencode mcp list` показывает `connected`). `opencode run` на лабораторной машине не работает: провайдеров моделей нет, а бесплатные модели в неинтерактивном режиме запрещены.
+- **Claude Code 2.1.286:** `claude -p --mcp-config ... --strict-mcp-config --allowedTools` принимает конфиг с `"type": "http"` и `headers`. По SSH на лабораторной машине `claude -p` не авторизуется: OAuth-токен лежит в связке ключей, недоступной SSH-сессии. Полный прогон ещё не сделан (упёрлись в лимит сессии подписки).
+- В `~/.claude/settings.json` на лабораторной машине Claude Code предупреждает о двух правилах разрешений, которые не срабатывают: `Bash(cp /Users/nick/.claude/channels/telegram/inbox/*:*)` и `Write(//Users/nick/.claude/busy.flag)`. К шлюзу это не относится, но бот-мост может работать не так, как задумано.
+
 ## Факты про Telegram, которые надо проверить
 
 - `messages.searchGlobal` ищет только по чатам аккаунта.
 - `messages.search` и `messages.getReplies` работают в публичных каналах и группах без вступления; где нужно вступать.
 - Полнотекстовый поиск по публичным постам (Premium, квота) и его поддержка в текущем GramJS.
-- Темы форумов: какой метод в текущем слое (`getForumTopics` в `channels` или `messages`).
-- `send_as` для ответа от имени канала в группе обсуждений.
-- Параметр `thumb` у `downloadMedia` в GramJS для выбора размера фото.
+- `send_as` для ответа от имени канала в группе обсуждений: метод есть, поведение надо проверить вживую.
 - Порог и поведение `PEER_FLOOD` для сообщений незнакомым людям.
 
 ## Факты про клиенты, которые надо проверить
