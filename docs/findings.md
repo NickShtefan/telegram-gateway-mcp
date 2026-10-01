@@ -81,3 +81,4 @@
 - Codex: `url`, `bearer_token_env_var`, `tool_timeout_sec`, `startup_timeout_sec` в `[mcp_servers.*]`.
 - OpenCode: `type: remote`, `headers` с подстановкой `{env:...}`.
 - Hermes: `mcp_servers` с `url` и `headers` в `~/.hermes/config.yaml`, подстановка переменных окружения.
+- Путь unix-сокета ограничен 104 байтами на macOS. Блокировка демона это сокет `daemon.sock` в папке шлюза, поэтому слишком длинный `TG_MCP_HOME` даёт ошибку с подсказкой выбрать путь короче. Боевой путь `/var/tgmcp/.tg-mcp` короткий.

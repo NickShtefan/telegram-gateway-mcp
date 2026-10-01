@@ -15,9 +15,25 @@ export function lockPath(home: string): string {
   return join(home, 'daemon.sock');
 }
 
+/** Предел длины пути unix-сокета (sun_path): 104 байта на macOS, 108 на Linux, вместе с завершающим нулём. */
+const SOCKET_PATH_MAX = process.platform === 'darwin' ? 103 : 107;
+
+function pathFits(path: string): boolean {
+  return Buffer.byteLength(path) <= SOCKET_PATH_MAX;
+}
+
+function pathTooLong(home: string): GatewayError {
+  return new GatewayError(
+    'INVALID_ARGUMENT',
+    `The gateway folder path is too long for the lock socket (${Buffer.byteLength(lockPath(home))} bytes, the system limit is ${SOCKET_PATH_MAX}): ${home}. Set TG_MCP_HOME to a shorter path.`,
+  );
+}
+
 /** Отвечает ли живой процесс на сокете блокировки. */
 export function isLockHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
   const path = lockPath(home);
+  // По такому пути сокет создать нельзя, значит и владельца у него быть не может.
+  if (!pathFits(path)) return Promise.resolve(false);
   if (!existsSync(path)) return Promise.resolve(false);
   return new Promise<boolean>(resolve => {
     const socket = connect(path);
@@ -42,6 +58,7 @@ export interface DaemonLock {
  */
 export async function acquireLock(home: string): Promise<DaemonLock> {
   const path = lockPath(home);
+  if (!pathFits(path)) throw pathTooLong(home);
   const held = (): GatewayError =>
     new GatewayError(
       'UNAVAILABLE',

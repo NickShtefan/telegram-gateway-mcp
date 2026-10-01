@@ -169,6 +169,12 @@ describe('lock: гонки и мусор', () => {
     await lock.release();
   });
 
+  it('слишком длинный путь к папке шлюза даёт понятную ошибку, а не EINVAL', async () => {
+    const deep = join(home, 'a'.repeat(60), 'b'.repeat(60));
+    expect(await isLockHeld(deep)).toBe(false);
+    await expect(acquireLock(deep)).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('Set TG_MCP_HOME to a shorter path') });
+  });
+
   it('обычный файл на месте сокета не считается живым процессом', async () => {
     writeFileSync(lockPath(home), 'stale');
     const lock = await acquireLock(home);
