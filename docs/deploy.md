@@ -9,7 +9,7 @@
 | `/opt/telegram-gateway-mcp/app` | собранный код и зависимости | root |
 | `/opt/telegram-gateway-mcp/node` | своя копия Node 22 с nodejs.org | root |
 | `/opt/telegram-gateway-mcp/install.sh` | копия установщика, запускается только отсюда | root |
-| `/opt/telegram-gateway-mcp/bin/tg-mcp` | команда для агентов: `stdio`, позже `runner` | root |
+| `/opt/telegram-gateway-mcp/bin/tg-mcp` | команда для агентов: `stdio` | root |
 | `/opt/telegram-gateway-mcp/bin/tg-mcp-admin` | команда для владельца: `login`, `user`, `account`, `scope`, `doctor` | root |
 | `/var/tgmcp/.tg-mcp` | база, ключ шифрования сессий, `.env` | `tgmcp`, права 700 |
 | `/opt/telegram-gateway-mcp/files` | выгрузки и картинки, которые читают агенты | `tgmcp`, права 755 |
@@ -102,44 +102,7 @@ sudo -u tgmcp sed -i '' 's/^TG_MCP_TOOLSETS=.*/TG_MCP_TOOLSETS=core,discover,ana
 sudo launchctl kickstart -k system/com.tg-mcp.gateway
 ```
 
-Отдельного бота для согласований нет (решение 23): агент показывает тебе предпросмотр, ты соглашаешься, он вызывает `tg_confirm`. Набор `automate` (наблюдение, правила, поручения) добавляй, когда понадобится работа без тебя; вместе с ним нужен runner.
-
-## Runner под своим пользователем
-
-Runner запускает твоего агента, когда срабатывает правило или отвечает собеседник. Ему не нужен sudo: он работает под `nick` и ходит в демон по HTTP ([connect.md](connect.md)).
-
-Чтобы он работал постоянно, положи plist в `~/Library/LaunchAgents/com.tg-mcp.runner.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.tg-mcp.runner</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/opt/telegram-gateway-mcp/bin/tg-mcp</string>
-    <string>runner</string>
-    <string>--agent</string>
-    <string>claude -p {prompt} --mcp-config /Users/nick/tg-mcp/agent.mcp.json --strict-mcp-config --allowedTools "mcp__telegram__*"</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>TG_MCP_TOKEN</key><string>ТОКЕН_ПОЛЬЗОВАТЕЛЯ</string>
-    <key>PATH</key><string>/Users/nick/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardErrorPath</key><string>/Users/nick/Library/Logs/tg-mcp-runner.log</string>
-</dict>
-</plist>
-```
-
-```bash
-chmod 600 ~/Library/LaunchAgents/com.tg-mcp.runner.plist && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tg-mcp.runner.plist
-```
-
-LaunchAgent работает в графической сессии пользователя, поэтому `claude -p` видит связку ключей и авторизуется. По SSH это не работает ([findings.md](findings.md)).
+Отдельного бота для согласований нет (решение 23): агент показывает тебе предпросмотр, ты соглашаешься, он вызывает `tg_confirm`. Набора `automate` больше нет (решение 25): шлюз ничего не делает без вызова. Если `automate` остался в `.env`, шлюз его пропустит, а `doctor` напомнит убрать.
 
 ## Обновление
 
@@ -150,7 +113,7 @@ sudo GH_TOKEN="$(gh auth token)" /opt/telegram-gateway-mcp/install.sh <полн�
 Повторный запуск обновляет код и перезапускает демон. Пользователь, база, `.env` и сессии не трогаются. Что стоит сейчас, записано в `/opt/telegram-gateway-mcp/app/COMMIT`.
 
 - Задачи выгрузки, которые выполнялись в момент перезапуска, возвращаются в очередь. Задача, которую рестарт прерывает третий раз подряд, закрывается с ошибкой.
-- Действие, которое выполнялось в момент перезапуска (подтверждение уже пришло, Telegram ещё не ответил), не повторяется: запрос закрывается с пометкой «исход неизвестен», событие об этом есть в `tg_inbox`. Проверь в Telegram.
+- Действие, которое выполнялось в момент перезапуска (подтверждение уже пришло, Telegram ещё не ответил), не повторяется: запрос закрывается с пометкой «исход неизвестен». Агент увидит это, если вызовет `tg_confirm` с тем же `approval_id`. Проверь в Telegram.
 - Если поменялся сам установщик, сначала обнови его копию командой `sudo install ...` из первой установки, перед этим прочитав изменения.
 - Лог `/var/log/tg-mcp/daemon.log` больше 10 МБ при обновлении переносится в `daemon.log.1` (хранятся три старых). Между обновлениями лог не ротируется: launchd держит файл открытым.
 
@@ -195,6 +158,6 @@ node dist/cli/index.js serve --port 7777
 - `tg-mcp-admin doctor` показывает версию Node, права на папку, наличие учётных данных, пользователей, аккаунты и работает ли демон. С `--connect` подключает аккаунты, но только когда демон остановлен: второй процесс на тех же сессиях недопустим.
 - `curl http://127.0.0.1:7777/healthz` отвечает `{"ok":true}`, если демон жив.
 - `tg_status` показывает паузы Telegram: общую паузу аккаунта и отдельные методы, закрытые долгим FLOOD_WAIT (например, `contacts.ResolveUsername` на сутки). Остальные запросы при этом работают.
-- События входящих хранятся 30 дней, аудит вызовов 90 дней. Чистка идёт в демоне раз в 6 часов.
+- Аудит вызовов хранится 90 дней, решённые запросы на запись 7 дней. Чистка идёт в демоне раз в минуту и раз в 6 часов. Других фоновых действий у демона нет: в Telegram без вызова он не ходит.
 - Демон вышел с кодом 1 и поднялся заново: в логе строка `fatal MTProto failure`. Это штатная реакция на зависший вызов GramJS (страж зависаний).
 - `Another tg-mcp process already owns the Telegram sessions`: демон уже запущен. Блокировка это сокет `daemon.sock` в папке шлюза.

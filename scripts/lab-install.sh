@@ -184,7 +184,7 @@ echo "$SHA" > "$PREFIX/app/COMMIT"
 echo "собран и установлен"
 
 step "4. Команды в $PREFIX/bin"
-# Для агентов: stdio-прокладка и runner. Работает под тем, кто её запустил.
+# Для агентов: stdio-прокладка. Работает под тем, кто её запустил.
 cat > "$PREFIX/bin/tg-mcp" <<EOF
 #!/bin/sh
 exec "$PREFIX/node/bin/node" --no-warnings "$PREFIX/app/dist/cli/index.js" "\$@"
@@ -248,8 +248,8 @@ TG_API_ID=$SEED_ID
 TG_API_HASH=$SEED_HASH
 TG_MCP_FILES_DIR=$FILES_DIR
 TG_MCP_PORT=$PORT
-# Наборы инструментов: core (чтение), write (запись в два шага: предпросмотр и tg_confirm),
-# automate (наблюдение, правила, поручения).
+# Наборы инструментов: core (чтение), discover (поиск каналов), analytics (статистика),
+# index (локальный индекс), write (запись в два шага: предпросмотр и tg_confirm).
 TG_MCP_TOOLSETS=core
 EOF
   put_env "$WORK/env.new"
