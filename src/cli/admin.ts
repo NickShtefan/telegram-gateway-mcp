@@ -1,0 +1,150 @@
+/**
+ * Управление пользователями и аккаунтами шлюза (решение 16). Чистые функции
+ * над хранилищем: команды CLI только разбирают аргументы и печатают результат.
+ */
+import { randomToken, sha256Hex } from '../core/crypto.js';
+import { GatewayError } from '../core/errors.js';
+import type { AccountRecord, Storage, UserRecord } from '../storage/port.js';
+
+const ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
+export function assertId(kind: 'user' | 'account', id: string): string {
+  if (!ID_RE.test(id)) {
+    throw new GatewayError(
+      'INVALID_ARGUMENT',
+      `Invalid ${kind} id "${id}": use 1-32 characters, lowercase letters, digits, "-" or "_", starting with a letter or digit.`,
+    );
+  }
+  return id;
+}
+
+export interface NewUser {
+  user: UserRecord;
+  /** Токен показывается один раз: шлюз хранит только его хэш. */
+  token: string;
+}
+
+export function addUser(
+  storage: Storage,
+  input: { id: string; telegramId?: string | null; accounts?: string[]; defaultAccount?: string | null },
+): NewUser {
+  const id = assertId('user', input.id);
+  if (storage.users.get(id)) {
+    throw new GatewayError('INVALID_ARGUMENT', `User "${id}" already exists.`);
+  }
+  if (input.telegramId !== undefined && input.telegramId !== null && !/^\d{1,20}$/.test(input.telegramId)) {
+    throw new GatewayError('INVALID_ARGUMENT', 'Telegram id must be a number (your numeric user id, not a username).');
+  }
+  const accounts = (input.accounts ?? []).map(a => assertId('account', a));
+  const defaultAccount = input.defaultAccount ?? accounts[0] ?? null;
+  if (defaultAccount !== null && !accounts.includes(defaultAccount)) accounts.push(assertId('account', defaultAccount));
+
+  const token = randomToken(32);
+  return storage.transaction(() => {
+    const user = storage.users.create({ id, tokenSha256: sha256Hex(token), telegramId: input.telegramId ?? null, defaultAccount });
+    for (const accountId of accounts) {
+      if (!storage.accounts.get(accountId)) storage.accounts.upsert({ id: accountId });
+      storage.accounts.grant(accountId, id);
+    }
+    return { user, token };
+  });
+}
+
+/** Выпускает новый токен; старый перестаёт работать сразу. */
+export function rotateToken(storage: Storage, userId: string): string {
+  if (!storage.users.get(userId)) throw new GatewayError('NOT_FOUND', `User "${userId}" does not exist.`);
+  const token = randomToken(32);
+  storage.users.update(userId, { tokenSha256: sha256Hex(token) });
+  return token;
+}
+
+export function removeUser(storage: Storage, userId: string): void {
+  if (!storage.users.get(userId)) throw new GatewayError('NOT_FOUND', `User "${userId}" does not exist.`);
+  storage.users.remove(userId);
+}
+
+export function grantAccount(storage: Storage, accountId: string, userId: string): void {
+  assertId('account', accountId);
+  const user = storage.users.get(userId);
+  if (!user) throw new GatewayError('NOT_FOUND', `User "${userId}" does not exist.`);
+  storage.transaction(() => {
+    if (!storage.accounts.get(accountId)) storage.accounts.upsert({ id: accountId });
+    storage.accounts.grant(accountId, userId);
+    if (user.defaultAccount === null) storage.users.update(userId, { defaultAccount: accountId });
+  });
+}
+
+export function revokeAccount(storage: Storage, accountId: string, userId: string): void {
+  const user = storage.users.get(userId);
+  if (!user) throw new GatewayError('NOT_FOUND', `User "${userId}" does not exist.`);
+  storage.transaction(() => {
+    storage.accounts.revoke(accountId, userId);
+    if (user.defaultAccount === accountId) {
+      const rest = storage.accounts.accountsOf(userId);
+      storage.users.update(userId, { defaultAccount: rest[0]?.id ?? null });
+    }
+  });
+}
+
+export function setDefaultAccount(storage: Storage, userId: string, accountId: string): void {
+  if (!storage.users.get(userId)) throw new GatewayError('NOT_FOUND', `User "${userId}" does not exist.`);
+  if (!storage.accounts.hasAccess(userId, accountId)) {
+    throw new GatewayError('ACCESS_DENIED', `User "${userId}" has no access to account "${accountId}". Grant it first.`);
+  }
+  storage.users.update(userId, { defaultAccount: accountId });
+}
+
+export function removeAccount(storage: Storage, accountId: string): void {
+  if (!storage.accounts.get(accountId)) throw new GatewayError('NOT_FOUND', `Account "${accountId}" does not exist.`);
+  storage.transaction(() => {
+    for (const user of storage.users.list()) {
+      if (user.defaultAccount === accountId) {
+        const rest = storage.accounts.accountsOf(user.id).filter(a => a.id !== accountId);
+        storage.users.update(user.id, { defaultAccount: rest[0]?.id ?? null });
+      }
+    }
+    storage.accounts.remove(accountId);
+  });
+}
+
+export interface UserView {
+  id: string;
+  telegramId: string | null;
+  defaultAccount: string | null;
+  accounts: string[];
+}
+
+export function describeUsers(storage: Storage): UserView[] {
+  return storage.users.list().map(u => ({
+    id: u.id,
+    telegramId: u.telegramId,
+    defaultAccount: u.defaultAccount,
+    accounts: storage.accounts.accountsOf(u.id).map(a => a.id),
+  }));
+}
+
+export interface AccountView {
+  id: string;
+  status: AccountRecord['status'];
+  username: string | null;
+  displayName: string | null;
+  hasSession: boolean;
+  users: string[];
+  /** Общий аккаунт: доступ есть у нескольких пользователей (решение 18). */
+  shared: boolean;
+}
+
+export function describeAccounts(storage: Storage): AccountView[] {
+  return storage.accounts.list().map(a => {
+    const users = storage.accounts.usersOf(a.id);
+    return {
+      id: a.id,
+      status: a.status,
+      username: a.username,
+      displayName: a.displayName,
+      hasSession: storage.sessions.get(a.id) !== null,
+      users,
+      shared: users.length > 1,
+    };
+  });
+}

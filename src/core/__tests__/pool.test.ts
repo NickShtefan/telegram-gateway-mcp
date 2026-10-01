@@ -1,0 +1,246 @@
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { TelegramClient } from 'telegram';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loginAccount, normalizePhone } from '../auth.js';
+import { ClientPool, type ClientFactory } from '../clientPool.js';
+import { loadConfig, loadSessionSecret, parseToolsets, requireApiCredentials } from '../config.js';
+import { seal } from '../crypto.js';
+import { AccountLimiter } from '../limiter.js';
+import { createLogger } from '../log.js';
+import { TgGateway } from '../tg.js';
+import { SqliteStorage } from '../../storage/sqlite.js';
+
+const silent = createLogger('test', { level: 'silent' });
+const SECRET = 'test-secret';
+
+interface FakeClient {
+  connect: ReturnType<typeof vi.fn>;
+  getMe: ReturnType<typeof vi.fn>;
+  invoke: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
+  start: ReturnType<typeof vi.fn>;
+  session: { save: () => string };
+  sessionGiven: string;
+}
+
+function makeFactory(setup: (client: FakeClient) => void = () => undefined) {
+  const created: FakeClient[] = [];
+  const factory: ClientFactory = ({ session }) => {
+    const client: FakeClient = {
+      connect: vi.fn(async () => true),
+      getMe: vi.fn(async () => ({ id: 1001n, username: 'agent_acc', firstName: 'Agent', lastName: null })),
+      invoke: vi.fn(async () => ({ ok: true })),
+      destroy: vi.fn(async () => undefined),
+      start: vi.fn(async () => undefined),
+      session: { save: () => 'SAVED_SESSION' },
+      sessionGiven: session,
+    };
+    setup(client);
+    created.push(client);
+    return client as unknown as TelegramClient;
+  };
+  return { factory, created };
+}
+
+let storage: SqliteStorage;
+
+beforeEach(() => {
+  storage = new SqliteStorage({ path: ':memory:' });
+  storage.accounts.upsert({ id: 'agent' });
+  storage.sessions.put('agent', seal('PLAIN_SESSION', SECRET));
+});
+
+afterEach(() => {
+  storage.close();
+  vi.useRealTimers();
+});
+
+function makePool(factory: ClientFactory, onFatal = vi.fn()) {
+  return {
+    pool: new ClientPool({ storage, credentials: () => ({ sessionSecret: SECRET, apiId: 1, apiHash: 'h' }), factory, onFatal, log: silent, connectTimeoutMs: 30_000 }),
+    onFatal,
+  };
+}
+
+describe('ClientPool', () => {
+  it('подключает аккаунт один раз, даже при параллельных запросах', async () => {
+    const { factory, created } = makeFactory();
+    const { pool } = makePool(factory);
+    const [a, b, c] = await Promise.all([pool.getClient('agent'), pool.getClient('agent'), pool.getClient('agent')]);
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+    expect(created).toHaveLength(1);
+    expect(created[0]!.sessionGiven).toBe('PLAIN_SESSION');
+    expect(pool.identity('agent')).toEqual({ tgUserId: '1001', username: 'agent_acc', displayName: 'Agent' });
+    expect(storage.accounts.get('agent')).toMatchObject({ status: 'active', tgUserId: '1001', username: 'agent_acc' });
+  });
+
+  it('аккаунт без сессии просит владельца войти', async () => {
+    storage.accounts.upsert({ id: 'fresh' });
+    const { pool } = makePool(makeFactory().factory);
+    await expect(pool.getClient('fresh')).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED', message: expect.stringContaining('tg-mcp login --account fresh') });
+    await expect(pool.getClient('missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('неверный ключ шифрования не даёт клиента', async () => {
+    const { factory, created } = makeFactory();
+    const pool = new ClientPool({ storage, credentials: () => ({ sessionSecret: 'other', apiId: 1, apiHash: 'h' }), factory, onFatal: vi.fn(), log: silent });
+    await expect(pool.getClient('agent')).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
+    expect(created).toHaveLength(0);
+  });
+
+  it('неавторизованная сессия помечает аккаунт и закрывает клиента', async () => {
+    const { factory, created } = makeFactory(c => c.getMe.mockResolvedValue(null));
+    const { pool } = makePool(factory);
+    await expect(pool.getClient('agent')).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
+    expect(storage.accounts.get('agent')?.status).toBe('unauthorized');
+    expect(created[0]!.destroy).toHaveBeenCalled();
+    expect(pool.isConnected('agent')).toBe(false);
+  });
+
+  it('зависшее подключение требует перезапуска процесса', async () => {
+    vi.useFakeTimers();
+    const { factory } = makeFactory(c => c.connect.mockReturnValue(new Promise(() => undefined)));
+    const { pool, onFatal } = makePool(factory);
+    const p = pool.getClient('agent');
+    const assertion = expect(p).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    await vi.advanceTimersByTimeAsync(40_000);
+    await assertion;
+    expect(onFatal).toHaveBeenCalledTimes(1);
+  });
+
+  it('destroyAll закрывает клиентов через destroy', async () => {
+    const { factory, created } = makeFactory();
+    const { pool } = makePool(factory);
+    await pool.getClient('agent');
+    await pool.destroyAll();
+    expect(created[0]!.destroy).toHaveBeenCalledTimes(1);
+    expect(pool.isConnected('agent')).toBe(false);
+  });
+});
+
+describe('TgGateway', () => {
+  function makeTg(setup?: (client: FakeClient) => void) {
+    const { factory, created } = makeFactory(setup);
+    const { pool } = makePool(factory);
+    const limiter = new AccountLimiter({ onFatal: vi.fn(), log: silent, minIntervalMs: 0 });
+    return { tg: new TgGateway({ pool, limiter, entities: storage.entities, log: silent }), created, pool };
+  }
+
+  it('вызов идёт через клиента аккаунта, сущности из ответа попадают в кэш', async () => {
+    const { tg, created } = makeTg(c =>
+      c.invoke.mockResolvedValue({
+        messages: [],
+        chats: [{ className: 'Channel', id: 5n, accessHash: 77n, title: 'News', username: 'news', broadcast: true }],
+        users: [{ className: 'User', id: 42n, accessHash: 9n, firstName: 'Ivan' }],
+      }),
+    );
+    const request = { className: 'messages.GetHistory' };
+    const result = await tg.invoke('agent', request as never);
+    expect(created[0]!.invoke).toHaveBeenCalledWith(request);
+    expect(result).toHaveProperty('chats');
+    expect(storage.entities.getByUsername('agent', 'news')).toMatchObject({ peerKey: '-1000000000005', accessHash: '77' });
+    expect(storage.entities.get('agent', '42')?.accessHash).toBe('9');
+    expect(tg.laneStatus('agent').callsInWindow).toBe(1);
+  });
+
+  it('ошибка авторизации помечает аккаунт и закрывает клиента', async () => {
+    const { tg, created, pool } = makeTg(c => c.invoke.mockRejectedValue(new Error('AUTH_KEY_UNREGISTERED')));
+    await expect(tg.invoke('agent', { className: 'users.GetUsers' } as never)).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
+    expect(storage.accounts.get('agent')?.status).toBe('unauthorized');
+    expect(created[0]!.destroy).toHaveBeenCalled();
+    expect(pool.isConnected('agent')).toBe(false);
+  });
+
+  it('withClient выполняет операцию с клиентом в полосе', async () => {
+    const { tg } = makeTg();
+    await expect(tg.withClient('agent', 'download', async client => typeof client.invoke)).resolves.toBe('function');
+    await expect(tg.whoami('agent')).resolves.toMatchObject({ username: 'agent_acc' });
+  });
+});
+
+describe('loginAccount', () => {
+  it('проводит вход и возвращает сессию с данными аккаунта', async () => {
+    const { factory, created } = makeFactory(c =>
+      c.start.mockImplementation(async (params: { phoneCode: () => Promise<string>; password: (h?: string) => Promise<string> }) => {
+        expect(await params.phoneCode()).toBe('12345');
+        expect(await params.password('hint')).toBe('pw');
+      }),
+    );
+    const result = await loginAccount({
+      factory,
+      apiId: 1,
+      apiHash: 'h',
+      phone: '+7 (999) 123-45-67',
+      prompts: { code: async () => '12345', password: async () => 'pw' },
+      log: silent,
+    });
+    expect(result).toEqual({ session: 'SAVED_SESSION', identity: { tgUserId: '1001', username: 'agent_acc', displayName: 'Agent' } });
+    expect(created[0]!.sessionGiven).toBe('');
+    expect(created[0]!.connect).not.toHaveBeenCalled();
+    expect(created[0]!.start.mock.calls[0]![0].phoneNumber).toBe('+79991234567');
+    expect(created[0]!.destroy).toHaveBeenCalled();
+  });
+
+  it('после трёх неверных кодов прерывает вход', async () => {
+    const { factory } = makeFactory(c => {
+      c.start.mockImplementation(async (params: { onError: (e: Error) => Promise<boolean> }) => {
+        expect(await params.onError(new Error('PHONE_CODE_INVALID'))).toBe(false);
+        expect(await params.onError(new Error('PHONE_CODE_INVALID'))).toBe(false);
+        expect(await params.onError(new Error('PHONE_CODE_INVALID'))).toBe(true);
+        throw new Error('AUTH_USER_CANCEL');
+      });
+    });
+    await expect(
+      loginAccount({ factory, apiId: 1, apiHash: 'h', phone: '+79991234567', prompts: { code: async () => '0', password: async () => '' }, log: silent }),
+    ).rejects.toMatchObject({ telegramCode: 'PHONE_CODE_INVALID' });
+  });
+
+  it('проверяет формат телефона', () => {
+    expect(normalizePhone('79991234567')).toBe('+79991234567');
+    expect(() => normalizePhone('abc')).toThrow(/international format/);
+  });
+});
+
+describe('config', () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'tgmcp-config-'));
+  });
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('читает .env из домашней папки, окружение имеет приоритет', () => {
+    writeFileSync(join(home, '.env'), 'TG_API_ID=12345\nTG_API_HASH="abcdef"\nTG_MCP_PORT=8123\n# comment\n');
+    const env: NodeJS.ProcessEnv = { TG_MCP_HOME: home, TG_MCP_PORT: '9000' };
+    const config = loadConfig(env);
+    expect(config).toMatchObject({ home, apiId: 12345, apiHash: 'abcdef', port: 9000, host: '127.0.0.1', toolsets: ['core'] });
+    expect(config.dbPath).toBe(join(home, 'gateway.sqlite'));
+    expect(requireApiCredentials(config)).toEqual({ apiId: 12345, apiHash: 'abcdef' });
+  });
+
+  it('без учётных данных API объясняет, куда их положить', () => {
+    const config = loadConfig({ TG_MCP_HOME: home });
+    expect(() => requireApiCredentials(config)).toThrow(/TG_API_ID/);
+  });
+
+  it('опечатка в наборе инструментов роняет старт', () => {
+    expect(parseToolsets('core, automate')).toEqual(['core', 'automate']);
+    expect(parseToolsets(undefined)).toEqual(['core']);
+    expect(() => parseToolsets('core,wirte')).toThrow(/Unknown toolset/);
+  });
+
+  it('ключ сессий создаётся один раз с правами 0600', () => {
+    const first = loadSessionSecret(home, {});
+    const second = loadSessionSecret(home, {});
+    expect(first).toBe(second);
+    expect(readFileSync(join(home, 'session.key'), 'utf8').trim()).toBe(first);
+    expect(statSync(join(home, 'session.key')).mode & 0o777).toBe(0o600);
+    expect(loadSessionSecret(home, { TG_MCP_SESSION_KEY: 'from-env' })).toBe('from-env');
+  });
+});

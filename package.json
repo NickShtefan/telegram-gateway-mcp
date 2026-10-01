@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
+    "big-integer": "^1.6.52",
     "telegram": "^2.26.22",
     "zod": "^4.6.5"
   },
