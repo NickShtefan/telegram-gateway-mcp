@@ -2,6 +2,8 @@
  * Сборка сервисов поверх ядра. Сервисы не знают про MCP и транспорт: их
  * одинаково используют инструменты, CLI и фоновые воркеры.
  */
+import { buildAutomation, type Automation } from '../automation/index.js';
+import type { BotApi } from '../automation/botApi.js';
 import { AccessPolicy } from '../policy/access.js';
 import { Audit } from '../policy/audit.js';
 import { ScopePolicy } from '../policy/scopes.js';
@@ -28,9 +30,17 @@ export interface GatewayServices {
   media: MediaService;
   exporter: ExportService;
   jobs: JobManager;
+  automation: Automation;
 }
 
-export function buildServices(runtime: Runtime, now: () => number = () => Date.now()): GatewayServices {
+export interface BuildOptions {
+  now?: () => number;
+  /** Для тестов: клиент Bot API вместо настоящего; null выключает бота. */
+  bot?: BotApi | null;
+}
+
+export function buildServices(runtime: Runtime, options: BuildOptions = {}): GatewayServices {
+  const now = options.now ?? (() => Date.now());
   const { tg, storage, config, log } = runtime;
   const history = new HistoryService(tg);
   const search = new SearchService(tg, storage.entities);
@@ -39,18 +49,22 @@ export function buildServices(runtime: Runtime, now: () => number = () => Date.n
   const jobs = new JobManager({ storage, log: log.child('jobs') });
   jobs.register('export', context => exporter.run(context));
 
+  const comments = new CommentsService(tg, storage.entities);
+  const automation = buildAutomation({ runtime, history, comments, bot: options.bot, now });
+
   return {
     runtime,
-    access: new AccessPolicy(storage),
+    access: new AccessPolicy(storage, automation.store),
     scopes: new ScopePolicy(storage),
     audit: new Audit(storage, now, log.child('audit')),
     resolver: new Resolver({ tg, entities: storage.entities, now }),
     history,
     search,
-    comments: new CommentsService(tg, storage.entities),
+    comments,
     topics: new TopicsService(tg),
     media,
     exporter,
     jobs,
+    automation,
   };
 }

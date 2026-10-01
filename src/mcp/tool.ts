@@ -99,6 +99,9 @@ export function createToolContext(options: RegisterOptions): ToolContext {
     account: requested => services.access.resolveAccount(principal, requested || undefined),
     openChat: async (ref, accountId) => {
       const found = await services.resolver.resolve(accountId, ref);
+      if (principal.grant && !principal.grant.chatKeys.includes(found.chat.peerKey)) {
+        throw new GatewayError('ACCESS_DENIED', 'This run may only work with the chat it was started for.');
+      }
       services.scopes.assertAllowed(principal.userId, accountId, found.chat);
       return found;
     },
@@ -112,6 +115,8 @@ export function registerTools(server: McpServer, tools: ToolDef[], options: Regi
 
   for (const tool of tools) {
     if (!tool.always && !options.toolsets.includes(tool.toolset)) continue;
+    // Агент, запущенный по правилу или поручению, видит только инструменты своего дела.
+    if (options.principal.grant && !options.principal.grant.tools.includes(tool.name)) continue;
     registered.push(tool.name);
 
     server.registerTool(

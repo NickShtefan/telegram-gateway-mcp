@@ -94,7 +94,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       // Только признак жизни: никаких сведений об аккаунтах без токена.
       return sendJson(res, 200, { ok: true });
     }
-    if (path !== '/mcp') return rpcError(res, 404, 'Not found. The MCP endpoint is /mcp.');
+    const isRunner = path === '/runner/claim' || path === '/runner/finish';
+    if (path !== '/mcp' && !isRunner) return rpcError(res, 404, 'Not found. The MCP endpoint is /mcp.');
 
     const hostHeader = (req.headers.host ?? '').toLowerCase();
     if (!hosts.has(hostHeader)) return rpcError(res, 403, 'Forbidden host.');
@@ -125,6 +126,16 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         error: { code: tooLarge ? -32000 : -32700, message: tooLarge ? 'Request body is too large.' : 'Parse error: body is not valid JSON.' },
         id: null,
       });
+    }
+
+    if (isRunner) {
+      // Очередь запусков отдаётся только владельцу заданий: токен запуска сюда не подходит.
+      if (principal.grant) return rpcError(res, 403, 'A run token cannot claim jobs.');
+      const { runner } = services.automation;
+      if (path === '/runner/claim') return sendJson(res, 200, { job: runner.claim(principal.userId) });
+      const b = (body ?? {}) as { id?: unknown; exit_code?: unknown; output?: unknown };
+      if (typeof b.id !== 'string' || typeof b.exit_code !== 'number') return rpcError(res, 400, 'Expected {"id": string, "exit_code": number, "output"?: string}.');
+      return sendJson(res, 200, { ok: runner.finish(principal.userId, b.id, b.exit_code, typeof b.output === 'string' ? b.output : '') });
     }
 
     const { server } = createMcpServer({

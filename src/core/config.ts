@@ -20,6 +20,8 @@ export interface GatewayConfig {
   toolsets: string[];
   apiId: number | null;
   apiHash: string | null;
+  /** Токен бота согласований. Без него запись в Telegram недоступна. */
+  approvalBotToken: string | null;
 }
 
 export const DEFAULT_PORT = 7777;
@@ -87,6 +89,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     toolsets: parseToolsets(env.TG_MCP_TOOLSETS),
     apiId,
     apiHash,
+    approvalBotToken: (env.TG_MCP_APPROVAL_BOT_TOKEN ?? '').trim() || null,
   };
 }
 

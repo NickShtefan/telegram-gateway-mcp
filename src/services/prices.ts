@@ -333,6 +333,8 @@ interface Suffix {
   currency: Currency | null;
   /** Валюта записана одной буквой "р": такая запись бывает размером одежды. */
   rubLetter: boolean;
+  /** Множитель записан латинской буквой `k`: так чаще пишут разрешение экрана. */
+  latinLetter: boolean;
 }
 
 function parseSuffix(text: string, pos: number): Suffix {
@@ -340,12 +342,20 @@ function parseSuffix(text: string, pos: number): Suffix {
 
   const thousandRub = THOUSAND_RUB_RE.exec(rest);
   if (thousandRub) {
-    return { end: pos + thousandRub[0].length, mult: 1000, style: 'word', currency: 'RUB', rubLetter: false };
+    return {
+      end: pos + thousandRub[0].length,
+      mult: 1000,
+      style: 'word',
+      currency: 'RUB',
+      rubLetter: false,
+      latinLetter: false,
+    };
   }
 
   let offset = 0;
   let mult: number | null = null;
   let style: MultiplierStyle | null = null;
+  let latinLetter = false;
   const mm = MULTIPLIER_RE.exec(rest);
   if (mm) {
     offset = mm[0].length;
@@ -358,6 +368,7 @@ function parseSuffix(text: string, pos: number): Suffix {
     } else {
       mult = 1e3;
       style = mm[1] === '' ? 'letter' : 'letter-spaced';
+      latinLetter = mm[4]!.toLowerCase() === 'k';
     }
     // Точка сокращения входит в множитель: `25 тыс.`, `1.5 млн.`
     if (/^(?:тыс|млн)$/iu.test(mm[2] ?? mm[3] ?? '') && rest[offset] === '.') offset += 1;
@@ -368,9 +379,9 @@ function parseSuffix(text: string, pos: number): Suffix {
     const cm = re.exec(afterMult);
     if (!cm) continue;
     const rubLetter = currency === 'RUB' && /^р\.?$/iu.test(cm[1]!);
-    return { end: pos + offset + cm[0].length, mult, style, currency, rubLetter };
+    return { end: pos + offset + cm[0].length, mult, style, currency, rubLetter, latinLetter };
   }
-  return { end: pos + offset, mult, style, currency: null, rubLetter: false };
+  return { end: pos + offset, mult, style, currency: null, rubLetter: false, latinLetter };
 }
 
 // ---------------------------------------------------------------------------
@@ -382,11 +393,12 @@ function parseSuffix(text: string, pos: number): Suffix {
  * гигабайты, штуки, месяцы, годы, вес, длина, время, подписчики, пробег,
  * а также хвосты названий моделей (`15 pro`). `25к км`, `за 2 шт`, `за 15 минут`
  * ценами не становятся. Проверяется, только когда валюты после числа нет.
+ * Буква "т" не считается тоннами в сокращениях "т.к.", "т.е.".
  */
 const UNIT_RE = new RegExp(
   String.raw`^[${SP}]?-?(?:(?:` +
     String.raw`км|km|миль|мил[яи]|гб|gb|тб|tb|мб|mb|кб|kb|гиг\p{L}*` +
-    String.raw`|шт|штук\p{L}*|мес|месяц\p{L}*|лет|год\p{L}*|г|гр|грам\p{L}*|кг|килограм\p{L}*|т|тонн\p{L}*` +
+    String.raw`|шт|штук\p{L}*|мес|месяц\p{L}*|лет|год\p{L}*|г|гр|грам\p{L}*|кг|килограм\p{L}*|т(?!\.\p{L})|тонн\p{L}*` +
     String.raw`|л|литр\p{L}*|мл|м|м2|м²|кв|метр\p{L}*|см|мм|сантиметр\p{L}*|дюйм\p{L}*` +
     String.raw`|мин|минут\p{L}*|ч|час\p{L}*|сек|секунд\p{L}*|дн\p{L}{1,2}|день|недел\p{L}*|сут\p{L}*` +
     String.raw`|раз|раза|чел|человек\p{L}*` +
@@ -460,10 +472,24 @@ const EACH_BEFORE_RE = new RegExp(String.raw`${WB}по\s$`, 'iu');
  */
 const SPACED_K_FOLLOW_RE = /^\.?[ \t]*(?:$|[^\p{L}\p{N} \t.]|[Тт][Оо][Рр][Гг])|^\.[ \t]+\p{Lu}/u;
 
-/** Слова рядом с `4к`, `2к`, `8k`, по которым это разрешение экрана, а не цена. */
+/**
+ * Слова в той же строке рядом с `4к`, `2к`, `4K`, по которым это разрешение
+ * экрана, а не цена. Широкая проверка: действует для 2 и 4 и для латинской `K`.
+ */
 const RESOLUTION_CONTEXT_RE = new RegExp(
   String.raw`${WB}(?:uhd|hdr|hd|tv|тв|fps|гц|hz|ips|oled|qled)${WE}` +
     String.raw`|${WB}(?:телевизор|монитор|видео|video|разрешени|экран|диспле|камер|съ[её]мк|снима|запис|смарт|smart|проектор|retina)`,
+  'iu',
+);
+/**
+ * То же самое вплотную после числа: `8к видео`, `5к монитор`, `2к 144 гц`.
+ * Узкая проверка: действует для любого числа из RESOLUTION_K, в том числе для
+ * 5к, 6к и 8к, которые без такого соседа чаще цена, чем разрешение.
+ */
+const RESOLUTION_FOLLOW_RE = new RegExp(
+  String.raw`^[ \t]?(?:(?:uhd|hdr|hd|tv|тв|ips|oled|qled)${WE}` +
+    String.raw`|телевизор|монитор|видео|video|разрешени|экран|диспле|камер|съ[её]мк|смарт|smart|retina` +
+    String.raw`|\d{2,3}[ ]?(?:fps|гц|hz|дюйм|"))`,
   'iu',
 );
 /** Предлог "в" перед числом: "снимает в 4к". */
@@ -473,10 +499,10 @@ const RESOLUTION_K = new Set([2, 4, 5, 6, 8]);
 /** Числа, которые с приклеенной "р" бывают разрешением: 1080р, 720р. */
 const RESOLUTION_P = new Set([480, 720, 1080, 1440, 2160]);
 
-/** `2к квартира`, `1к.кв`: число комнат, а не тысячи. */
-const FLAT_FOLLOW_RE = /^[.-]?\s?(?:кв|комн)/iu;
-/** Слова рядом с `3к`, по которым это число комнат: "меняю 2к квартиру на 3к". */
-const FLAT_CONTEXT_RE = new RegExp(String.raw`${WB}(?:квартир|комнат|однушк|двушк|тр[её]шк|студи)`, 'iu');
+/** `2к квартира`, `1к.кв`, `2к студия`: число комнат, а не тысячи. */
+const FLAT_FOLLOW_RE = /^[.-]?\s?(?:кв|комн|студи)/iu;
+/** `квартира 2к`: то же, слово стоит перед числом. */
+const FLAT_BEFORE_RE = new RegExp(String.raw`${WB}(?:квартир\p{L}*|комнат\p{L}*)\s$`, 'iu');
 
 /** "от" перед нижней границей диапазона: `от 20 до 25 тыс`. */
 const FROM_BEFORE_RE = new RegExp(String.raw`${WB}от\s+$`, 'iu');
@@ -557,6 +583,8 @@ function buildAtoms(text: string): Atom[] {
   const re = new RegExp(NUMBER_SRC, 'gu');
   /** Конец последнего разобранного числа вместе с его валютой: знак правее уже занят. */
   let consumed = 0;
+  /** Конец строки, в которой уже встретилось число комнат (`2к квартира`). */
+  let flatLineEnd = 0;
   let m: RegExpExecArray | null;
 
   while ((m = re.exec(text)) !== null) {
@@ -603,16 +631,23 @@ function buildAtoms(text: string): Atom[] {
     let shakyMult = false;
     if (suffix.mult !== null && suffix.style !== 'word') {
       if (suffix.style === 'letter-spaced' && !SPACED_K_FOLLOW_RE.test(after)) shakyMult = true;
-      if (suffix.style === 'letter' && parsed.value <= 5 && FLAT_FOLLOW_RE.test(after)) shakyMult = true;
-      const lineBefore = before.slice(before.lastIndexOf('\n') + 1).slice(-32);
-      const lineAfter = after.split('\n')[0]!.slice(0, 24);
+
       if (RESOLUTION_K.has(parsed.value)) {
-        if (IN_BEFORE_RE.test(before) || RESOLUTION_CONTEXT_RE.test(lineBefore) || RESOLUTION_CONTEXT_RE.test(lineAfter)) {
-          shakyMult = true;
-        }
+        const lineBefore = before.slice(before.lastIndexOf('\n') + 1).slice(-32);
+        const lineAfter = after.split('\n')[0]!.slice(0, 24);
+        const near = IN_BEFORE_RE.test(before) || RESOLUTION_FOLLOW_RE.test(after);
+        const sameLine = RESOLUTION_CONTEXT_RE.test(lineBefore) || RESOLUTION_CONTEXT_RE.test(lineAfter);
+        if (near || (sameLine && (parsed.value === 2 || parsed.value === 4 || suffix.latinLetter))) shakyMult = true;
       }
+
       if (Number.isInteger(parsed.value) && parsed.value <= 5) {
-        if (FLAT_CONTEXT_RE.test(lineBefore) || FLAT_CONTEXT_RE.test(lineAfter)) shakyMult = true;
+        // "меняю 2к квартиру на 3к": после числа комнат в той же строке `3к` тоже комнаты.
+        const flat = FLAT_FOLLOW_RE.test(after) || FLAT_BEFORE_RE.test(before) || start < flatLineEnd;
+        if (flat) {
+          shakyMult = true;
+          const lineEnd = text.indexOf('\n', start);
+          flatLineEnd = lineEnd === -1 ? text.length : lineEnd;
+        }
       }
     }
 
@@ -730,7 +765,7 @@ interface FoundPrice {
 }
 
 function isReference(text: string, previousEnd: number, start: number): boolean {
-  let phrase = text.slice(Math.max(previousEnd, start - 96), start);
+  const phrase = text.slice(Math.max(previousEnd, start - 96), start);
   let cut = 0;
   for (const m of phrase.matchAll(PHRASE_BREAK_RE)) cut = (m.index ?? 0) + m[0].length;
   const m = REFERENCE_RE.exec(phrase.slice(cut));

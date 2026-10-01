@@ -15,6 +15,7 @@ import { createMcpServer } from '../../mcp/server.js';
 import type { Runtime } from '../../runtime.js';
 import { buildServices, type GatewayServices } from '../../services/index.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
+import { FakeBot } from './fakeBot.js';
 import { FakeTg } from './fakeTg.js';
 
 export interface TestGateway {
@@ -22,6 +23,7 @@ export interface TestGateway {
   config: GatewayConfig;
   storage: SqliteStorage;
   tg: FakeTg;
+  bot: FakeBot;
   services: GatewayServices;
   tokens: { nick: string; partner: string };
   /** MCP-клиент, подключённый к серверу пользователя в памяти. */
@@ -42,7 +44,7 @@ export interface TestClient {
   close(): Promise<void>;
 }
 
-export function makeTestGateway(): TestGateway {
+export function makeTestGateway(options: { bot?: boolean; now?: () => number } = {}): TestGateway {
   const home = mkdtempSync(join(tmpdir(), 'tgmcp-gw-'));
   const storage = new SqliteStorage({ path: ':memory:' });
   const tg = new FakeTg(storage.entities);
@@ -56,6 +58,7 @@ export function makeTestGateway(): TestGateway {
     toolsets: ['core'],
     apiId: 1,
     apiHash: 'hash',
+    approvalBotToken: null,
   };
 
   const nick = addUser(storage, { id: 'nick', telegramId: '111', accounts: ['nick', 'agent'] });
@@ -66,18 +69,20 @@ export function makeTestGateway(): TestGateway {
   }
   storage.users.update('nick', { defaultAccount: 'agent' });
 
-  const runtime = { config, storage, tg, log, close: async () => undefined } as unknown as Runtime;
-  const services = buildServices(runtime);
+  const runtime = { config, storage, tg, log, fatal: () => undefined, close: async () => undefined } as unknown as Runtime;
+  const bot = new FakeBot();
+  const services = buildServices(runtime, { bot: options.bot === false ? null : bot, now: options.now });
 
   return {
     home,
     config,
     storage,
     tg,
+    bot,
     services,
     tokens: { nick: nick.token, partner: partner.token },
     client: async (userId, toolsets = ['core']) => {
-      const { server } = createMcpServer({ services, principal: services.access.principalOf(userId), toolsets, version: 'test', log });
+      const { server } = createMcpServer({ services, principal: services.access.principalOf(userId), toolsets, version: 'test', log, now: options.now });
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
       const client = new Client({ name: 'test-agent', version: '1.0.0' });
       await server.connect(serverSide);

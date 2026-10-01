@@ -68,7 +68,7 @@ describe('контракт инструментов', () => {
   });
 
   it('набор инструментов задаётся при старте: без core остаётся только tg_status', async () => {
-    const other = await gw.client('nick', ['write']);
+    const other = await gw.client('nick', ['analytics']);
     expect((await other.tools()).map(t => t.name)).toEqual(['tg_status']);
     await other.close();
   });

@@ -12,4 +12,7 @@ redirectConsoleToStderr();
 process.umask(0o077);
 
 const { main } = await import('./main.js');
-process.exitCode = await main(process.argv.slice(2));
+const code = await main(process.argv.slice(2));
+process.exitCode = code;
+// У демона и runner остаются таймеры фоновых циклов: после остановки выходим сразу.
+if (process.argv[2] === 'serve' || process.argv[2] === 'runner') process.exit(code);

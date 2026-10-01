@@ -99,4 +99,119 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (user_id, account_id, target, source)
   );
   `,
+
+  // 3: автоматизация: наблюдение, входящие, согласования, правила, журнал записи, очередь запусков агента
+  `
+  CREATE TABLE watches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    chat_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (user_id, account_id, chat_key)
+  );
+
+  -- Один опрос на пару «аккаунт и чат», сколько бы пользователей его ни наблюдало.
+  CREATE TABLE watch_state (
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    chat_key TEXT NOT NULL,
+    last_seen_id INTEGER NOT NULL DEFAULT 0,
+    baseline_done INTEGER NOT NULL DEFAULT 0,
+    next_poll_at INTEGER NOT NULL DEFAULT 0,
+    interval_ms INTEGER NOT NULL DEFAULT 60000,
+    last_poll_at INTEGER,
+    last_error TEXT,
+    PRIMARY KEY (account_id, chat_key)
+  );
+
+  CREATE TABLE inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ts INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    account_id TEXT,
+    chat_key TEXT,
+    message_id INTEGER,
+    payload TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE INDEX inbox_user ON inbox(user_id, id);
+
+  CREATE TABLE approvals (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT,
+    kind TEXT NOT NULL,
+    -- откуда запрос: tool, rule:<id> или task:<id>
+    source TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    preview TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',
+    result TEXT,
+    bot_chat_id TEXT,
+    bot_message_id INTEGER,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    decided_at INTEGER
+  );
+  CREATE INDEX approvals_state ON approvals(state);
+
+  CREATE TABLE rules (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    chat_key TEXT NOT NULL,
+    config TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE rule_fires (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+    chat_key TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    ts INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    UNIQUE (rule_id, chat_key, message_id)
+  );
+
+  -- Журнал записи в Telegram: дневные лимиты и «один ответ на пост с аккаунта» (решение 18).
+  CREATE TABLE writes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    chat_key TEXT NOT NULL,
+    post_id INTEGER,
+    sent_message_id INTEGER,
+    source TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX writes_one_reply ON writes(account_id, chat_key, post_id) WHERE kind = 'reply' AND post_id IS NOT NULL;
+  CREATE INDEX writes_account_ts ON writes(account_id, ts);
+
+  CREATE TABLE runner_jobs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',
+    run_after INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    claimed_at INTEGER,
+    finished_at INTEGER,
+    exit_code INTEGER,
+    output TEXT
+  );
+  CREATE INDEX runner_jobs_user ON runner_jobs(user_id, state);
+
+  -- Токены с ограниченными правами: выдаются запущенному агенту на одно дело.
+  CREATE TABLE scoped_tokens (
+    token_sha256 TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  `,
 ];

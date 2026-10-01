@@ -122,7 +122,10 @@ TG_API_ID=
 TG_API_HASH=
 TG_MCP_FILES_DIR=$FILES_DIR
 TG_MCP_PORT=$PORT
+# Наборы инструментов: core (чтение), automate (наблюдение, правила), write (ответы через согласование).
 TG_MCP_TOOLSETS=core
+# Токен бота согласований от BotFather. Нужен отдельный бот: токены бота Claude Code и бота Hermes заняты.
+# TG_MCP_APPROVAL_BOT_TOKEN=
 EOF
   chown "$SVC_USER":staff "$GATEWAY_HOME/.env"
   chmod 600 "$GATEWAY_HOME/.env"

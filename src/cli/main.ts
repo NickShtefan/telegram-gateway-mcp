@@ -24,6 +24,7 @@ import {
 import { runDoctor } from './doctor.js';
 import { terminalIo, type CliIo } from './io.js';
 import { runLogin } from './login.js';
+import { runRunner } from './runner.js';
 import { runServe } from './serve.js';
 import { createLogger } from '../core/log.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../core/config.js';
@@ -37,12 +38,14 @@ Usage:
   tg-mcp serve [--host <h>] [--port <n>] [--toolsets core,...] [--files-dir <path>]
                                                    run the daemon that owns the Telegram sessions
   tg-mcp stdio [--url <http://127.0.0.1:7777/mcp>] stdio MCP server for agents: proxies to the daemon, token in TG_MCP_TOKEN
+  tg-mcp runner --agent '<command with {prompt}>'  start your agent when a rule fires; token in TG_MCP_TOKEN
   tg-mcp login --account <id> [--phone <number>]   log in to a Telegram account (code and 2FA are asked interactively)
   tg-mcp doctor [--connect]                        check the installation; --connect also opens the sessions
   tg-mcp user add <id> [--telegram-id <n>] [--account <id>]... [--default-account <id>]
   tg-mcp user list
   tg-mcp user token <id>                           issue a new token (the old one stops working)
   tg-mcp user default <id> <account>
+  tg-mcp user telegram <id> <telegram-id>          whom the approval bot asks
   tg-mcp user remove <id>
   tg-mcp account list
   tg-mcp account grant <account> <user>
@@ -89,6 +92,28 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
       if (!token) throw new GatewayError('INVALID_ARGUMENT', 'TG_MCP_TOKEN is not set: the stdio proxy needs your gateway token.');
       const url = values.url ?? env.TG_MCP_URL?.trim() ?? `http://${DEFAULT_HOST}:${env.TG_MCP_PORT?.trim() || DEFAULT_PORT}/mcp`;
       await runStdioProxy({ url, token, input: process.stdin, output: process.stdout, log: createLogger('stdio') });
+      return 0;
+    } catch (err) {
+      io.err(`error: ${(err as Error).message}`);
+      return 1;
+    }
+  }
+
+  if (command === 'runner') {
+    // Runner тоже работает под пользователем агента и ходит в демон по HTTP.
+    const env = deps.env ?? process.env;
+    try {
+      const { values } = parseArgs({ args: rest, options: { agent: { type: 'string' }, url: { type: 'string' }, poll: { type: 'string' } } });
+      const token = env.TG_MCP_TOKEN?.trim();
+      if (!token) throw new GatewayError('INVALID_ARGUMENT', 'TG_MCP_TOKEN is not set: the runner needs your gateway token.');
+      const baseUrl = (values.url ?? env.TG_MCP_URL?.trim() ?? `http://${DEFAULT_HOST}:${env.TG_MCP_PORT?.trim() || DEFAULT_PORT}`).replace(/\/mcp\/?$/, '').replace(/\/$/, '');
+      const pollSec = values.poll !== undefined ? Number(values.poll) : 5;
+      if (!Number.isFinite(pollSec) || pollSec < 1 || pollSec > 300) throw new GatewayError('INVALID_ARGUMENT', '--poll must be between 1 and 300 seconds.');
+      const controller = new AbortController();
+      process.once('SIGINT', () => controller.abort());
+      process.once('SIGTERM', () => controller.abort());
+      io.err(`tg-mcp runner: waiting for jobs from ${baseUrl}`);
+      await runRunner({ baseUrl, token, agent: need(values.agent, '--agent'), pollMs: pollSec * 1000, signal: controller.signal, log: createLogger('runner') });
       return 0;
     } catch (err) {
       io.err(`error: ${(err as Error).message}`);
@@ -208,6 +233,15 @@ function userCommand(args: string[], storage: Storage, io: CliIo): number {
       io.out(token);
       return 0;
     }
+    case 'telegram': {
+      const id = need(rest[0], 'user id');
+      const telegramId = need(rest[1], 'telegram id');
+      if (!/^\d{1,20}$/.test(telegramId)) throw new GatewayError('INVALID_ARGUMENT', 'Telegram id must be a number. Open the approval bot and send /id to see yours.');
+      if (!storage.users.get(id)) throw new GatewayError('NOT_FOUND', `User "${id}" does not exist.`);
+      storage.users.update(id, { telegramId });
+      io.out(`Approvals for "${id}" now go to Telegram id ${telegramId}.`);
+      return 0;
+    }
     case 'default': {
       const id = need(rest[0], 'user id');
       const account = need(rest[1], 'account id');
@@ -222,7 +256,7 @@ function userCommand(args: string[], storage: Storage, io: CliIo): number {
       return 0;
     }
     default:
-      throw new GatewayError('INVALID_ARGUMENT', 'Usage: tg-mcp user add|list|token|default|remove');
+      throw new GatewayError('INVALID_ARGUMENT', 'Usage: tg-mcp user add|list|token|default|telegram|remove');
   }
 }
 
