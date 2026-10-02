@@ -16,7 +16,8 @@
 - **Исходы вступления приходят ошибками:** `INVITE_REQUEST_SENT` (заявка отправлена) и `USER_ALREADY_PARTICIPANT` это не сбои.
 - **`RANDOM_ID_DUPLICATE`** при отправке значит, что сообщение уже доставлено прошлой попыткой.
 - **Реакция с клавиатуры** приходит с селектором варианта (сердце), а Telegram принимает её без него.
-- **Inline-кнопки** в слое 229: клавиатура `ReplyInlineMarkup`, ряды `KeyboardInlineButtonRow`, кнопка `KeyboardInlineButton` с подписью и видом в поле `type` (`InlineButtonTypeCallback`, `InlineButtonTypeUrl` и другие). Callback-кнопка нажимается вызовом `messages.GetBotCallbackAnswer` с байтами из кнопки; на живом Telegram нажатие не проверялось.
+- **Скрытая ссылка под невидимым символом.** Сервисы отложенных постов (controller.bot) прячут адрес картинки под символом нулевой ширины в начале текста, чтобы Telegram показал превью. У такой ссылки нет видимых слов.
+- **Inline-кнопки** в слое 229: клавиатура `ReplyInlineMarkup`, ряды `KeyboardInlineButtonRow`, кнопка `KeyboardInlineButton` с подписью и видом в поле `type` (`InlineButtonTypeCallback`, `InlineButtonTypeUrl` и другие). Разбор клавиатуры проверен на живых постах каналов. Callback-кнопка нажимается вызовом `messages.GetBotCallbackAnswer` с байтами из кнопки; на живом Telegram нажатие не проверялось.
 - **`send_as`** у `messages.SendMessage` есть; ответ от имени канала в группе обсуждений вживую не проверялся.
 - **`PEER_FLOOD`:** порог для сообщений незнакомым людям Telegram не публикует (не проверено, какой он на практике).
 
