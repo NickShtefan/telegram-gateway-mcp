@@ -1,8 +1,6 @@
 /**
  * Ошибки шлюза. Любая ошибка Telegram превращается в GatewayError с кодом и
  * текстом, который понятен агенту: что случилось и что делать дальше.
- * Разбор FLOOD_WAIT и классификация перенесены из helper `refreshShared.ts`
- * и channel-scope `rateLimiter.ts`.
  */
 import { DeadlineError } from './time.js';
 

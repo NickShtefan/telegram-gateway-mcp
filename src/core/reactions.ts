@@ -1,7 +1,6 @@
 /**
  * Нормализация реакций. Ключ реакции: обычный эмодзи это сам эмодзи,
- * кастомный `custom:<id>`, платная `paid`. Идея ключа из helper
- * `processors/reactionKey.ts`.
+ * кастомный `custom:<id>`, платная `paid`.
  */
 
 /** Api.ReactionEmoji, Api.ReactionCustomEmoji или Api.ReactionPaid. */

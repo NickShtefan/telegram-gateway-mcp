@@ -13,7 +13,7 @@
 # Установка и обновление, всегда из копии под root:
 #   sudo GH_TOKEN="$(gh auth token)" /opt/telegram-gateway-mcp/install.sh <полный sha коммита>
 #
-# Учётные данные приложения Telegram можно взять из .env соседнего проекта,
+# Учётные данные приложения Telegram можно взять из .env другого проекта,
 # чтобы не переписывать их руками (значения на экран не выводятся):
 #   sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=/путь/к/.env /opt/telegram-gateway-mcp/install.sh <sha>
 # Из файла берутся только API_ID, API_HASH и PHONE_NUMBER (номер нужен для подсказки команды входа).

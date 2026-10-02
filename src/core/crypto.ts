@@ -1,7 +1,6 @@
 /**
- * Шифрование сессий и хэши токенов. AES-256-GCM, как в channel-scope
- * `clientManager.ts`: ключ выводится из секрета через SHA-256, для каждой
- * записи свой случайный iv.
+ * Шифрование сессий и хэши токенов. AES-256-GCM: ключ выводится из секрета
+ * через SHA-256, для каждой записи свой случайный iv.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 

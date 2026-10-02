@@ -2,7 +2,6 @@
  * Страж зависаний. Зависший вызов teleproto нельзя безопасно отменить, а второй
  * клиент на той же сессии даёт AUTH_KEY_DUPLICATED. Поэтому процесс выходит
  * с кодом 1, и супервизор (launchd) поднимает его с чистого листа.
- * Перенесено из helper `gramFatalRecovery.ts`.
  */
 import { createLogger, type Logger } from './log.js';
 

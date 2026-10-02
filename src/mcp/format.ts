@@ -1,8 +1,7 @@
 /**
  * Форматтер ответов. Компактный текст вместо JSON: одна строка заголовка на
  * сообщение (id, дата, автор, счётчики, ссылка) и текст в границах чужого
- * контента. `JSON.stringify(results, null, 2)` из channel-scope не повторяем:
- * он съедает контекст агента.
+ * контента. JSON с отступами не отдаётся: он съедает контекст агента.
  */
 import type { ReactionCount } from '../core/reactions.js';
 import { safeLabel, type Envelope } from '../policy/envelope.js';

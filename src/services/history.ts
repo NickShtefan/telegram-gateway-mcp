@@ -1,10 +1,7 @@
 /**
  * Чтение: лента чата с курсором, окно по датам, тема форума, сообщения по id,
- * контекст вокруг сообщения, альбом целиком.
- *
- * Циклы пагинации взяты из channel-scope: `forwardAnalysisService.ts`
- * (GetHistory с offsetId), `archiveService.ts` (отсечка по дате),
- * `refreshService.ts` (GetMessages пачками по 100).
+ * контекст вокруг сообщения, альбом целиком. Лента идёт через GetHistory с
+ * offsetId и отсечкой по дате, сообщения по id через GetMessages пачками по 100.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';

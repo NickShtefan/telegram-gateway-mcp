@@ -40,10 +40,10 @@ sudo install -o root -g wheel -m 755 ~/tg-mcp-dev/scripts/lab-install.sh /opt/te
 
 2. Sha коммита, который ставим. Возьми его со страницы репозитория на GitHub (или с основного Mac: `git rev-parse origin/main`), а не из клона на лабораторной машине.
 
-3. Установка. `API_ID` и `API_HASH` приложения Telegram установщик может взять из `.env` соседнего проекта, чтобы не переписывать их руками. На лабораторной машине они есть у channel-scope:
+3. Установка. `API_ID` и `API_HASH` приложения Telegram установщик может взять из готового `.env` другого проекта, чтобы не переписывать их руками:
 
 ```bash
-sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=/Users/nick/WORKSPACE/projects/channel-scope/repo/.env /opt/telegram-gateway-mcp/install.sh <полный sha коммита>
+sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=<путь к .env с API_ID и API_HASH> /opt/telegram-gateway-mcp/install.sh <полный sha коммита>
 ```
 
 Из файла читаются только `API_ID`, `API_HASH` и `PHONE_NUMBER`. Сам файл не исполняется, значения проверяются по формату и на экран не выводятся. Номер нужен только для подсказки: установщик напечатает готовую команду входа с ним. Без `TG_MCP_API_ENV` установщик создаст шаблон, и учётные данные нужно будет вписать руками: `sudo -u tgmcp nano /var/tgmcp/.tg-mcp/.env`, затем `sudo launchctl kickstart -k system/com.tg-mcp.gateway`.
@@ -58,7 +58,7 @@ sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=/Users/nick/WORKSPACE/projects/c
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin login --account agent --phone <номер>
 ```
 
-Это новый вход, то есть отдельная сессия. Сессии этого же аккаунта в других проектах (channel-scope хранит свою в MongoDB) не затрагиваются, но лимиты Telegram у аккаунта общие на все сессии.
+Это новый вход, то есть отдельная сессия. Сессии этого же аккаунта в других проектах не затрагиваются, но лимиты Telegram у аккаунта общие на все сессии.
 
 2. Завести пользователей шлюза и выдать им аккаунты. Токен печатается один раз, шлюз хранит только его хэш:
 

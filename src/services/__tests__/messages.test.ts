@@ -5,7 +5,7 @@ const response = {
   count: 240,
   users: [
     { className: 'User', id: 42n, username: 'seller', firstName: 'Ivan', lastName: 'Petrov' },
-    { className: 'User', id: 43n, firstName: 'Bot', bot: true, usernames: [{ username: 'helper_bot', active: true }] },
+    { className: 'User', id: 43n, firstName: 'Bot', bot: true, usernames: [{ username: 'menu_bot', active: true }] },
   ],
   chats: [
     { className: 'Channel', id: 500n, title: 'Stonks', username: 'stonksnws', broadcast: true },
@@ -109,7 +109,7 @@ describe('normalizeMessages', () => {
   it('username из коллекционных имён', () => {
     const index = indexEntities(response);
     const dto = normalizeMessage({ className: 'Message', id: 2, peerId: { userId: 43n }, fromId: { className: 'PeerUser', userId: 43n }, date: 1, message: '' }, index);
-    expect(dto?.author).toMatchObject({ username: 'helper_bot', bot: true });
+    expect(dto?.author).toMatchObject({ username: 'menu_bot', bot: true });
   });
 });
 

@@ -1,8 +1,7 @@
 /**
  * Пул клиентов teleproto: одно подключение на аккаунт, параллельные попытки
- * подключиться склеиваются, connect ограничен по времени.
- * Перенесено из channel-scope `clientManager.ts` (getClient, pendingConnections,
- * connectClient) и helper `gramClient.ts` (connect без интерактива, getMe).
+ * подключиться склеиваются, connect ограничен по времени, подключение без
+ * интерактива и с проверкой `getMe`.
  *
  * Второй клиент на той же сессии не создаётся никогда: AUTH_KEY_DUPLICATED.
  */
@@ -70,7 +69,7 @@ export interface ClientPoolOptions {
   credentials: () => PoolCredentials;
   factory?: ClientFactory;
   connectTimeoutMs?: number;
-  /** Подключение зависло: процесс должен выйти (helper `gramStartup.ts`). */
+  /** Подключение зависло: процесс должен выйти. */
   onFatal: (reason: string) => void;
   log?: Logger;
 }

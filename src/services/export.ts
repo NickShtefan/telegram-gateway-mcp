@@ -5,9 +5,6 @@
  *
  * Текст отдаётся как есть: разбирать его (цены, тип объявления) дело агента.
  * Авторы хэшируются, телефоны маскируются, пока владелец явно не попросил иначе.
- *
- * Постраничный проход с отсечкой по дате взят из channel-scope
- * `archiveService.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, writeSync } from 'node:fs';

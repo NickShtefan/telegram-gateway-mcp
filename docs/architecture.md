@@ -1,6 +1,6 @@
 # Архитектура
 
-Как шлюз устроен сейчас. Почему так: [decisions.md](decisions.md). Что агент видит снаружи: [tools.md](tools.md). Откуда взяты приёмы: [borrow-map.md](borrow-map.md).
+Как шлюз устроен сейчас. Почему так: [decisions.md](decisions.md). Что агент видит снаружи: [tools.md](tools.md).
 
 ## Что это
 

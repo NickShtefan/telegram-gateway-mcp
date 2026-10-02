@@ -1,7 +1,6 @@
 /**
- * Дедлайны и паузы. Перенесено из helper `refreshShared.ts` (withTimeout,
- * StageTimeoutError): промис teleproto при сбое сети может не завершиться никогда,
- * поэтому каждый внешний await ограничен по времени.
+ * Дедлайны и паузы. Промис teleproto при сбое сети может не завершиться
+ * никогда, поэтому каждый внешний await ограничен по времени.
  */
 
 export class DeadlineError extends Error {

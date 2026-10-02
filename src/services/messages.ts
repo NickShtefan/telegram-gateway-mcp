@@ -1,9 +1,6 @@
 /**
  * Единый вид сообщения для всех инструментов. Объекты teleproto разбираются по
  * `className`, поэтому тестам хватает простых объектов.
- *
- * Разбор медиа перенесён из channel-scope `processMediaClient.ts`
- * (extractMediaMetadata), авторы из helper `commentsRefresher.ts` (authorFromPeer).
  */
 import { parsePeerKey } from '../core/chatId.js';
 import type { AccountIdentity } from '../core/clientPool.js';

@@ -1,7 +1,6 @@
 /**
  * Каркас инструментов. Инструмент объявляется один раз и не знает о транспорте
- * (по образцу channel-scope `packages/mcp/src/index.ts`: registerTool, zod,
- * readOnlyHint). Обёртка добавляет то, что одинаково для всех: аудит, ошибки
+ * (registerTool, zod-схема, readOnlyHint). Обёртка добавляет то, что одинаково для всех: аудит, ошибки
  * в виде `isError` с понятным текстом и `retry_after`, контекст пользователя.
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

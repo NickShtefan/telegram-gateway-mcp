@@ -1,7 +1,7 @@
 /**
  * Сущности Telegram: превращение объектов teleproto в записи кэша и обратно в
  * InputPeer. accessHash привязан к сессии, поэтому кэш ведётся отдельно для
- * каждого аккаунта (см. channel-scope `universalSearchService.ts`).
+ * каждого аккаунта.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';

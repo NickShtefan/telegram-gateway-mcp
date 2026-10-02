@@ -1,7 +1,6 @@
 /**
  * Единственная дверь в Telegram для сервисов. Любой MTProto-вызов идёт через
- * лимитер аккаунта и имеет дедлайн; прямых `client.invoke` мимо очереди нет
- * (в channel-scope это была ошибка, которую мы не переносим).
+ * лимитер аккаунта и имеет дедлайн; прямых `client.invoke` мимо очереди нет.
  */
 import type { Api, TelegramClient } from 'teleproto';
 import type { ClientPool, AccountIdentity } from './clientPool.js';

@@ -3,8 +3,7 @@
  *
  * Сначала кэш сущностей аккаунта, и только потом `contacts.ResolveUsername`,
  * у которого жёсткие лимиты. accessHash привязан к сессии, поэтому кэш у
- * каждого аккаунта свой. Карточка чата собрана по образцу channel-scope
- * `telegramUtils.getChannelFullInfo` и `universalSearchService.enrichChannelById`.
+ * каждого аккаунта свой.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';

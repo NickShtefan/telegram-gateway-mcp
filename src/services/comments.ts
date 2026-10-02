@@ -1,11 +1,9 @@
 /**
  * Комментарии к посту канала. Они живут в связанной группе обсуждений.
  *
- * Механика взята из helper, где она работает на проде: корень треда через
- * `GetDiscussionMessage` (копия поста с `savedFromMsgId`), ветка страницами
- * по 100 через `GetReplies` (`commentsRefresher.ts`), ошибки по
- * смыслу из `refreshShared.ts`. Отличие: читаем тред любого канала и ничего
- * не пишем в базу.
+ * Корень треда находит `GetDiscussionMessage` (копия поста с `savedFromMsgId`),
+ * ветка читается страницами по 100 через `GetReplies`. Тред читается у любого
+ * канала, в базу ничего не пишется.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';

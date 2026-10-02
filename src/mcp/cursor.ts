@@ -1,7 +1,6 @@
 /**
  * Непрозрачные курсоры. Агент получает строку и возвращает её как есть;
  * внутри лежит позиция в выдаче Telegram (offsetId, offsetRate, offsetPeer).
- * Идея пагинации из channel-scope `globalSearchService.ts` (PaginationState).
  */
 import { GatewayError } from '../core/errors.js';
 

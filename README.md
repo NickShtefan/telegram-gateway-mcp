@@ -53,7 +53,6 @@ MCP-шлюз к Telegram. Один демон держит сессии подк
 | [docs/risks.md](docs/risks.md) | Риски от самых дорогих. |
 | [docs/plan.md](docs/plan.md) | Что сделано, что проверено, что осталось. |
 | [docs/open-questions.md](docs/open-questions.md) | Что ещё не решено. |
-| [docs/borrow-map.md](docs/borrow-map.md) | Какие приёмы взяты из соседних репозиториев и что оттуда не переносилось. |
 | [docs/findings.md](docs/findings.md) | Проверенные факты про Telegram, библиотеку и клиентов. |
 | [docs/prior-art.md](docs/prior-art.md) | Обзор готовых Telegram MCP-серверов и правил Telegram. |
 | `src/` | Код: `core`, `storage`, `policy`, `services`, `writegate`, `mcp`, `transport`, `cli`. |
@@ -70,11 +69,3 @@ node dist/cli/index.js help
 ```
 
 Состояние лежит в `~/.tg-mcp` (или в `TG_MCP_HOME`). Учётные данные приложения Telegram кладутся в `<папка>/.env` как `TG_API_ID` и `TG_API_HASH`.
-
-## Соседние репозитории
-
-Лежат рядом, в `~/Projects/CODE/Chanel/`. Из этой папки они только читаются.
-
-- **channel-scope**: исследование каналов. Отсюда взяты приёмы пула клиентов, лимитера, поиска, рекомендаций, медиа и формулы статистики.
-- **helper**: архив канала @stonksnws. Отсюда взяты защита от зависших вызовов MTProto, одна полоса вызовов на сессию и чтение комментариев из группы обсуждений.
-- **canary**, **tgbot**, **blog**, **helper_old**: к шлюзу не относятся.
