@@ -30,11 +30,13 @@ function confirmNote(approval: ApprovalRecord, ctx: ToolContext): string {
   const lines = ['Nothing has been done in Telegram yet. This is what will be done:', approval.preview];
   if (account) lines.push(`Account: ${account.id}${account.username ? ` (@${account.username})` : ''}`);
   const text = approval.payload.text;
-  if (typeof text === 'string' && text) lines.push('Text, exactly as it will be sent:', text);
+  const hasText = typeof text === 'string' && text !== '';
+  if (hasText) lines.push('Text, exactly as it will be sent:', text);
   lines.push(
     '',
     `Show this to the owner. Only after the owner clearly agrees, call tg_confirm with approval_id ${approval.id}.`,
-    'If the owner wants other wording, pass it to tg_confirm as "text". To cancel: tg_confirm with action=reject.',
+    // Заменить формулировку можно только там, где есть текст: у реакции и вступления его нет.
+    hasText ? 'If the owner wants other wording, pass it to tg_confirm as "text". To cancel: tg_confirm with action=reject.' : 'To cancel: tg_confirm with action=reject.',
     `The request expires at ${formatDate(Math.floor(approval.expiresAt / 1000))} UTC. Do not repeat the write call itself.`,
   );
   return lines.join('\n');

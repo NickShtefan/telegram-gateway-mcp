@@ -257,6 +257,9 @@ describe('реакции', () => {
     expect(reply.isError, reply.text).toBe(false);
     expect(reply.text).toContain('Set the reaction 👍 on https://t.me/stonksnws/10');
     expect(reply.text).toContain('Account: agent (@agent_acc)');
+    // у реакции нет текста: замену формулировки предпросмотр не предлагает
+    expect(reply.text).not.toContain('other wording');
+    expect(reply.text).toContain('To cancel: tg_confirm with action=reject.');
     expect(gw.tg.callsOf('messages.SendReaction')).toHaveLength(0);
 
     const done = await confirm(approvalIdOf(reply.text));
