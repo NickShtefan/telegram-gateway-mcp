@@ -369,13 +369,35 @@ describe('TopicsService', () => {
       chats: [],
       users: [],
     }));
-    const result = await new TopicsService(tg).list(ACC, forum, { limit: 50, query: 'прод' });
-    expect(result.total).toBe(3);
-    expect(result.topics).toEqual([
+    const all = await new TopicsService(tg).list(ACC, forum, { limit: 50 });
+    expect(all.total).toBe(3);
+    expect(all.topics).toEqual([
       { id: 1, title: 'General', topMessageId: 900, closed: false, pinned: true, hidden: false, date: 1_700_000_000 },
       { id: 5, title: 'Продам', topMessageId: 950, closed: false, pinned: false, hidden: false, date: null },
     ]);
+  });
+
+  it('с запросом остаются только подходящие темы: закреплённые Telegram присылает в любом случае', async () => {
+    tg.on('messages.GetForumTopics', () => ({
+      count: 2,
+      topics: [
+        { className: 'ForumTopic', id: 1, title: 'General', topMessage: 900, pinned: true },
+        { className: 'ForumTopic', id: 5, title: 'Продам', topMessage: 950 },
+      ],
+    }));
+    const found = await new TopicsService(tg).list(ACC, forum, { limit: 50, query: 'прод' });
+    expect(found.topics.map(t => t.title)).toEqual(['Продам']);
+    expect(found.total).toBe(1);
     expect(tg.last('messages.GetForumTopics').request).toMatchObject({ q: 'прод', limit: 50 });
+
+    const none = await new TopicsService(tg).list(ACC, forum, { limit: 50, query: 'zzz' });
+    expect(none).toEqual({ topics: [], total: 0 });
+  });
+
+  it('у канала тем нет: ответ понятный, Telegram не тревожится', async () => {
+    const channel = { ...forum, meta: { broadcast: true } };
+    await expect(new TopicsService(tg).list(ACC, channel, { limit: 10 })).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('not a forum') });
+    expect(tg.callsOf('messages.GetForumTopics')).toHaveLength(0);
   });
 
   it('не форум объясняется понятно', async () => {

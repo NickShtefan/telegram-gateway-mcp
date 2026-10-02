@@ -44,6 +44,10 @@ export class TopicsService {
     if (chat.kind !== 'channel') {
       throw new GatewayError('INVALID_ARGUMENT', 'Forum topics exist only in supergroups with topics enabled.');
     }
+    // У канала тем не бывает: Telegram отвечает на такой запрос «чат не найден», что сбивает с толку.
+    if (chat.meta.broadcast === true) {
+      throw new GatewayError('INVALID_ARGUMENT', 'This chat is a channel, not a forum: it has no topics. Read it with tg_read_history without topic.');
+    }
     let result: { count?: number; topics?: RawTopic[] };
     try {
       result = (await this.tg.invoke(
@@ -68,8 +72,11 @@ export class TopicsService {
       throw err;
     }
 
+    // На запрос без совпадений Telegram всё равно присылает закреплённые темы: оставляем только подходящие.
+    const wanted = (params.query ?? '').trim().toLowerCase();
     const topics = (result.topics ?? [])
       .filter(t => t && t.className === 'ForumTopic' && typeof t.id === 'number')
+      .filter(t => wanted === '' || (t.title ?? '').toLowerCase().includes(wanted))
       .map(t => ({
         id: t.id!,
         title: t.title ?? '',
@@ -79,6 +86,7 @@ export class TopicsService {
         hidden: t.hidden === true,
         date: typeof t.date === 'number' ? t.date : null,
       }));
-    return { topics, total: typeof result.count === 'number' ? result.count : null };
+    // С запросом счётчик Telegram включает и лишние закреплённые темы: верим тому, что осталось.
+    return { topics, total: wanted !== '' ? topics.length : typeof result.count === 'number' ? result.count : null };
   }
 }
