@@ -3,8 +3,8 @@
  *
  * Механика взята из helper, где она работает на проде: корень треда через
  * `GetDiscussionMessage` (копия поста с `savedFromMsgId`), ветка страницами
- * по 100 через `GetReplies` (`commentsRefresher.ts:311`, `:405`), ошибки по
- * смыслу из `refreshShared.ts:93`. Отличие: читаем тред любого канала и ничего
+ * по 100 через `GetReplies` (`commentsRefresher.ts`), ошибки по
+ * смыслу из `refreshShared.ts`. Отличие: читаем тред любого канала и ничего
  * не пишем в базу.
  */
 import bigInt from 'big-integer';

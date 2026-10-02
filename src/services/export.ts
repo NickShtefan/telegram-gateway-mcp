@@ -7,7 +7,7 @@
  * Авторы хэшируются, телефоны маскируются, пока владелец явно не попросил иначе.
  *
  * Постраничный проход с отсечкой по дате взят из channel-scope
- * `archiveService.ts:180`.
+ * `archiveService.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, writeSync } from 'node:fs';

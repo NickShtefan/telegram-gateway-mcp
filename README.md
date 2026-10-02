@@ -58,8 +58,6 @@ MCP-шлюз к Telegram. Один демон держит сессии подк
 | [docs/prior-art.md](docs/prior-art.md) | Обзор готовых Telegram MCP-серверов и правил Telegram. |
 | `src/` | Код: `core`, `storage`, `policy`, `services`, `writegate`, `mcp`, `transport`, `cli`. |
 | [scripts/lab-install.sh](scripts/lab-install.sh) | Установка под отдельным пользователем macOS (запускает владелец, нужен sudo). |
-| [reference/](reference/) | Снимок исходников channel-scope, helper и canary (только чтение). |
-| [scripts/sync-reference.sh](scripts/sync-reference.sh) | Обновить снимок по списку [reference/MANIFEST.txt](reference/MANIFEST.txt). |
 
 ## Быстрый старт для разработки
 

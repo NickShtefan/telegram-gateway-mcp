@@ -58,7 +58,6 @@ tg-mcp/
 │   ├── cli/          # serve, stdio, login, doctor, user, account, scope
 │   └── runtime.ts    # сборка ядра: хранилище, лимитер, пул, дверь в Telegram
 ├── docs/
-├── reference/        # снимок исходников соседних репозиториев, только чтение
 └── scripts/          # установщик для лабораторной машины, обновление снимка
 ```
 

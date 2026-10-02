@@ -2,9 +2,9 @@
  * Чтение: лента чата с курсором, окно по датам, тема форума, сообщения по id,
  * контекст вокруг сообщения, альбом целиком.
  *
- * Циклы пагинации взяты из channel-scope: `forwardAnalysisService.ts:56`
- * (GetHistory с offsetId), `archiveService.ts:180` (отсечка по дате),
- * `refreshService.ts:75` (GetMessages пачками по 100).
+ * Циклы пагинации взяты из channel-scope: `forwardAnalysisService.ts`
+ * (GetHistory с offsetId), `archiveService.ts` (отсечка по дате),
+ * `refreshService.ts` (GetMessages пачками по 100).
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
