@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { writePrivateMode } from '../../policy/scopes.js';
 import { makeTestGateway, type TestClient, type TestGateway } from '../../__tests__/helpers/gateway.js';
 import { rawChannel, rawMessage, rawUser } from '../../__tests__/helpers/fakeTg.js';
 import { GatewayError } from '../../core/errors.js';
@@ -313,7 +314,51 @@ describe('безопасность', () => {
     expect(service.text).toContain('service chats');
   });
 
-  it('глобальный поиск не ищет в личных чатах и не раскрывает их', async () => {
+  it('where=private ищет по личным чатам, но отдаёт только открытые владельцем на чтение', async () => {
+    gw.tg.on('messages.SearchGlobal', () => ({
+      messages: [
+        { className: 'Message', id: 3, peerId: { className: 'PeerUser', userId: 42n }, date: 1_790_000_000, message: 'продам велосипед за 15' },
+        { className: 'Message', id: 4, out: true, peerId: { className: 'PeerUser', userId: 42n }, date: 1_790_000_100, message: 'беру велосипед' },
+        { className: 'Message', id: 8, peerId: { className: 'PeerUser', userId: 777000n }, date: 1_790_000_200, message: 'код входа: велосипед 12345' },
+        { className: 'Message', id: 9, peerId: { className: 'PeerUser', userId: 55n }, date: 1_790_000_300, message: 'чужой велосипед' },
+      ],
+      chats: [],
+      users: [rawUser(42, { username: 'seller', firstName: 'Продавец' }), rawUser(777000, { firstName: 'Telegram' }), rawUser(55, { username: 'other' })],
+    }));
+
+    // личные чаты закрыты: ничего не видно, и число скрытых совпадений не раскрывается
+    const closed = await nick.call('tg_search_messages', { query: 'велосипед', where: 'private' });
+    expect(gw.tg.last('messages.SearchGlobal').request.usersOnly).toBe(true);
+    expect(gw.tg.last('messages.SearchGlobal').request.broadcastsOnly).toBeUndefined();
+    expect(closed.text).toContain('in private chats: 0 shown');
+    expect(closed.text).not.toContain('велосипед за 15');
+    expect(closed.text).toContain('Only private chats the owner opened for reading are searched');
+
+    // режим send чтения не открывает
+    writePrivateMode(gw.storage, 'nick', 'agent', 'send');
+    expect((await nick.call('tg_search_messages', { query: 'велосипед', where: 'private' })).text).toContain('0 shown');
+
+    // открыт один диалог: виден только он, свои сообщения подписаны аккаунтом
+    writePrivateMode(gw.storage, 'nick', 'agent', 'closed');
+    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow' });
+    const one = await nick.call('tg_search_messages', { query: 'велосипед', where: 'private' });
+    expect(one.text).toContain('2 shown');
+    expect(one.text).toContain('продам велосипед за 15');
+    expect(one.text).toContain('in @seller');
+    expect(one.text).toContain('(this account)');
+    expect(one.text).not.toContain('чужой велосипед');
+    expect(one.text).not.toContain('код входа');
+
+    // режим open: все личные чаты, кроме служебных
+    gw.storage.scopes.remove('nick', 'agent', 'seller');
+    writePrivateMode(gw.storage, 'nick', 'agent', 'open');
+    const all = await nick.call('tg_search_messages', { query: 'велосипед', where: 'private' });
+    expect(all.text).toContain('3 shown');
+    expect(all.text).toContain('чужой велосипед');
+    expect(all.text).not.toContain('код входа');
+  });
+
+  it('глобальный поиск по каналам и группам личные чаты не трогает', async () => {
     gw.tg.on('messages.SearchGlobal', () => ({
       messages: [rawMessage(CHANNEL, 9, { message: 'публичный пост' }), { className: 'Message', id: 3, peerId: { className: 'PeerUser', userId: 42n }, date: 1_790_000_000, message: 'секрет из лички' }],
       chats: [channel()],
@@ -323,7 +368,7 @@ describe('безопасность', () => {
     expect(reply.text).toContain('публичный пост');
     expect(reply.text).toContain('in @stonksnws');
     expect(reply.text).not.toContain('секрет из лички');
-    // личные чаты Telegram не ищет вовсе, и число скрытых совпадений не раскрывается
+    // с флагом каналов Telegram личные чаты не ищет; попавшее в ответ сообщение закрытого диалога отбрасывается
     expect(gw.tg.last('messages.SearchGlobal').request.broadcastsOnly).toBe(true);
     expect(reply.text).not.toMatch(/hidden/);
     await nick.call('tg_search_messages', { query: 'велосипед', where: 'groups' });

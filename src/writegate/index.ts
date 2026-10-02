@@ -49,8 +49,12 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
   approvals.register(
     'reply',
     async approval => {
-      const p = approval.payload as { accountId: string; chatKey: string; postId: number; text: string; sendAs?: 'account' | 'channel' };
-      const sent = await write.reply({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'read'), p.postId, p.text, p.sendAs ?? 'account');
+      const p = approval.payload as { accountId: string; chatKey: string; postId: number; text: string; sendAs?: 'account' | 'channel'; commentId?: number; linkPreview?: boolean };
+      const sent = await write.reply({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'read'), p.postId, p.text, {
+        sendAs: p.sendAs,
+        commentId: p.commentId,
+        linkPreview: p.linkPreview,
+      });
       return { summary: sent.link ? `Sent: ${sent.link}` : 'Sent', data: { link: sent.link, message_id: sent.messageId } };
     },
     { editable: true },
@@ -59,8 +63,11 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
   approvals.register(
     'send',
     async approval => {
-      const p = approval.payload as { accountId: string; chatKey: string; text: string };
-      const sent = await write.send({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'write'), p.text);
+      const p = approval.payload as { accountId: string; chatKey: string; text: string; replyToId?: number; linkPreview?: boolean };
+      const sent = await write.send({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'write'), p.text, {
+        replyToId: p.replyToId,
+        linkPreview: p.linkPreview,
+      });
       return { summary: sent.link ? `Sent: ${sent.link}` : 'Sent', data: { message_id: sent.messageId } };
     },
     { editable: true },

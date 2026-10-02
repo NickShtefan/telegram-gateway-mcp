@@ -141,6 +141,92 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(store().writesSince('agent', 'reply', 0)).toBe(2);
   });
 
+  it('ссылка на комментарий: ответ уходит на этот комментарий и остаётся в ветке поста', async () => {
+    gw.tg.on('channels.GetMessages', (req: { id: Array<{ id: number }> }) => ({
+      messages: req.id.map(({ id }) =>
+        id === 45
+          ? rawMessage(GROUP, 45, { message: 'комментарий к посту 10', replyTo: { replyToMsgId: 3010 } })
+          : rawMessage(GROUP, id, { message: 'сообщение из другой ветки', replyTo: { replyToMsgId: 999, replyToTopId: 777 } }),
+      ),
+      chats: [group()],
+      users: [],
+    }));
+    const drafted = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=45', text: 'согласен' });
+    expect(drafted.isError, drafted.text).toBe(false);
+    expect(drafted.text).toContain('Reply to comment #45 under post #10 of @stonksnws is prepared.');
+    expect(drafted.text).toContain('Reply to comment https://t.me/stonksnws/10?comment=45 under post https://t.me/stonksnws/10');
+
+    // ответ на сам пост в это же время готовится отдельно: это другое действие
+    const toPost = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'общий комментарий' });
+    expect(toPost.isError, toPost.text).toBe(false);
+    // а второй черновик на тот же комментарий нет
+    const dup = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=45', text: 'ещё раз' });
+    expect(dup.text).toContain('A reply to this comment is already prepared');
+
+    expect((await confirm(approvalIdOf(drafted.text))).text).toBe('Done: Sent: https://t.me/stonksnws/10?comment=7777');
+    const sent = gw.tg.last('messages.SendMessage').request;
+    expect(sent.replyTo.replyToMsgId).toBe(45);
+    expect(sent.replyTo.topMsgId).toBe(3010);
+    expect(sent.peer.className).toBe('InputPeerChannel');
+    expect(() => sent.getBytes()).not.toThrow();
+
+    await confirm(approvalIdOf(toPost.text));
+    const root = gw.tg.last('messages.SendMessage').request;
+    expect(root.replyTo.replyToMsgId).toBe(3010);
+    expect(root.replyTo.topMsgId).toBeUndefined();
+
+    // комментарий из чужой ветки не принимается
+    const foreign = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=46', text: 'мимо' });
+    expect(foreign.isError).toBe(true);
+    expect(foreign.text).toContain('Comment 46 not found under post 10');
+  });
+
+  it('превью ссылок выключено, пока его не попросили явно', async () => {
+    const plain = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'смотри https://example.com' });
+    expect(plain.text).not.toContain('Link preview');
+    await confirm(approvalIdOf(plain.text));
+    expect(gw.tg.last('messages.SendMessage').request.noWebpage).toBe(true);
+
+    const withPreview = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'смотри https://example.com', link_preview: true });
+    expect(withPreview.text).toContain('Link preview: on');
+    await confirm(approvalIdOf(withPreview.text));
+    expect(gw.tg.last('messages.SendMessage').request.noWebpage).toBeUndefined();
+
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerChannel', channelId: BigInt(GROUP) }, chats: [group()], users: [] }));
+    const sent = await nick.call('tg_send', { chat: '@stonks_chat', text: 'https://example.com', link_preview: true });
+    expect(sent.text).toContain('Link preview: on');
+    await confirm(approvalIdOf(sent.text));
+    expect(gw.tg.last('messages.SendMessage').request.noWebpage).toBeUndefined();
+  });
+
+  it('tg_send reply_to: ответ на конкретное сообщение чата', async () => {
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerChannel', channelId: BigInt(GROUP) }, chats: [group()], users: [] }));
+    gw.tg.on('channels.GetMessages', (req: { id: Array<{ id: number }> }) => ({
+      messages: req.id.filter(({ id }) => id === 120).map(({ id }) => rawMessage(GROUP, id, { message: 'кто продаёт велосипед?' })),
+      chats: [group()],
+      users: [],
+    }));
+    const drafted = await nick.call('tg_send', { chat: '@stonks_chat', text: 'я продаю', reply_to: 120 });
+    expect(drafted.isError, drafted.text).toBe(false);
+    expect(drafted.text).toContain('in reply to message https://t.me/c/600/120');
+    // текст сообщения, на которое отвечаем, в предпросмотр не попадает: это чужой текст
+    expect(drafted.text).not.toContain('велосипед');
+    await confirm(approvalIdOf(drafted.text));
+    const sent = gw.tg.last('messages.SendMessage').request;
+    expect(sent.replyTo.replyToMsgId).toBe(120);
+    expect(() => sent.getBytes()).not.toThrow();
+
+    const missing = await nick.call('tg_send', { chat: '@stonks_chat', text: 'ау', reply_to: 999 });
+    expect(missing.isError).toBe(true);
+    expect(missing.text).toContain('Error: MESSAGE_NOT_FOUND');
+    expect(missing.text).toContain('Message 999 not found');
+
+    // без reply_to сообщение уходит как обычное
+    const plain = await nick.call('tg_send', { chat: '@stonks_chat', text: 'привет всем' });
+    await confirm(approvalIdOf(plain.text));
+    expect(gw.tg.last('messages.SendMessage').request.replyTo).toBeUndefined();
+  });
+
   it('дневной предел ответов действует и под одним постом', async () => {
     for (let i = 1; i <= 20; i++) store().recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'reply', chatKey: '-1000000000500', postId: 10, sentMessageId: i });
     const over = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'двадцать первый' });

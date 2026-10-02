@@ -32,6 +32,7 @@ function confirmNote(approval: ApprovalRecord, ctx: ToolContext): string {
   const text = approval.payload.text;
   const hasText = typeof text === 'string' && text !== '';
   if (hasText) lines.push('Text, exactly as it will be sent:', text);
+  if (approval.payload.linkPreview === true) lines.push('Link preview: on (Telegram adds a preview card for the first link in the text).');
   lines.push(
     '',
     `Show this to the owner. Only after the owner clearly agrees, call tg_confirm with approval_id ${approval.id}.`,
@@ -49,18 +50,21 @@ function outcomeOf(approval: ApprovalRecord): string {
   return '';
 }
 
+const linkPreviewArg = z.boolean().optional().describe('true shows a preview card for the first link in the text. Default false.');
+
 const tgReply = defineTool({
   name: 'tg_reply',
   toolset: 'write',
   title: 'Reply in comments to a post',
   description:
-    'Prepares a reply in the comments of a channel post and returns a preview with an approval_id. Nothing is posted until tg_confirm, which you call after the owner agrees.',
+    'Prepares a reply in the comments of a channel post and returns a preview with an approval_id. Nothing is posted until tg_confirm, which you call after the owner agrees. A link to the post replies to the post itself; a link to a comment (...?comment=N, as printed by tg_get_comments) replies to that comment.',
   input: {
-    link: z.string().optional().describe('t.me link to the post.'),
+    link: z.string().optional().describe('t.me link to the post, or to a comment under it to reply to that comment.'),
     chat: z.string().optional().describe('Channel, when "link" is not given.'),
     id: z.number().int().positive().max(2_147_483_647).optional().describe('Post id, when "link" is not given.'),
     text: z.string().describe('Reply text, plain text, up to 4096 characters.'),
     send_as: z.enum(['account', 'channel']).optional().describe('Reply as the account (default) or as the channel, if the account is its admin.'),
+    link_preview: linkPreviewArg,
     account: accountArg,
   },
   readOnly: false,
@@ -73,29 +77,37 @@ const tgReply = defineTool({
       throw new GatewayError('INVALID_ARGUMENT', 'tg_reply answers in the comments of a channel post. For other chats use tg_send.');
     }
 
+    // Ссылка на комментарий: отвечаем на него, а не на пост. Что комментарий из ветки этого поста, проверил locateMessage.
+    const commentId = where.commentOf ? where.messageId : undefined;
+
     writeGate.write.assertCanReply(where.accountId);
     const waiting = writeGate.approvals.findPending(
       ctx.principal.userId,
       'reply',
-      p => p.accountId === where.accountId && p.chatKey === post.chat.peerKey && p.postId === post.postId,
+      p => p.accountId === where.accountId && p.chatKey === post.chat.peerKey && p.postId === post.postId && (p.commentId ?? null) === (commentId ?? null),
     );
     if (waiting) {
       throw new GatewayError(
         'LIMIT_REACHED',
-        `A reply to this post is already prepared (${waiting.id}). Confirm it with tg_confirm (pass "text" to change the wording) or reject it there; do not prepare another one.`,
+        `A reply to this ${commentId ? 'comment' : 'post'} is already prepared (${waiting.id}). Confirm it with tg_confirm (pass "text" to change the wording) or reject it there; do not prepare another one.`,
       );
     }
 
     const link = messageLink({ username: post.chat.username, peerKey: post.chat.peerKey, messageId: post.postId }) ?? `#${post.postId} in ${chatLabel(post.chat)}`;
+    const commentLink = commentId
+      ? (messageLink({ username: post.chat.username, peerKey: post.chat.peerKey, messageId: post.postId, commentId }) ?? `#${commentId}`)
+      : null;
     const sendAs = args.send_as ?? 'account';
+    const linkPreview = args.link_preview === true;
     const approval = writeGate.approvals.request({
       userId: ctx.principal.userId,
       accountId: where.accountId,
       kind: 'reply',
-      payload: { accountId: where.accountId, chatKey: post.chat.peerKey, postId: post.postId, text, sendAs },
-      title: `Reply in the comments of post ${link}${sendAs === 'channel' ? ' (on behalf of the channel)' : ''}`,
+      payload: { accountId: where.accountId, chatKey: post.chat.peerKey, postId: post.postId, text, sendAs, ...(commentId ? { commentId } : {}), ...(linkPreview ? { linkPreview } : {}) },
+      title: `${commentLink ? `Reply to comment ${commentLink} under post ${link}` : `Reply in the comments of post ${link}`}${sendAs === 'channel' ? ' (on behalf of the channel)' : ''}`,
     });
-    return { accountId: where.accountId, peerKey: post.chat.peerKey, text: `Reply to post #${post.postId} of ${chatLabel(post.chat)} is prepared.\n${confirmNote(approval, ctx)}` };
+    const what = commentId ? `Reply to comment #${commentId} under post #${post.postId}` : `Reply to post #${post.postId}`;
+    return { accountId: where.accountId, peerKey: post.chat.peerKey, text: `${what} of ${chatLabel(post.chat)} is prepared.\n${confirmNote(approval, ctx)}` };
   },
 });
 
@@ -108,21 +120,34 @@ const tgSend = defineTool({
   input: {
     chat: chatArg,
     text: z.string().describe('Message text, plain text, up to 4096 characters.'),
+    reply_to: z.number().int().positive().max(2_147_483_647).optional().describe('Id of a message in this chat to reply to.'),
+    link_preview: linkPreviewArg,
     account: accountArg,
   },
   readOnly: false,
   handler: async (args, ctx) => {
-    const { writeGate } = ctx.services;
+    const { writeGate, history } = ctx.services;
     const text = assertMessageText(args.text);
     const accountId = ctx.account(args.account);
     const { chat } = await ctx.openChat(args.chat, accountId, 'write');
     writeGate.write.assertCanMessage(accountId, chat);
+
+    const replyToId = args.reply_to;
+    if (replyToId !== undefined) {
+      // Проверяется только существование: текст сообщения агенту здесь не отдаётся.
+      const found = await history.byIds(accountId, chat, [replyToId]);
+      if (found.messages.length === 0) {
+        throw new GatewayError('MESSAGE_NOT_FOUND', `Message ${replyToId} not found in ${chatLabel(chat)}: it was deleted or the id is wrong.`);
+      }
+    }
+    const linkPreview = args.link_preview === true;
+    const replyLink = replyToId !== undefined ? messageLink({ username: chat.username, peerKey: chat.peerKey, messageId: replyToId }) : null;
     const approval = writeGate.approvals.request({
       userId: ctx.principal.userId,
       accountId,
       kind: 'send',
-      payload: { accountId, chatKey: chat.peerKey, text },
-      title: `Message to ${chatLabel(chat)}`,
+      payload: { accountId, chatKey: chat.peerKey, text, ...(replyToId !== undefined ? { replyToId } : {}), ...(linkPreview ? { linkPreview } : {}) },
+      title: `Message to ${chatLabel(chat)}${replyToId !== undefined ? ` in reply to message ${replyLink ?? `#${replyToId}`}` : ''}`,
     });
     return { accountId, peerKey: chat.peerKey, text: `Message to ${chatLabel(chat)} is prepared.\n${confirmNote(approval, ctx)}` };
   },

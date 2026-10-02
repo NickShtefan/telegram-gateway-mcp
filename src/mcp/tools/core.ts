@@ -392,10 +392,10 @@ const tgSearchMessages = defineTool({
   toolset: 'core',
   title: 'Search across chats',
   description:
-    'Search messages in the channels (default) or groups the account has joined, not the whole Telegram and not private chats. A query that is a single #hashtag searches public channel posts by that hashtag instead.',
+    'Search messages in the channels (default) or groups the account has joined, or in its private chats (only the ones the owner opened for reading). It is not a search over the whole Telegram. A query that is a single #hashtag searches public channel posts by that hashtag instead.',
   input: {
     query: z.string().min(1).describe('Words to search for, or one #hashtag.'),
-    where: z.enum(['channels', 'groups']).optional().describe('channels (default) or groups. Call twice to cover both.'),
+    where: z.enum(['channels', 'groups', 'private']).optional().describe('channels (default), groups, or private (chats with people that the owner opened for reading). One kind per call.'),
     since: sinceArg,
     until: untilArg,
     limit: z.number().int().optional().describe('Results per page: default 20, max 50.'),
@@ -428,16 +428,19 @@ const tgSearchMessages = defineTool({
       return chats.get(m.chatKey) ?? null;
     };
 
-    // Личные переписки Telegram не ищет вовсе (флаги channels и groups), а чаты, закрытые
-    // владельцем, молча отбрасываются: ни текст, ни число совпадений из них не видны.
+    // Чаты, закрытые для чтения (в том числе личные переписки, которые владелец не открывал, и
+    // служебные чаты Telegram), молча отбрасываются: ни текст, ни число совпадений из них не видны.
     const visible = page.messages.filter(m => {
       const chat = chatOf(m);
-      return chat !== null && chat.kind !== 'user' && services.scopes.isAllowed(principal.userId, accountId, chat);
+      return chat !== null && services.scopes.isAllowed(principal.userId, accountId, chat);
     });
 
+    const where = args.where ?? 'channels';
     const hints: string[] = [];
-    if (!hashtag && !args.where) hints.push('Searched channels only. For group chats call again with where=groups.');
-    if (!hashtag && visible.length === 0 && !args.cursor) {
+    if (!hashtag && !args.where) hints.push('Searched channels only. For group chats call again with where=groups, for private chats with where=private.');
+    if (!hashtag && where === 'private' && visible.length === 0 && !args.cursor) {
+      hints.push('Only private chats the owner opened for reading are searched; tg_status shows the private chat mode.');
+    } else if (!hashtag && visible.length === 0 && !args.cursor) {
       hints.push('Nothing found in the chats this account has joined. To search inside a specific public chat use tg_search_chat.');
     }
 
@@ -447,7 +450,7 @@ const tgSearchMessages = defineTool({
       text: formatMessageList(visible, {
         title: hashtag
           ? `Public posts with ${safeLabel(args.query, 60)}: ${visible.length} shown`
-          : `Search "${safeLabel(args.query, 80)}" in joined ${args.where ?? 'channels'}: ${visible.length} shown${describeWindow(window)}`,
+          : `Search "${safeLabel(args.query, 80)}" in ${where === 'private' ? 'private chats' : `joined ${where}`}: ${visible.length} shown${describeWindow(window)}`,
         mode: 'brief',
         briefChars: 320,
         envelope: createEnvelope(),

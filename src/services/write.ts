@@ -68,6 +68,20 @@ export interface SentMessage {
   link: string | null;
 }
 
+export interface ReplyOptions {
+  sendAs?: 'account' | 'channel';
+  /** Ответить на этот комментарий в ветке поста, а не на сам пост. */
+  commentId?: number;
+  /** Показать превью первой ссылки из текста. По умолчанию выключено: уходит ровно то, что было в предпросмотре. */
+  linkPreview?: boolean;
+}
+
+export interface SendOptions {
+  /** id сообщения в этом чате, на которое отвечаем. */
+  replyToId?: number;
+  linkPreview?: boolean;
+}
+
 /** Предел длины сообщения Telegram. */
 export const MESSAGE_MAX_CHARS = 4096;
 
@@ -169,8 +183,8 @@ export class WriteService {
     }
   }
 
-  /** Ответ в комментариях к посту канала. */
-  async reply(context: WriteContext, channel: EntityRecord, postId: number, text: string, sendAs: 'account' | 'channel' = 'account'): Promise<SentMessage> {
+  /** Ответ в комментариях к посту канала: на сам пост или на один из комментариев под ним. */
+  async reply(context: WriteContext, channel: EntityRecord, postId: number, text: string, options: ReplyOptions = {}): Promise<SentMessage> {
     const message = assertMessageText(text);
     this.assertCanReply(context.accountId);
     const root = await this.deps.comments.root(context.accountId, channel, postId);
@@ -180,10 +194,13 @@ export class WriteService {
       new Api.messages.SendMessage({
         peer: toInputPeer(root.discussion),
         message,
-        replyTo: new Api.InputReplyToMessage({ replyToMsgId: root.rootId }),
+        // Ответ на комментарий остаётся в ветке поста: корень ветки передаётся как topMsgId.
+        replyTo: options.commentId
+          ? new Api.InputReplyToMessage({ replyToMsgId: options.commentId, topMsgId: root.rootId })
+          : new Api.InputReplyToMessage({ replyToMsgId: root.rootId }),
         randomId: randomId(),
-        noWebpage: true,
-        sendAs: sendAs === 'channel' ? toInputPeer(channel) : undefined,
+        noWebpage: options.linkPreview === true ? undefined : true,
+        sendAs: options.sendAs === 'channel' ? toInputPeer(channel) : undefined,
       }),
     );
 
@@ -216,7 +233,7 @@ export class WriteService {
   }
 
   /** Сообщение в чат или человеку. */
-  async send(context: WriteContext, peer: EntityRecord, text: string): Promise<SentMessage> {
+  async send(context: WriteContext, peer: EntityRecord, text: string, options: SendOptions = {}): Promise<SentMessage> {
     const message = assertMessageText(text);
     this.assertCanMessage(context.accountId, peer);
     const messageId = await this.sendMessage(
@@ -225,7 +242,8 @@ export class WriteService {
         peer: toInputPeer(peer),
         message,
         randomId: randomId(),
-        noWebpage: true,
+        noWebpage: options.linkPreview === true ? undefined : true,
+        replyTo: options.replyToId ? new Api.InputReplyToMessage({ replyToMsgId: options.replyToId }) : undefined,
       }),
     );
     this.record({

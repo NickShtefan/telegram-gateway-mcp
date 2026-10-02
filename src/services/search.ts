@@ -6,12 +6,13 @@
  * (PaginationState: offsetRate, offsetPeer, offsetId). Там обе функции
  * выбрасывали сообщения и оставляли только каналы; агенту нужны сообщения.
  *
- * Важно: `messages.SearchGlobal` ищет только по чатам, где состоит аккаунт,
+ * Важно: `messages.SearchGlobal` ищет только по чатам аккаунта (каналы, группы или личные диалоги),
  * а `channels.SearchPosts` шлюз использует только для поиска по
  * хэштегу. Полнотекстового поиска по всему Telegram здесь нет.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
+import type { AccountIdentity } from '../core/clientPool.js';
 import { toInputPeer } from '../core/entities.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntitiesRepo, EntityRecord } from '../storage/port.js';
@@ -29,8 +30,11 @@ export interface GlobalSearchParams {
   limit: number;
   minDate?: number;
   maxDate?: number;
-  /** Где искать: в каналах или в группах. Личные чаты не ищутся никогда: Telegram не должен отдавать их текст в общий поиск. */
-  where: 'channels' | 'groups';
+  /**
+   * Где искать: в каналах, в группах или в личных чатах. Что из найденного в личных
+   * чатах отдать агенту, решает инструмент по скоупам: закрытые диалоги отбрасываются.
+   */
+  where: 'channels' | 'groups' | 'private';
   position?: GlobalPosition;
 }
 
@@ -83,10 +87,12 @@ export class SearchService {
         limit,
         broadcastsOnly: params.where === 'channels' ? true : undefined,
         groupsOnly: params.where === 'groups' ? true : undefined,
+        usersOnly: params.where === 'private' ? true : undefined,
       }),
       options,
     );
-    return this.globalPage(result);
+    // В личных чатах свои сообщения приходят без автора и подписываются аккаунтом.
+    return this.globalPage(result, params.where === 'private' ? await this.tg.whoami(accountId) : undefined);
   }
 
   /** Поиск по хэштегу в публичных постах каналов. */
@@ -147,9 +153,9 @@ export class SearchService {
     return entity && (entity.kind === 'chat' || entity.accessHash !== null) ? toInputPeer(entity) : new Api.InputPeerEmpty();
   }
 
-  private globalPage(result: unknown): GlobalSearchPage {
+  private globalPage(result: unknown, self?: AccountIdentity): GlobalSearchPage {
     const slice = result as SliceLike;
-    const messages = normalizeMessages(result);
+    const messages = normalizeMessages(result, undefined, self);
     const rawCount = Array.isArray(slice.messages) ? slice.messages.length : 0;
     const last = messages[messages.length - 1];
     // Telegram может вернуть неполную страницу и при этом иметь продолжение: признак конца это отсутствие nextRate.
