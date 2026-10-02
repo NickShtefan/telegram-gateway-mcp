@@ -1,7 +1,7 @@
 /**
  * Хранилище шлюза записи: запросы на подтверждение и журнал выполненных
- * действий. По журналу считаются лимиты (ответов и реакций в день, новых
- * диалогов) и правило «один ответ на пост».
+ * действий. По журналу считаются дневные пределы: ответы, реакции, вступления,
+ * новые диалоги.
  */
 import type { SqliteStorage } from '../storage/sqlite.js';
 
@@ -131,10 +131,6 @@ export class WriteStore {
   }
 
   // ---------- журнал записи ----------
-
-  hasReply(accountId: string, chatKey: string, postId: number): boolean {
-    return this.db.prepare("SELECT 1 AS ok FROM writes WHERE account_id = ? AND chat_key = ? AND post_id = ? AND kind = 'reply'").get(accountId, chatKey, postId) !== undefined;
-  }
 
   recordWrite(write: WriteRecord): number {
     const result = this.db

@@ -162,11 +162,8 @@ export class WriteService {
     }
   }
 
-  /** Можно ли ещё ответить на этот пост с этого аккаунта: один ответ на пост, кто бы из пользователей ни просил. */
-  assertCanReply(accountId: string, chatKey: string, postId: number): void {
-    if (this.deps.store.hasReply(accountId, chatKey, postId)) {
-      throw new GatewayError('LIMIT_REACHED', 'This account has already replied to this post. Only one reply per post is allowed.');
-    }
+  /** Дневной предел ответов под постами. Сколько раз отвечать под одним постом, решает владелец. */
+  assertCanReply(accountId: string): void {
     if (reached(this.deps.store.writesSince(accountId, 'reply', dayStart(this.now())), this.limits.repliesPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.repliesPerDay} replies for this account is reached.`);
     }
@@ -175,7 +172,7 @@ export class WriteService {
   /** Ответ в комментариях к посту канала. */
   async reply(context: WriteContext, channel: EntityRecord, postId: number, text: string, sendAs: 'account' | 'channel' = 'account'): Promise<SentMessage> {
     const message = assertMessageText(text);
-    this.assertCanReply(context.accountId, channel.peerKey, postId);
+    this.assertCanReply(context.accountId);
     const root = await this.deps.comments.root(context.accountId, channel, postId);
 
     const messageId = await this.sendMessage(

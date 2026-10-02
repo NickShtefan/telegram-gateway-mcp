@@ -340,4 +340,9 @@ export const MIGRATIONS: string[] = [
   DROP TABLE scope_rules;
   ALTER TABLE scope_rules_v7 RENAME TO scope_rules;
   `,
+
+  // 8: предела «один ответ на пост с аккаунта» больше нет (решение 29): сколько раз отвечать, решает владелец.
+  `
+  DROP INDEX IF EXISTS writes_one_reply;
+  `,
 ];

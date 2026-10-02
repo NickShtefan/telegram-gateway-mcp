@@ -52,7 +52,7 @@ const tgReply = defineTool({
   toolset: 'write',
   title: 'Reply in comments to a post',
   description:
-    'Prepares a reply in the comments of a channel post and returns a preview with an approval_id. Nothing is posted until tg_confirm, which you call after the owner agrees. One reply per post per account.',
+    'Prepares a reply in the comments of a channel post and returns a preview with an approval_id. Nothing is posted until tg_confirm, which you call after the owner agrees.',
   input: {
     link: z.string().optional().describe('t.me link to the post.'),
     chat: z.string().optional().describe('Channel, when "link" is not given.'),
@@ -71,7 +71,7 @@ const tgReply = defineTool({
       throw new GatewayError('INVALID_ARGUMENT', 'tg_reply answers in the comments of a channel post. For other chats use tg_send.');
     }
 
-    writeGate.write.assertCanReply(where.accountId, post.chat.peerKey, post.postId);
+    writeGate.write.assertCanReply(where.accountId);
     const waiting = writeGate.approvals.findPending(
       ctx.principal.userId,
       'reply',

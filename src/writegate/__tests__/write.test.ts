@@ -120,20 +120,32 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'другой текст' })).isError).toBe(false);
   });
 
-  it('один ответ на пост с аккаунта: ни второй черновик, ни второй пользователь', async () => {
+  it('под одним постом можно ответить несколько раз; второй черновик не создаётся, пока первый ждёт решения', async () => {
     const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'первый' })).text);
     const again = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'второй' });
     expect(again.isError).toBe(true);
     expect(again.text).toContain(`A reply to this post is already prepared (${approvalId})`);
 
-    await confirm(approvalId);
-    // общий аккаунт: второй пользователь на тот же пост уже не ответит
+    expect((await confirm(approvalId)).isError).toBe(false);
+    // первый ответ отправлен: теперь тот же пользователь может ответить ещё раз
+    const second = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'второй' });
+    expect(second.isError, second.text).toBe(false);
+    expect((await confirm(approvalIdOf(second.text))).isError).toBe(false);
+    // и второй пользователь общего аккаунта тоже
     const partner = await gw.client('partner', ALL);
-    const second = await partner.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'я тоже', account: 'agent' });
-    expect(second.isError).toBe(true);
-    expect(second.text).toContain('Error: LIMIT_REACHED');
-    expect(second.text).toContain('already replied to this post');
+    const third = await partner.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'я тоже', account: 'agent' });
+    expect(third.isError, third.text).toBe(false);
     await partner.close();
+
+    expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(2);
+    expect(store().writesSince('agent', 'reply', 0)).toBe(2);
+  });
+
+  it('дневной предел ответов действует и под одним постом', async () => {
+    for (let i = 1; i <= 20; i++) store().recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'reply', chatKey: '-1000000000500', postId: 10, sentMessageId: i });
+    const over = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'двадцать первый' });
+    expect(over.isError).toBe(true);
+    expect(over.text).toContain('Daily limit of 20 replies');
   });
 
   it('ошибка Telegram при отправке приходит агенту с кодом', async () => {
@@ -145,8 +157,8 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(failed.isError).toBe(true);
     expect(failed.text).toContain('Error: WRITE_FORBIDDEN');
     expect(failed.text).toContain('The action was confirmed but failed: The account is not allowed to write here.');
-    // неудачная отправка не занимает «один ответ на пост»
-    expect(store().hasReply('agent', '-1000000000500', 10)).toBe(false);
+    // неудачная отправка в журнал не попадает и дневной предел не тратит
+    expect(store().writesSince('agent', 'reply', 0)).toBe(0);
   });
 
   it('подтверждается ровно то, что уйдёт: длинный и «невидимый» текст', async () => {
@@ -345,8 +357,8 @@ describe('исходы записи, которые Telegram сообщает о
     });
     const done = await confirm(approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text));
     expect(done.text).toBe('Done: Sent');
-    expect(store().hasReply('agent', '-1000000000500', 10)).toBe(true);
-    expect((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'ещё раз' })).text).toContain('already replied');
+    // доставленное сообщение записано в журнал один раз
+    expect(store().writesSince('agent', 'reply', 0)).toBe(1);
   });
 
   it('сбой журнала после отправки не превращает отправленное в ошибку', async () => {

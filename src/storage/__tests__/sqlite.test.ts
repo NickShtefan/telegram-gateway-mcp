@@ -32,7 +32,7 @@ describe('SqliteStorage: схема', () => {
     }
   });
 
-  it('миграция 7 убирает остатки бота и поручений, не теряя правил владельца, запросов и журнала записи', () => {
+  it('миграции 7 и 8 убирают остатки бота, поручений и предел «один ответ на пост», не теряя правил владельца, запросов и журнала записи', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tgmcp-migrate-'));
     const path = join(dir, 'gateway.sqlite');
     try {
@@ -72,6 +72,9 @@ describe('SqliteStorage: схема', () => {
         expect(upgraded.users.get('nick')).toMatchObject({ tokenSha256: 'h1', defaultAccount: 'agent' });
         expect(upgraded.db.prepare("SELECT state, result FROM approvals WHERE id = 'ap_1'").get()).toMatchObject({ state: 'executed', result: '{"summary":"Sent"}' });
         expect((upgraded.db.prepare('SELECT COUNT(*) AS n FROM writes').get() as { n: number }).n).toBe(2);
+        // миграция 8: второй ответ под тем же постом больше не запрещён базой
+        upgraded.db.prepare("INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id) VALUES (12, 'nick', 'agent', 'reply', '-1000000000500', 10, 79)").run();
+        expect((upgraded.db.prepare("SELECT COUNT(*) AS n FROM writes WHERE kind = 'reply' AND post_id = 10").get() as { n: number }).n).toBe(2);
         // одно правило на цель: повторная запись меняет его, а не добавляет второе
         upgraded.scopes.put({ userId: 'nick', accountId: 'agent', target: '@Seller', effect: 'deny' });
         expect(upgraded.scopes.list('nick', 'agent').filter(r => r.target === 'seller')).toEqual([expect.objectContaining({ effect: 'deny' })]);
