@@ -671,6 +671,7 @@ describe('контракт всех наборов', () => {
       'tg_list_dialogs',
       'tg_list_topics',
       'tg_local_search',
+      'tg_press_button',
       'tg_react',
       'tg_read_history',
       'tg_reply',
@@ -681,7 +682,7 @@ describe('контракт всех наборов', () => {
       'tg_similar_channels',
       'tg_status',
     ]);
-    const writes = new Set(['tg_confirm', 'tg_join', 'tg_react', 'tg_reply', 'tg_send']);
+    const writes = new Set(['tg_confirm', 'tg_join', 'tg_press_button', 'tg_react', 'tg_reply', 'tg_send']);
     for (const tool of tools) {
       expect(tool.annotations?.readOnlyHint, tool.name).toBe(!writes.has(tool.name));
       const schema = JSON.stringify(tool.inputSchema);
@@ -695,6 +696,6 @@ describe('контракт всех наборов', () => {
     }
     // шлюз только инструмент: ничего, что запускает агентов, следит за чатами или ведёт поручения
     expect(tools.map(t => t.name).filter(n => /watch|inbox|rule|task|runner/.test(n))).toEqual([]);
-    expect(tools).toHaveLength(22);
+    expect(tools).toHaveLength(23);
   });
 });

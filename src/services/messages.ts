@@ -9,6 +9,7 @@ import { parsePeerKey } from '../core/chatId.js';
 import type { AccountIdentity } from '../core/clientPool.js';
 import { peerKeyOfPeer } from '../core/entities.js';
 import { normalizeReactions, type ReactionCount } from '../core/reactions.js';
+import { normalizeButtons, type ButtonDto } from './buttons.js';
 
 export type AuthorKind = 'user' | 'channel' | 'chat' | 'anonymous';
 
@@ -83,6 +84,8 @@ export interface MessageDto {
   service: string | null;
   pinned: boolean;
   out: boolean;
+  /** Inline-клавиатура под сообщением, рядами; пусто, если её нет. */
+  buttons: ButtonDto[][];
 }
 
 interface RawUser {
@@ -286,6 +289,7 @@ interface RawMessage {
   pinned?: boolean;
   out?: boolean;
   action?: { className?: string } | null;
+  replyMarkup?: unknown;
 }
 
 /**
@@ -347,6 +351,7 @@ export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallba
     service: m.className === 'MessageService' ? (m.action?.className ?? 'MessageService') : null,
     pinned: m.pinned === true,
     out: m.out === true,
+    buttons: normalizeButtons(m.replyMarkup),
   };
 }
 

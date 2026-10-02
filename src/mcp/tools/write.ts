@@ -1,5 +1,6 @@
 /**
- * Набор `write`: ответ в комментариях, сообщение, реакция, вступление в чат.
+ * Набор `write`: ответ в комментариях, сообщение, реакция, вступление в чат,
+ * нажатие inline-кнопки.
  *
  * Запись идёт в два шага (решения 4 и 23). Инструмент готовит запрос и
  * возвращает предпросмотр с `approval_id`; действие выполняет шлюз после
@@ -7,13 +8,13 @@
  */
 import { z } from 'zod';
 import { GatewayError, type GatewayErrorCode } from '../../core/errors.js';
-import { safeLabel } from '../../policy/envelope.js';
+import { createEnvelope, safeLabel } from '../../policy/envelope.js';
 import { messageLink, parseRef } from '../../services/links.js';
 import { assertMessageText, normalizeReactionEmoji } from '../../services/write.js';
 import type { ApprovalRecord } from '../../writegate/store.js';
-import { formatDate } from '../format.js';
+import { formatAuthor, formatDate } from '../format.js';
 import { defineTool, type ToolContext, type ToolDef } from '../tool.js';
-import { accountArg, chatArg, chatLabel, locateMessage } from './shared.js';
+import { accountArg, chatArg, chatLabel, locateMessage, type MessageLocation } from './shared.js';
 
 const STATE_TEXT: Record<ApprovalRecord['state'], string> = {
   pending: 'waiting for a decision',
@@ -45,9 +46,29 @@ function confirmNote(approval: ApprovalRecord, ctx: ToolContext): string {
 
 function outcomeOf(approval: ApprovalRecord): string {
   const result = approval.result ?? {};
-  if (typeof result.summary === 'string') return result.summary;
+  if (typeof result.summary === 'string') return result.summary + botAnswerNote(result);
   if (typeof result.error === 'string') return result.error;
   return '';
+}
+
+/** Ответ бота на нажатие кнопки. Это чужой текст: он отдаётся в границах недоверенного контента. */
+function botAnswerNote(result: Record<string, unknown>): string {
+  const answer = typeof result.bot_answer === 'string' ? result.bot_answer : '';
+  const url = typeof result.bot_url === 'string' ? result.bot_url : '';
+  if (!answer && !url) return '';
+  const envelope = createEnvelope();
+  const lines = ['', envelope.notice()];
+  if (answer) lines.push(`The bot answered${result.bot_alert === true ? ' with an alert window' : ''}:`, envelope.inline(answer, 400));
+  if (url) lines.push('The bot answered with a link. The gateway does not open links:', envelope.inline(url, 300));
+  return lines.join('\n');
+}
+
+/** Как назвать сообщение в предпросмотре: ссылкой, а где ссылок нет, номером и чатом. */
+function messageTarget(where: MessageLocation): string {
+  const link = where.commentOf
+    ? messageLink({ username: where.commentOf.chat.username, peerKey: where.commentOf.chat.peerKey, messageId: where.commentOf.postId, commentId: where.messageId })
+    : messageLink({ username: where.chat.username, peerKey: where.chat.peerKey, messageId: where.messageId });
+  return link ?? `message #${where.messageId} in ${chatLabel(where.chat)}`;
 }
 
 const linkPreviewArg = z.boolean().optional().describe('true shows a preview card for the first link in the text. Default false.');
@@ -183,10 +204,7 @@ const tgReact = defineTool({
       throw new GatewayError('LIMIT_REACHED', `A reaction to this message is already prepared (${waiting.id}). Confirm or reject it with tg_confirm first.`);
     }
 
-    const link = where.commentOf
-      ? messageLink({ username: where.commentOf.chat.username, peerKey: where.commentOf.chat.peerKey, messageId: where.commentOf.postId, commentId: where.messageId })
-      : messageLink({ username: where.chat.username, peerKey: where.chat.peerKey, messageId: where.messageId });
-    const target = link ?? `message #${where.messageId} in ${chatLabel(where.chat)}`;
+    const target = messageTarget(where);
     const approval = writeGate.approvals.request({
       userId: ctx.principal.userId,
       accountId: where.accountId,
@@ -232,12 +250,64 @@ const tgJoin = defineTool({
   },
 });
 
+const tgPressButton = defineTool({
+  name: 'tg_press_button',
+  toolset: 'write',
+  title: 'Press an inline button',
+  description:
+    'Prepares pressing an inline button under a message and returns a preview with an approval_id; it is pressed only after tg_confirm, which you call after the owner agrees. "row" and "button" are the place printed by tg_get_message: 2.1 is row 2, button 1. Only callback buttons work: links, web apps, logins, payments and games are refused. Not for anti-bot checks: a captcha or an "I am not a bot" button of a gatekeeper bot is for the owner to press.',
+  input: {
+    link: z.string().optional().describe('t.me link to the message with the button.'),
+    chat: z.string().optional().describe('Chat, when "link" is not given.'),
+    id: z.number().int().positive().max(2_147_483_647).optional().describe('Message id, when "link" is not given.'),
+    row: z.number().int().min(1).max(100).describe('Row of the button, counted from 1.'),
+    button: z.number().int().min(1).max(100).describe('Position of the button in its row, counted from 1.'),
+    account: accountArg,
+  },
+  readOnly: false,
+  handler: async (args, ctx) => {
+    const { writeGate } = ctx.services;
+    const where = await locateMessage(ctx, args);
+    const { button, message } = await writeGate.write.findButton(where.accountId, where.chat, where.messageId, args.row, args.button);
+
+    const waiting = writeGate.approvals.findPending(
+      ctx.principal.userId,
+      'press',
+      p => p.accountId === where.accountId && p.chatKey === where.chat.peerKey && p.messageId === where.messageId && p.row === args.row && p.position === args.button,
+    );
+    if (waiting) {
+      throw new GatewayError('LIMIT_REACHED', `Pressing this button is already prepared (${waiting.id}). Confirm or reject it with tg_confirm first.`);
+    }
+
+    // Подпись кнопки написал бот: в предпросмотре она в одну строку и без разметки.
+    const label = safeLabel(button.text, 64).replace(/"/g, "'") || 'no label';
+    const target = messageTarget(where);
+    const approval = writeGate.approvals.request({
+      userId: ctx.principal.userId,
+      accountId: where.accountId,
+      kind: 'press',
+      payload: {
+        accountId: where.accountId,
+        chatKey: where.chat.peerKey,
+        messageId: where.messageId,
+        row: args.row,
+        position: args.button,
+        fingerprint: button.fingerprint,
+        label,
+        where: target,
+      },
+      title: `Press the callback button "${label}" (row ${args.row}, button ${args.button}) under ${target}, sent by ${formatAuthor(message.author, message.out)}`,
+    });
+    return { accountId: where.accountId, peerKey: where.chat.peerKey, text: `Pressing the button is prepared.\n${confirmNote(approval, ctx)}` };
+  },
+});
+
 const tgConfirm = defineTool({
   name: 'tg_confirm',
   toolset: 'write',
   title: 'Confirm or reject a write request',
   description:
-    'Second step of every write tool (tg_reply, tg_send, tg_react, tg_join): those only prepare a request and return a preview with an approval_id, and nothing happens in Telegram until tg_confirm approves it. Call it only after the owner has seen the preview and clearly agreed. A request lives for 30 minutes.',
+    'Second step of every write tool (tg_reply, tg_send, tg_react, tg_join, tg_press_button): those only prepare a request and return a preview with an approval_id, and nothing happens in Telegram until tg_confirm approves it. Call it only after the owner has seen the preview and clearly agreed. A request lives for 30 minutes.',
   input: {
     approval_id: z.string().describe('Request id like ap_1a2b3c4d5e, returned by the write tool.'),
     action: z.enum(['approve', 'reject']).optional().describe('approve (default) or reject.'),
@@ -277,4 +347,4 @@ const tgConfirm = defineTool({
   },
 });
 
-export const WRITE_TOOLS: ToolDef[] = [tgReply, tgSend, tgReact, tgJoin, tgConfirm] as unknown as ToolDef[];
+export const WRITE_TOOLS: ToolDef[] = [tgReply, tgSend, tgReact, tgJoin, tgPressButton, tgConfirm] as unknown as ToolDef[];

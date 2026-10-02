@@ -6,6 +6,7 @@
  */
 import type { ReactionCount } from '../core/reactions.js';
 import { safeLabel, type Envelope } from '../policy/envelope.js';
+import type { ButtonDto } from '../services/buttons.js';
 import type { AuthorDto, MediaDto, MessageDto } from '../services/messages.js';
 
 export type FormatMode = 'brief' | 'full';
@@ -117,6 +118,40 @@ export function formatMediaTag(media: MediaDto | null, grouped: boolean): string
   }
 }
 
+/** Подписи видов кнопок для агента. Нажимается только callback (tg_press_button). */
+const BUTTON_KIND: Record<ButtonDto['kind'], string> = {
+  callback: 'callback',
+  url: 'link',
+  login: 'login link',
+  webapp: 'web app',
+  switch_inline: 'inline query',
+  game: 'game',
+  buy: 'payment',
+  profile: 'profile',
+  copy: 'copy text',
+  disabled: 'disabled',
+  other: 'other',
+};
+
+function buttonCount(m: MessageDto): number {
+  return m.buttons.reduce((sum, row) => sum + row.length, 0);
+}
+
+/**
+ * Inline-кнопки сообщения одной строкой: место (ряд.позиция), подпись и вид.
+ * Байтов callback и адресов ссылок здесь нет.
+ */
+export function formatButtons(m: MessageDto): string {
+  const items: string[] = [];
+  m.buttons.forEach((row, r) => {
+    row.forEach((button, p) => {
+      const kind = BUTTON_KIND[button.kind] + (button.needsPassword ? ', asks for the 2FA password' : '');
+      items.push(`${r + 1}.${p + 1} "${safeLabel(button.text, 48).replace(/"/g, "'")}" (${kind})`);
+    });
+  });
+  return items.length > 0 ? `buttons: ${items.join(' | ')}` : '';
+}
+
 /** Строка заголовка сообщения: всё, кроме текста. */
 export function formatHeader(m: MessageDto, options: FormatOptions): string {
   const parts: string[] = [`#${m.id}`, formatDate(m.date)];
@@ -135,6 +170,8 @@ export function formatHeader(m: MessageDto, options: FormatOptions): string {
   if (reactions) parts.push(reactions);
   const media = formatMediaTag(m.media, m.groupedId !== null);
   if (media) parts.push(media);
+  // В кратком режиме кнопки только считаются: сами они видны в полном режиме и в tg_get_message.
+  if (options.mode === 'brief' && buttonCount(m) > 0) parts.push(`buttons ${buttonCount(m)}`);
   if (m.pinned) parts.push('pinned');
   if (m.editDate !== null) parts.push('edited');
   if (m.service) parts.push(`service: ${m.service.replace(/^MessageAction/, '')}`);
@@ -145,13 +182,15 @@ export function formatHeader(m: MessageDto, options: FormatOptions): string {
 
 export function formatMessage(m: MessageDto, options: FormatOptions): string {
   const header = formatHeader(m, options);
-  if (!m.text) return header;
   if (options.mode === 'brief') {
-    return `${header}\n${options.envelope.inline(m.text, options.briefChars ?? DEFAULT_BRIEF_CHARS)}`;
+    return m.text ? `${header}\n${options.envelope.inline(m.text, options.briefChars ?? DEFAULT_BRIEF_CHARS)}` : header;
   }
+  const buttons = formatButtons(m);
+  const tail = buttons ? `\n${buttons}` : '';
+  if (!m.text) return header + tail;
   const max = options.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
   const cut = m.text.length > max ? `\n(text cut at ${max} of ${m.text.length} chars; read it in full with tg_get_message)` : '';
-  return `${header}\n${options.envelope.block(m.text, max)}${cut}`;
+  return `${header}\n${options.envelope.block(m.text, max)}${cut}${tail}`;
 }
 
 export interface ListOptions extends FormatOptions {

@@ -1,5 +1,6 @@
 /**
- * Действия: ответ в комментариях, сообщение, реакция, вступление в чат. Вызываются
+ * Действия: ответ в комментариях, сообщение, реакция, вступление в чат, нажатие
+ * inline-кнопки. Вызываются
  * только исполнителями шлюза записи (`writegate/index.ts`), то есть после
  * того, как владелец подтвердил действие через своего агента (`tg_confirm`).
  *
@@ -17,8 +18,11 @@ import { GatewayError, isGatewayError } from '../core/errors.js';
 import { createLogger, type Logger } from '../core/log.js';
 import type { Tg } from '../core/tg.js';
 import type { EntityRecord } from '../storage/port.js';
+import { buttonAt, type LocatedButton } from './buttons.js';
 import type { CommentsService } from './comments.js';
+import type { HistoryService } from './history.js';
 import { messageLink } from './links.js';
+import type { MessageDto } from './messages.js';
 
 export interface WriteLimits {
   repliesPerDay: number;
@@ -82,6 +86,41 @@ export interface SendOptions {
   linkPreview?: boolean;
 }
 
+/** Какая кнопка была в предпросмотре: место в клавиатуре и отпечаток. */
+export interface ButtonTarget {
+  messageId: number;
+  row: number;
+  position: number;
+  fingerprint: string;
+}
+
+export interface PressOutcome {
+  /** Текст, которым бот ответил на нажатие (всплывающая строка или окно). Чужой текст. */
+  answer: string | null;
+  alert: boolean;
+  /** Ссылка из ответа бота. Шлюз её не открывает. */
+  url: string | null;
+  /** Нажатие ушло, но бот не ответил Telegram вовремя (BOT_RESPONSE_TIMEOUT). */
+  botSilent: boolean;
+}
+
+/** Бот отвечает на нажатие не сразу: Telegram сам ждёт его и возвращает BOT_RESPONSE_TIMEOUT. */
+const PRESS_DEADLINE_MS = 30_000;
+
+const BUTTON_KIND_TEXT: Record<LocatedButton['kind'], string> = {
+  callback: 'a callback button',
+  url: 'a link button',
+  login: 'a login button',
+  webapp: 'a web app button',
+  switch_inline: 'an inline query button',
+  game: 'a game button',
+  buy: 'a payment button',
+  profile: 'a profile button',
+  copy: 'a copy-text button',
+  disabled: 'a disabled button',
+  other: 'a button of an unknown kind',
+};
+
 /** Предел длины сообщения Telegram. */
 export const MESSAGE_MAX_CHARS = 4096;
 
@@ -127,6 +166,7 @@ export interface WriteServiceDeps {
   tg: Tg;
   store: WriteStore;
   comments: CommentsService;
+  history: HistoryService;
   limits?: Partial<WriteLimits>;
   now?: () => number;
   log?: Logger;
@@ -290,6 +330,64 @@ export class WriteService {
       postId: messageId,
       sentMessageId: null,
     });
+  }
+
+  /**
+   * Кнопка сообщения, которую шлюз может нажать. Нажимаются только кнопки callback:
+   * ссылки, веб-приложения, вход, оплату и игры шлюз не открывает, пароль 2FA не вводит.
+   */
+  async findButton(accountId: string, chat: EntityRecord, messageId: number, row: number, position: number): Promise<{ button: LocatedButton; message: MessageDto }> {
+    const found = await this.deps.history.byIds(accountId, chat, [messageId]);
+    const message = found.messages[0];
+    if (!message) throw new GatewayError('MESSAGE_NOT_FOUND', `Message ${messageId} not found in this chat: it was deleted or the id is wrong.`);
+    if (message.buttons.length === 0) throw new GatewayError('INVALID_ARGUMENT', `Message ${messageId} has no inline buttons.`);
+    const button = buttonAt(found.raw[0], row, position);
+    if (!button) {
+      throw new GatewayError('INVALID_ARGUMENT', `Message ${messageId} has no button at row ${row}, position ${position}. tg_get_message lists its buttons as row.position.`);
+    }
+    if (button.kind !== 'callback' || button.data === null) {
+      throw new GatewayError(
+        'INVALID_ARGUMENT',
+        `This is ${BUTTON_KIND_TEXT[button.kind]}. The gateway presses only callback buttons and never opens links, web apps, logins, payments or games: the owner can press it in Telegram.`,
+      );
+    }
+    if (button.needsPassword) {
+      throw new GatewayError('INVALID_ARGUMENT', 'This button asks for the 2FA password of the account. The gateway never enters it: the owner can press the button in Telegram.');
+    }
+    return { button, message };
+  }
+
+  /**
+   * Нажимает кнопку callback. Сообщение читается заново: если бот его изменил и на
+   * этом месте уже другая кнопка, нажатия не будет. Байты callback берутся только из сообщения.
+   */
+  async press(context: WriteContext, chat: EntityRecord, target: ButtonTarget): Promise<PressOutcome> {
+    const found = await this.deps.history.byIds(context.accountId, chat, [target.messageId]);
+    if (found.messages.length === 0) {
+      throw new GatewayError('MESSAGE_NOT_FOUND', `Message ${target.messageId} is gone: it was deleted. Nothing was pressed.`);
+    }
+    const button = buttonAt(found.raw[0], target.row, target.position);
+    if (!button || button.fingerprint !== target.fingerprint || button.data === null || button.needsPassword) {
+      throw new GatewayError('NOT_FOUND', 'The button changed since the preview: the message was edited. Nothing was pressed. Read the message again and prepare a new request.');
+    }
+
+    try {
+      const reply = (await this.deps.tg.invoke(
+        context.accountId,
+        new Api.messages.GetBotCallbackAnswer({ peer: toInputPeer(chat), msgId: target.messageId, data: button.data }),
+        { write: true, deadlineMs: PRESS_DEADLINE_MS },
+      )) as { message?: string; alert?: boolean; url?: string } | null;
+      return {
+        answer: typeof reply?.message === 'string' && reply.message !== '' ? reply.message : null,
+        alert: reply?.alert === true,
+        url: typeof reply?.url === 'string' && reply.url !== '' ? reply.url : null,
+        botSilent: false,
+      };
+    } catch (err) {
+      // Нажатие дошло до бота, он не ответил вовремя: это исход, а не сбой.
+      if (isGatewayError(err) && err.telegramCode === 'BOT_RESPONSE_TIMEOUT') return { answer: null, alert: false, url: null, botSilent: true };
+      throw err;
+    }
   }
 
   /** Вступление в публичный чат или по инвайту. Капчу привратника шлюз не проходит. */

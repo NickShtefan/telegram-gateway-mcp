@@ -26,6 +26,7 @@ function msg(overrides: Partial<MessageDto> = {}): MessageDto {
     service: null,
     pinned: false,
     out: false,
+    buttons: [],
     ...overrides,
   };
 }
@@ -84,6 +85,25 @@ describe('formatMessage', () => {
     expect(text.split('\n')).toHaveLength(2);
     expect(text.split('\n')[0]).toBe('#123 | 2026-09-21 14:13 | views 12.3k | shares 7 | comments 14 | 🔥30 | [album photo] | pinned | edited');
     expect(text.split('\n')[1]).toBe('> Продам iPhone 15, 256 гб. Цена 65к, торг.');
+  });
+
+  it('inline-кнопки: в полном режиме место, подпись и вид, в кратком только число', () => {
+    const withButtons = msg({
+      buttons: [
+        [
+          { kind: 'callback', text: 'Я не бот', needsPassword: false },
+          { kind: 'url', text: 'Сайт', needsPassword: false },
+        ],
+        [{ kind: 'callback', text: 'Удалить "всё" <b>', needsPassword: true }],
+      ],
+    });
+    const full = formatMessage(withButtons, { mode: 'full', envelope: env });
+    expect(full.split('\n').at(-1)).toBe('buttons: 1.1 "Я не бот" (callback) | 1.2 "Сайт" (link) | 2.1 "Удалить \'всё\' b" (callback, asks for the 2FA password)');
+    const brief = formatMessage(withButtons, { mode: 'brief', envelope: env });
+    expect(brief.split('\n')[0]).toContain('| buttons 3');
+    expect(brief).not.toContain('Я не бот');
+    // сообщение без текста: кнопки всё равно видны
+    expect(formatMessage(msg({ text: '', buttons: withButtons.buttons }), { mode: 'full', envelope: env }).split('\n')).toHaveLength(2);
   });
 
   it('длинный текст обрезается с подсказкой', () => {

@@ -474,7 +474,7 @@ const tgGetMessage = defineTool({
   toolset: 'core',
   title: 'Get messages by link or id',
   description:
-    'One message in full by its t.me link (also a comment link with ?comment=), or by chat and id. "ids" fetches up to 100 messages at once; "before" and "after" add surrounding messages for context.',
+    'One message in full by its t.me link (also a comment link with ?comment=), or by chat and id. "ids" fetches up to 100 messages at once; "before" and "after" add surrounding messages for context. Inline buttons under a message are listed as row.position with their label and kind.',
   input: {
     link: z.string().optional().describe('t.me link to the message.'),
     chat: z.string().optional().describe('Chat, when "link" is not given.'),

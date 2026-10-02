@@ -58,7 +58,7 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
   jobs.register('export', context => exporter.run(context));
 
   const comments = new CommentsService(tg, storage.entities);
-  const writeGate = buildWriteGate({ runtime, comments, now });
+  const writeGate = buildWriteGate({ runtime, comments, history, now });
   if (!(storage instanceof SqliteStorage)) throw new GatewayError('UNAVAILABLE', 'The gateway needs the SQLite storage.');
   const resolver = new Resolver({ tg, entities: storage.entities, now });
   const snapshots = new SnapshotStore(storage, now);

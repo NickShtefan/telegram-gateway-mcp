@@ -7,6 +7,7 @@ import { GatewayError } from '../core/errors.js';
 import { ScopePolicy, type ScopeAction } from '../policy/scopes.js';
 import type { Runtime } from '../runtime.js';
 import type { CommentsService } from '../services/comments.js';
+import type { HistoryService } from '../services/history.js';
 import { WriteService } from '../services/write.js';
 import type { EntityRecord } from '../storage/port.js';
 import { SqliteStorage } from '../storage/sqlite.js';
@@ -22,6 +23,7 @@ export interface WriteGate {
 export interface WriteGateDeps {
   runtime: Runtime;
   comments: CommentsService;
+  history: HistoryService;
   now?: () => number;
 }
 
@@ -34,7 +36,7 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
   const now = deps.now ?? (() => Date.now());
   const store = new WriteStore(storage, now);
   const approvals = new Approvals({ store, log: log.child('approvals'), now });
-  const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, limits: runtime.config.writeLimits, now, log: log.child('write') });
+  const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, history: deps.history, limits: runtime.config.writeLimits, now, log: log.child('write') });
 
   // Скоупы проверяются ещё раз в момент выполнения: между предпросмотром и
   // подтверждением владелец мог закрыть чат или сменить режим личных чатов.
@@ -88,6 +90,22 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
     if (joined.outcome === 'requested') return { summary: `A join request to ${p.label} is sent: an admin of the chat has to accept it.`, data: { outcome: joined.outcome } };
     if (joined.outcome === 'already') return { summary: `The account is already a member of ${p.label}.`, data: { outcome: joined.outcome } };
     return { summary: `The account joined ${p.label}. If the chat asks to pass a check, the owner has to do it.`, data: { outcome: joined.outcome } };
+  });
+
+  approvals.register('press', async approval => {
+    const p = approval.payload as { accountId: string; chatKey: string; messageId: number; row: number; position: number; fingerprint: string; label: string; where: string };
+    const pressed = await write.press({ userId: approval.userId, accountId: p.accountId }, chatOf(approval, p.accountId, p.chatKey, 'read'), {
+      messageId: p.messageId,
+      row: p.row,
+      position: p.position,
+      fingerprint: p.fingerprint,
+    });
+    const what = `The button "${p.label}" under ${p.where} is pressed`;
+    if (pressed.botSilent) {
+      return { summary: `${what}, but the bot did not answer in time. Read the chat to see whether anything changed; do not press it again blindly.`, data: { bot_silent: true } };
+    }
+    // Ответ бота это чужой текст: инструмент отдаёт его агенту в границах недоверенного контента.
+    return { summary: `${what}.`, data: { bot_answer: pressed.answer, bot_alert: pressed.alert, bot_url: pressed.url } };
   });
 
   return { store, approvals, write };
