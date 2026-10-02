@@ -22,7 +22,7 @@ function msg(overrides: Partial<MessageDto> = {}): MessageDto {
     replyToId: null,
     topicId: null,
     forwardedFrom: null,
-    links: [],
+    hiddenLinks: [],
     service: null,
     pinned: false,
     out: false,
@@ -87,23 +87,44 @@ describe('formatMessage', () => {
     expect(text.split('\n')[1]).toBe('> Продам iPhone 15, 256 гб. Цена 65к, торг.');
   });
 
-  it('inline-кнопки: в полном режиме место, подпись и вид, в кратком только число', () => {
+  it('inline-кнопки: в полном режиме место, подпись, вид и адрес ссылки, в кратком только число', () => {
     const withButtons = msg({
       buttons: [
         [
-          { kind: 'callback', text: 'Я не бот', needsPassword: false },
-          { kind: 'url', text: 'Сайт', needsPassword: false },
+          { kind: 'callback', text: 'Я не бот', needsPassword: false, url: null },
+          { kind: 'url', text: 'Сайт', needsPassword: false, url: 'https://example.com/a?b=1' },
         ],
-        [{ kind: 'callback', text: 'Удалить "всё" <b>', needsPassword: true }],
+        [{ kind: 'callback', text: 'Удалить "всё" <b>', needsPassword: true, url: null }],
       ],
     });
     const full = formatMessage(withButtons, { mode: 'full', envelope: env });
-    expect(full.split('\n').at(-1)).toBe('buttons: 1.1 "Я не бот" (callback) | 1.2 "Сайт" (link) | 2.1 "Удалить \'всё\' b" (callback, asks for the 2FA password)');
+    expect(full.split('\n').at(-1)).toBe(
+      'buttons: 1.1 "Я не бот" (callback) | 1.2 "Сайт" (link https://example.com/a?b=1) | 2.1 "Удалить \'всё\' b" (callback, asks for the 2FA password)',
+    );
     const brief = formatMessage(withButtons, { mode: 'brief', envelope: env });
     expect(brief.split('\n')[0]).toContain('| buttons 3');
     expect(brief).not.toContain('Я не бот');
     // сообщение без текста: кнопки всё равно видны
     expect(formatMessage(msg({ text: '', buttons: withButtons.buttons }), { mode: 'full', envelope: env }).split('\n')).toHaveLength(2);
+  });
+
+  it('скрытые ссылки: в полном режиме слова и адрес под ними, в кратком их нет', () => {
+    const post = msg({
+      text: 'Подробности тут и в источнике',
+      hiddenLinks: [
+        { text: 'тут', url: 'https://hidden.example/x' },
+        { text: 'источнике', url: 'https://source.example/<b>' },
+      ],
+      buttons: [[{ kind: 'url', text: 'Читать', needsPassword: false, url: 'https://example.com/read' }]],
+    });
+    const lines = formatMessage(post, { mode: 'full', envelope: env }).split('\n');
+    // после текста сначала ссылки, потом кнопки
+    expect(lines.at(-2)).toBe('hidden links: "тут" https://hidden.example/x | "источнике" https://source.example/b');
+    expect(lines.at(-1)).toBe('buttons: 1.1 "Читать" (link https://example.com/read)');
+    expect(formatMessage(post, { mode: 'brief', envelope: env })).not.toContain('hidden.example');
+
+    const many = msg({ hiddenLinks: Array.from({ length: 23 }, (_, i) => ({ text: `l${i}`, url: `https://e.example/${i}` })) });
+    expect(formatMessage(many, { mode: 'full', envelope: env }).split('\n').at(-1)).toMatch(/"l19" https:\/\/e\.example\/19 \| \+3 more$/);
   });
 
   it('длинный текст обрезается с подсказкой', () => {

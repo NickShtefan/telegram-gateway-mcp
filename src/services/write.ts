@@ -390,7 +390,7 @@ export class WriteService {
     }
   }
 
-  /** Вступление в публичный чат или по инвайту. Капчу привратника шлюз не проходит. */
+  /** Вступление в публичный чат или по инвайту. Проверку бота-привратника вступление не проходит. */
   async join(context: WriteContext, target: { chat?: EntityRecord; inviteHash?: string }): Promise<{ chatKey: string | null; outcome: JoinOutcome }> {
     if (reached(this.deps.store.writesSince(context.accountId, 'join', dayStart(this.now())), this.limits.joinsPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.joinsPerDay} joins for this account is reached.`);

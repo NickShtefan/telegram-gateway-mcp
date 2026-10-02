@@ -89,7 +89,7 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
     );
     if (joined.outcome === 'requested') return { summary: `A join request to ${p.label} is sent: an admin of the chat has to accept it.`, data: { outcome: joined.outcome } };
     if (joined.outcome === 'already') return { summary: `The account is already a member of ${p.label}.`, data: { outcome: joined.outcome } };
-    return { summary: `The account joined ${p.label}. If the chat asks to pass a check, the owner has to do it.`, data: { outcome: joined.outcome } };
+    return { summary: `The account joined ${p.label}. If a gatekeeper bot asks for a check there, tell the owner: such checks usually expire within a minute.`, data: { outcome: joined.outcome } };
   });
 
   approvals.register('press', async approval => {

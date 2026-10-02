@@ -137,19 +137,37 @@ function buttonCount(m: MessageDto): number {
   return m.buttons.reduce((sum, row) => sum + row.length, 0);
 }
 
+/** Подпись или слова ссылки в кавычках: чужой текст в одну строку. */
+function quoted(text: string, maxChars: number): string {
+  return `"${safeLabel(text, maxChars).replace(/"/g, "'")}"`;
+}
+
+const URL_MAX_CHARS = 300;
+
 /**
- * Inline-кнопки сообщения одной строкой: место (ряд.позиция), подпись и вид.
- * Байтов callback и адресов ссылок здесь нет.
+ * Inline-кнопки сообщения одной строкой: место (ряд.позиция), подпись, вид и
+ * адрес у кнопок-ссылок. Байтов callback здесь нет.
  */
 export function formatButtons(m: MessageDto): string {
   const items: string[] = [];
   m.buttons.forEach((row, r) => {
     row.forEach((button, p) => {
-      const kind = BUTTON_KIND[button.kind] + (button.needsPassword ? ', asks for the 2FA password' : '');
-      items.push(`${r + 1}.${p + 1} "${safeLabel(button.text, 48).replace(/"/g, "'")}" (${kind})`);
+      const kind = BUTTON_KIND[button.kind] + (button.needsPassword ? ', asks for the 2FA password' : '') + (button.url ? ` ${safeLabel(button.url, URL_MAX_CHARS)}` : '');
+      items.push(`${r + 1}.${p + 1} ${quoted(button.text, 48)} (${kind})`);
     });
   });
   return items.length > 0 ? `buttons: ${items.join(' | ')}` : '';
+}
+
+/** Сколько скрытых ссылок показывать у одного сообщения. */
+const HIDDEN_LINKS_MAX = 20;
+
+/** Скрытые гиперссылки сообщения одной строкой: слова из текста и адрес под ними. */
+export function formatHiddenLinks(m: MessageDto): string {
+  if (m.hiddenLinks.length === 0) return '';
+  const shown = m.hiddenLinks.slice(0, HIDDEN_LINKS_MAX).map(link => `${quoted(link.text, 48)} ${safeLabel(link.url, URL_MAX_CHARS)}`);
+  const rest = m.hiddenLinks.length - shown.length;
+  return `hidden links: ${shown.join(' | ')}${rest > 0 ? ` | +${rest} more` : ''}`;
 }
 
 /** Строка заголовка сообщения: всё, кроме текста. */
@@ -185,8 +203,8 @@ export function formatMessage(m: MessageDto, options: FormatOptions): string {
   if (options.mode === 'brief') {
     return m.text ? `${header}\n${options.envelope.inline(m.text, options.briefChars ?? DEFAULT_BRIEF_CHARS)}` : header;
   }
-  const buttons = formatButtons(m);
-  const tail = buttons ? `\n${buttons}` : '';
+  // Скрытые ссылки и кнопки видны только в полном режиме: краткий остаётся в две строки.
+  const tail = [formatHiddenLinks(m), formatButtons(m)].filter(Boolean).map(line => `\n${line}`).join('');
   if (!m.text) return header + tail;
   const max = options.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
   const cut = m.text.length > max ? `\n(text cut at ${max} of ${m.text.length} chars; read it in full with tg_get_message)` : '';

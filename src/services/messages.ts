@@ -50,6 +50,12 @@ export interface MediaDto {
   downloadable: boolean;
 }
 
+export interface HiddenLinkDto {
+  /** Слова, под которыми спрятана ссылка. */
+  text: string;
+  url: string;
+}
+
 export interface ForwardDto {
   name: string | null;
   peerKey: string | null;
@@ -78,8 +84,8 @@ export interface MessageDto {
   /** Тема форума. */
   topicId: number | null;
   forwardedFrom: ForwardDto | null;
-  /** Ссылки из текста и из скрытых гиперссылок. */
-  links: string[];
+  /** Скрытые гиперссылки: слова текста, под которыми спрятан адрес. Явные адреса видны в самом тексте. */
+  hiddenLinks: HiddenLinkDto[];
   /** Служебное сообщение: имя действия, например MessageActionChatAddUser. */
   service: string | null;
   pinned: boolean;
@@ -251,20 +257,16 @@ interface RawEntity {
   url?: string;
 }
 
-/** Ссылки из entities: явные URL в тексте и скрытые гиперссылки. */
-export function extractLinks(text: string, entities: unknown): string[] {
+/** Скрытые гиперссылки из entities: адрес и слова, под которыми он спрятан. Повторы адреса убираются. */
+export function extractHiddenLinks(text: string, entities: unknown): HiddenLinkDto[] {
   if (!Array.isArray(entities)) return [];
-  const links: string[] = [];
+  const links = new Map<string, HiddenLinkDto>();
   for (const e of entities as RawEntity[]) {
-    if (!e) continue;
-    if (e.className === 'MessageEntityTextUrl' && typeof e.url === 'string' && e.url) {
-      links.push(e.url);
-    } else if (e.className === 'MessageEntityUrl' && typeof e.offset === 'number' && typeof e.length === 'number') {
-      const url = text.slice(e.offset, e.offset + e.length).trim();
-      if (url) links.push(url);
-    }
+    if (!e || e.className !== 'MessageEntityTextUrl' || typeof e.url !== 'string' || !e.url || links.has(e.url)) continue;
+    const anchor = typeof e.offset === 'number' && typeof e.length === 'number' ? text.slice(e.offset, e.offset + e.length).trim() : '';
+    links.set(e.url, { text: anchor, url: e.url });
   }
-  return [...new Set(links)];
+  return [...links.values()];
 }
 
 interface RawMessage {
@@ -347,7 +349,7 @@ export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallba
     replyToId: m.replyTo?.replyToMsgId ?? null,
     topicId,
     forwardedFrom,
-    links: extractLinks(text, m.entities),
+    hiddenLinks: extractHiddenLinks(text, m.entities),
     service: m.className === 'MessageService' ? (m.action?.className ?? 'MessageService') : null,
     pinned: m.pinned === true,
     out: m.out === true,

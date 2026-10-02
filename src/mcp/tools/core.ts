@@ -280,7 +280,7 @@ const tgReadHistory = defineTool({
   toolset: 'core',
   title: 'Read chat history',
   description:
-    'Messages of a chat, newest first. mode=brief gives 2 lines per message with counters (good for summaries of a month), mode=full gives whole texts. For hundreds of messages use tg_export instead.',
+    'Messages of a chat, newest first. mode=brief gives 2 lines per message with counters (good for summaries of a month), mode=full gives whole texts with hidden links and inline buttons. For hundreds of messages use tg_export instead.',
   input: {
     chat: chatArg,
     mode: z.enum(['brief', 'full']).optional().describe('brief (default) or full.'),
@@ -474,7 +474,7 @@ const tgGetMessage = defineTool({
   toolset: 'core',
   title: 'Get messages by link or id',
   description:
-    'One message in full by its t.me link (also a comment link with ?comment=), or by chat and id. "ids" fetches up to 100 messages at once; "before" and "after" add surrounding messages for context. Inline buttons under a message are listed as row.position with their label and kind.',
+    'One message in full by its t.me link (also a comment link with ?comment=), or by chat and id. "ids" fetches up to 100 messages at once; "before" and "after" add surrounding messages for context. Links hidden under words and inline buttons (row.position, label, kind) are listed after the text.',
   input: {
     link: z.string().optional().describe('t.me link to the message.'),
     chat: z.string().optional().describe('Chat, when "link" is not given.'),

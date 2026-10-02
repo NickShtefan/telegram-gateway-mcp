@@ -61,12 +61,11 @@ const confirm = (approvalId: string) => nick.call('tg_confirm', { approval_id: a
 const presses = () => gw.tg.callsOf('messages.GetBotCallbackAnswer');
 
 describe('inline-кнопки в выдаче', () => {
-  it('tg_get_message показывает место, подпись и вид; байтов callback и адресов ссылок в выдаче нет', async () => {
+  it('tg_get_message показывает место, подпись, вид и адрес кнопки-ссылки; байтов callback в выдаче нет', async () => {
     const text = (await nick.call('tg_get_message', { link: LINK })).text;
-    expect(text).toContain('buttons: 1.1 "Да" (callback) | 1.2 "Нет" (callback) | 2.1 "Сайт" (link)');
-    expect(text).toContain('button labels');
+    expect(text).toContain('buttons: 1.1 "Да" (callback) | 1.2 "Нет" (callback) | 2.1 "Сайт" (link https://secret.example/token-123)');
+    expect(text).toContain('button labels and link addresses');
     expect(text).not.toContain('vote:');
-    expect(text).not.toContain('secret.example');
   });
 
   it('tg_read_history: в кратком режиме число кнопок, в полном сами кнопки', async () => {
@@ -84,7 +83,7 @@ describe('inline-кнопки в выдаче', () => {
   it('клавиатура бота под полем ввода и сообщение без клавиатуры кнопок не дают', () => {
     expect(normalizeButtons({ className: 'ReplyKeyboardMarkup', rows: [{ buttons: [{ text: 'Меню' }] }] })).toEqual([]);
     expect(normalizeButtons(undefined)).toEqual([]);
-    expect(normalizeButtons(keyboard([typed('?', 'InlineButtonTypeSomethingNew')]))).toEqual([[{ kind: 'other', text: '?', needsPassword: false }]]);
+    expect(normalizeButtons(keyboard([typed('?', 'InlineButtonTypeSomethingNew')]))).toEqual([[{ kind: 'other', text: '?', needsPassword: false, url: null }]]);
   });
 });
 
@@ -239,9 +238,11 @@ describe('что этим инструментом нажать нельзя', (
     expect((await press(1, 1)).text).toContain('Error: MESSAGE_NOT_FOUND');
   });
 
-  it('описание инструмента оставляет проверки привратников владельцу', async () => {
+  it('инструмент есть только в наборе записи; что нажимать, решает владелец, а не описание инструмента', async () => {
     const tool = (await nick.tools()).find(t => t.name === 'tg_press_button')!;
-    expect(tool.description).toContain('Not for anti-bot checks');
+    expect(tool.description).toContain('pressed only after tg_confirm');
+    expect(tool.description).not.toMatch(/captcha|anti-bot|not a bot/i);
+    expect(nick.instructions()).toContain("never joins chats or presses buttons without the owner's confirmation");
     expect(tool.annotations?.readOnlyHint).toBe(false);
     const core = await gw.client('nick', ['core']);
     expect((await core.tools()).map(t => t.name)).not.toContain('tg_press_button');

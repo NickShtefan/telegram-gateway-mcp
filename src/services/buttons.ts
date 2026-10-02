@@ -1,7 +1,7 @@
 /**
- * Inline-кнопки под сообщением (решение 31). Агент видит тип кнопки, её подпись
- * и место в клавиатуре (ряд и позиция). Байты callback и адреса ссылок в выдачу
- * не попадают: нажатие шлюз собирает сам из свежего сообщения.
+ * Inline-кнопки под сообщением (решение 31). Агент видит вид кнопки, её подпись,
+ * место в клавиатуре (ряд и позиция) и адрес, если кнопка ведёт по ссылке. Байты
+ * callback в выдачу не попадают: нажатие шлюз собирает сам из свежего сообщения.
  *
  * В слое 229 клавиатура это `ReplyInlineMarkup` с рядами `KeyboardInlineButtonRow`;
  * вид кнопки лежит в её поле `type` (`InlineButtonTypeCallback` и другие).
@@ -16,6 +16,8 @@ export interface ButtonDto {
   text: string;
   /** Кнопка callback, которая просит пароль 2FA аккаунта. */
   needsPassword: boolean;
+  /** Адрес у кнопок, которые ведут по ссылке: ссылка, вход на сайт, веб-приложение. Чужой текст. */
+  url: string | null;
 }
 
 const KINDS: Record<string, ButtonKind> = {
@@ -35,7 +37,7 @@ const KINDS: Record<string, ButtonKind> = {
 
 interface RawButton {
   text?: unknown;
-  type?: { className?: string; data?: unknown; requiresPassword?: boolean } | null;
+  type?: { className?: string; data?: unknown; requiresPassword?: boolean; url?: unknown } | null;
 }
 
 interface RawMarkup {
@@ -55,6 +57,7 @@ function toDto(button: RawButton): ButtonDto {
     kind: KINDS[button.type?.className ?? ''] ?? 'other',
     text: typeof button.text === 'string' ? button.text : '',
     needsPassword: button.type?.requiresPassword === true,
+    url: typeof button.type?.url === 'string' && button.type.url !== '' ? button.type.url : null,
   };
 }
 

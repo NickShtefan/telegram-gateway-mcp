@@ -221,7 +221,7 @@ const tgJoin = defineTool({
   toolset: 'write',
   title: 'Join a chat',
   description:
-    'Prepares joining a channel or group (public or by invite link) and returns a preview with an approval_id; the account joins only after tg_confirm, which you call after the owner agrees. The gateway never passes captchas of gatekeeper bots: if the chat asks for one, the owner has to do it.',
+    'Prepares joining a channel or group (public or by invite link) and returns a preview with an approval_id; the account joins only after tg_confirm, which you call after the owner agrees. Joining does not pass the check of a gatekeeper bot: if the chat has one, tell the owner what it asks.',
   input: { ref: chatArg, account: accountArg },
   readOnly: false,
   handler: async (args, ctx) => {
@@ -255,7 +255,7 @@ const tgPressButton = defineTool({
   toolset: 'write',
   title: 'Press an inline button',
   description:
-    'Prepares pressing an inline button under a message and returns a preview with an approval_id; it is pressed only after tg_confirm, which you call after the owner agrees. "row" and "button" are the place printed by tg_get_message: 2.1 is row 2, button 1. Only callback buttons work: links, web apps, logins, payments and games are refused. Not for anti-bot checks: a captcha or an "I am not a bot" button of a gatekeeper bot is for the owner to press.',
+    'Prepares pressing an inline button under a message and returns a preview with an approval_id; it is pressed only after tg_confirm, which you call after the owner agrees. "row" and "button" are the place printed by tg_get_message: 2.1 is row 2, button 1. Only callback buttons work: links, web apps, logins, payments and games are refused, and links are never opened. The answer of the bot comes back with the confirmation.',
   input: {
     link: z.string().optional().describe('t.me link to the message with the button.'),
     chat: z.string().optional().describe('Chat, when "link" is not given.'),

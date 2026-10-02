@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractLinks, indexEntities, normalizeMedia, normalizeMessage, normalizeMessages, totalCount } from '../messages.js';
+import { extractHiddenLinks, indexEntities, normalizeMedia, normalizeMessage, normalizeMessages, totalCount } from '../messages.js';
 
 const response = {
   count: 240,
@@ -76,7 +76,7 @@ describe('normalizeMessages', () => {
       pinned: true,
       editDate: 1_790_000_100,
       media: { kind: 'photo', width: 1280, height: 960, downloadable: true },
-      links: ['https://example.com', 'https://hidden.example/x'],
+      hiddenLinks: [{ text: 'ссылка', url: 'https://hidden.example/x' }],
     });
     expect(messages[0]!.reactions[0]).toEqual({ reaction: '🔥', count: 30 });
   });
@@ -185,8 +185,17 @@ describe('normalizeMedia', () => {
     expect(normalizeMedia({ className: 'MessageMediaEmpty' })).toBeNull();
   });
 
-  it('extractLinks убирает повторы', () => {
-    expect(extractLinks('a https://x.io b', [{ className: 'MessageEntityUrl', offset: 2, length: 12 }, { className: 'MessageEntityTextUrl', url: 'https://x.io' }])).toEqual(['https://x.io']);
-    expect(extractLinks('text', undefined)).toEqual([]);
+  it('extractHiddenLinks: только спрятанные адреса, со словами из текста и без повторов', () => {
+    const entities = [
+      { className: 'MessageEntityUrl', offset: 2, length: 12 },
+      { className: 'MessageEntityTextUrl', offset: 17, length: 3, url: 'https://x.io' },
+      { className: 'MessageEntityTextUrl', offset: 21, length: 5, url: 'https://x.io' },
+      { className: 'MessageEntityTextUrl', url: 'https://y.io' },
+    ];
+    expect(extractHiddenLinks('a https://x.io b тут здесь', entities)).toEqual([
+      { text: 'тут', url: 'https://x.io' },
+      { text: '', url: 'https://y.io' },
+    ]);
+    expect(extractHiddenLinks('text', undefined)).toEqual([]);
   });
 });
