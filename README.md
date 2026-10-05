@@ -53,7 +53,7 @@ MCP-шлюз к Telegram. Один демон держит сессии подк
 | [docs/risks.md](docs/risks.md) | Риски от самых дорогих. |
 | [docs/plan.md](docs/plan.md) | Что сделано, что проверено, что осталось. |
 | [docs/open-source-plan.md](docs/open-source-plan.md) | Подготовка к открытию исходников: этапы, решения владельца и критерии публикации. |
-| [docs/naming-research.md](docs/naming-research.md) | Исследование названия для поиска человеком и агентом, рекомендация для владельца. |
+| [docs/naming-research.md](docs/naming-research.md) | Исследование названия для поиска человеком и агентом, основание решения 35. |
 | [docs/open-questions.md](docs/open-questions.md) | Что ещё не решено. |
 | [docs/findings.md](docs/findings.md) | Проверенные факты про Telegram, библиотеку и клиентов. |
 | `src/` | Код: `core`, `storage`, `policy`, `services`, `writegate`, `mcp`, `transport`, `cli`. |
