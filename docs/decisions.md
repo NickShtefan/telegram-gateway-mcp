@@ -135,6 +135,8 @@ Reason: owner agreement. All users expose the same Telegram account to risk, so 
 
 Reason: owner decision to allow autonomous development.
 
+This direct-push workflow continues only in the current private repository. Decision 44 replaces it with PRs, successful checks, and owner-approved merges for development in the new repository after the initial snapshot import.
+
 ## 20. Implementation details (proposed)
 
 - **Stateless HTTP:** a new MCP server per request. After a hang and daemon restart, clients retry calls.
@@ -324,7 +326,7 @@ The current repository stays private with its existing history. Do not change it
 
 Check the snapshot for secrets and personal data and retain required third-party notices. Removing old commits does not replace this audit. Source and first public-repository commit SHAs differ; the preparation report connects them through file contents and a snapshot checksum. Verify releases on the new repository's commit.
 
-Decision 35 selects the name, 38 selects owner/address, and 39 defines cleanup and publication order. Public contribution rules remain a separate owner question. Decision 19 continues to authorize commits and pushes to current private main until migration.
+Decision 35 selects the name, 38 selects owner/address, and 39 defines cleanup and publication order. Decision 44 defines PR and merge rules for further development in the new repository. Decision 19 continues to authorize commits and pushes to current private main until migration.
 
 Reason: the owner wants to open the finished tool and develop it with a fresh public history.
 
@@ -421,3 +423,13 @@ The owner selected English for the entire repository, without a Russian edition,
 Preserve accepted decisions, security constraints, required attribution, runtime behavior, and support for Unicode Telegram content. English repository content does not limit Telegram data to English. Preserve existing private Git history under decision 33; the new repository receives only the vetted English snapshot.
 
 Reason: owner instruction during open-source preparation. Language cleanup is a concrete prerequisite, separate from the remaining obsolete-code, provenance, secrets, and release audits.
+
+## 44. Public development through PRs and owner-approved merges (accepted 2026-10-06)
+
+After importing the initial vetted snapshot into `NickShtefan/telegram-mcp-gateway` under decisions 33 and 39, all development changes go through pull requests, including changes prepared by the owner or an agent. Required checks must succeed before merging, and the owner approves the merge. Agents may prepare and update PRs but must obtain the owner's explicit approval before merging. Direct development pushes to the new repository's `main` are not part of this workflow.
+
+Configure the new repository's `main` protection and required CI checks during preparation, and verify the actual settings before publication. This decision records the policy; the new repository, CI, and protection rules have not been created or configured by this step. Contribution terms, maintenance commitments, release procedures, and the private vulnerability channel remain separate questions.
+
+Decision 19 remains in force for the current private `telegram-gateway-mcp`: completed, tested preparation steps are committed and pushed to its `main`. The initial parentless snapshot import remains governed by decisions 33 and 39.
+
+Reason: the owner approved PRs with successful checks and retained approval of merges into the public project.

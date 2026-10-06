@@ -38,7 +38,7 @@ tg-mcp is an MCP gateway to Telegram. One daemon owns the MTProto sessions of co
 - **Telegram writes.** Write tools (join, react, reply, send, press a button) must use the write gate: preview first, then `tg_confirm` after the owner's consent (decision 23). Verify writes only on the owner's channel and test account, never on other people or chats.
 - **Never:** transfer money, send bulk messages, join chats in bulk, or message strangers without the owner's explicit consent.
 - **Logs only to stderr.** Any stdout line in stdio mode breaks JSON-RPC. This includes the MTProto library logger, which uses `console.log` by default.
-- **Commits and pushes.** Under decision 19 in `docs/decisions.md` (2026-10-01), commit after each completed step with green tests and push to `main` of the current private repository. Force pushes, history rewrites, and pushes to other repositories require the owner's explicit request.
+- **Commits and pushes.** Under decision 19 in `docs/decisions.md` (2026-10-01), commit after each completed step with green tests and push to `main` of the current private repository. After the initial snapshot import, development in the new repository uses PRs with successful required checks and owner-approved merges (decision 44); agents must obtain explicit owner approval before merging and must not push development changes directly to its `main`. Force pushes, history rewrites, and pushes to other repositories require the owner's explicit request.
 
 ## Technology
 
