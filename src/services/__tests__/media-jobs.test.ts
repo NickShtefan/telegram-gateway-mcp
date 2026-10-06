@@ -42,7 +42,7 @@ const videoMessage = (id: number, size: number, thumbs: unknown[] = [{ className
 });
 
 describe('pickThumbType', () => {
-  it('берёт размер около 320 px и не берёт заглушки', () => {
+  it('selects sizes around 320 px and ignores placeholders', () => {
     expect(pickThumbType(photoSizes)).toBe('m');
     expect(pickThumbType(photoSizes.filter(s => s.type !== 'm'))).toBe('x');
     expect(pickThumbType([{ className: 'PhotoSize', type: 's', w: 90, h: 67 }])).toBe('s');
@@ -58,7 +58,7 @@ describe('MediaService', () => {
     return { tg, downloadMedia, media: new MediaService({ tg, filesDir: dir, log: silent, maxFullBytes: 1000 }) };
   }
 
-  it('скачивает превью, кладёт файл с правами для чтения агентами', async () => {
+  it('downloads previews with permissions allowing agents to read them', async () => {
     const { media, downloadMedia } = setup();
     const result = await media.download('agent', '-1000000000500', [photoMessage(10)], 'thumb');
     expect(result.skipped).toEqual([]);
@@ -70,7 +70,7 @@ describe('MediaService', () => {
     expect(downloadMedia.mock.calls[0]![1]).toEqual({ thumb: 'm' });
   });
 
-  it('повторный запрос берётся с диска без обращения к Telegram', async () => {
+  it('uses cached files without another Telegram call', async () => {
     const { media, downloadMedia } = setup();
     await media.download('agent', '-1000000000500', [photoMessage(10)], 'thumb');
     const again = await media.download('agent', '-1000000000500', [photoMessage(10)], 'thumb');
@@ -78,14 +78,14 @@ describe('MediaService', () => {
     expect(downloadMedia).toHaveBeenCalledTimes(1);
   });
 
-  it('полный размер фото качается без параметра thumb', async () => {
+  it('downloads full-size photos without a thumb argument', async () => {
     const { media, downloadMedia } = setup();
     const result = await media.download('agent', '42', [photoMessage(7)], 'full');
     expect(result.files[0]!.path).toBe(join(dir, 'media', 'agent', 'u42', '7-full.jpg'));
     expect(downloadMedia.mock.calls[0]![1]).toEqual({});
   });
 
-  it('видео: превью скачивается, полный файл сверх лимита пропускается', async () => {
+  it('downloads video previews and skips oversized full files', async () => {
     const { media, downloadMedia } = setup();
     const thumb = await media.download('agent', '-1000000000500', [videoMessage(20, 50_000_000)], 'thumb');
     expect(thumb.files[0]).toMatchObject({ kind: 'video', size: 'thumb', mime: 'image/jpeg' });
@@ -96,7 +96,7 @@ describe('MediaService', () => {
     expect(downloadMedia).toHaveBeenCalledTimes(2);
   });
 
-  it('сообщения без медиа и без превью пропускаются с причиной', async () => {
+  it('skips messages without media or previews with an explanation', async () => {
     const { media } = setup();
     const result = await media.download(
       'agent',
@@ -108,7 +108,7 @@ describe('MediaService', () => {
     expect(result.skipped.map(s => s.reason)).toEqual(['no media', 'poll cannot be downloaded', 'no preview available']);
   });
 
-  it('ошибка «файл в другом дата-центре» повторяется один раз', async () => {
+  it('retries file data-center migration errors once', async () => {
     vi.useFakeTimers();
     try {
       const downloadMedia = vi.fn().mockRejectedValueOnce(new Error('FILE_MIGRATE_4')).mockResolvedValueOnce(Buffer.from('OK'));
@@ -118,14 +118,14 @@ describe('MediaService', () => {
       expect((await p).files).toHaveLength(1);
       expect(downloadMedia).toHaveBeenCalledTimes(2);
       expect(isDcRedirectError(new Error('socket hang up'))).toBe(false);
-      // настоящая ошибка teleproto: в её тексте нет слова FILE_MIGRATE
+      // A real teleproto error whose message does not contain FILE_MIGRATE.
       expect(isDcRedirectError(RPCMessageToError({ errorCode: 303, errorMessage: 'FILE_MIGRATE_4' } as never, { className: 'upload.GetFile' } as never))).toBe(true);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('сбой скачивания одного файла не ломает остальные', async () => {
+  it('continues other downloads after one file fails', async () => {
     const downloadMedia = vi.fn().mockRejectedValueOnce(new GatewayError('TIMEOUT', 'download timed out')).mockResolvedValueOnce(Buffer.from('OK'));
     const { media } = setup(downloadMedia as never);
     const result = await media.download('agent', '-1000000000500', [photoMessage(1), photoMessage(2)], 'thumb');
@@ -133,7 +133,7 @@ describe('MediaService', () => {
     expect(result.files.map(f => f.messageId)).toEqual([2]);
   });
 
-  it('по подложенной ссылке шлюз не читает и не пишет', async () => {
+  it('refuses reads and writes through planted symlinks', async () => {
     const secret = join(dir, 'session.key');
     writeFileSync(secret, 'TOP-SECRET');
     const cacheDir = join(dir, 'media', 'agent', 'n1000000000500');
@@ -141,7 +141,7 @@ describe('MediaService', () => {
     symlinkSync(secret, join(cacheDir, '10-thumb.jpg'));
     const { media, downloadMedia } = setup();
     const result = await media.download('agent', '-1000000000500', [photoMessage(10)], 'thumb');
-    // ссылка не считается кэшем, а запись поверх неё отклоняется
+    // A symlink is not a cache hit and cannot be overwritten.
     expect(result.files).toEqual([]);
     expect(result.skipped[0]!.reason).toContain('not safe to use');
     expect(downloadMedia).toHaveBeenCalledTimes(1);
@@ -149,7 +149,7 @@ describe('MediaService', () => {
     expect(readOwnFile(join(cacheDir, '10-thumb.jpg'), 1_000_000)).toBeNull();
   });
 
-  it('папка, в которую могут писать другие, не используется', async () => {
+  it('rejects directories writable by others', async () => {
     mkdirSync(join(dir, 'media'), { mode: 0o755 });
     chmodSync(join(dir, 'media'), 0o777);
     const { media } = setup();
@@ -158,7 +158,7 @@ describe('MediaService', () => {
     expect(result.skipped[0]!.reason).toContain('writable by other users');
   });
 
-  it('расширение файла из Telegram не может быть произвольным', async () => {
+  it('restricts file extensions supplied by Telegram', async () => {
     const { media } = setup();
     const doc = (fileName: string) => ({
       className: 'Message',
@@ -170,7 +170,7 @@ describe('MediaService', () => {
     expect(evil.files[0]!.path).not.toContain('SYSTEM');
   });
 
-  it('квота удаляет самые старые файлы', () => {
+  it('evicts the oldest files when enforcing the quota', () => {
     const tg = new FakeTg();
     const media = new MediaService({ tg, filesDir: dir, log: silent, quotaBytes: 250 });
     const base = join(dir, 'media', 'n1');
@@ -189,14 +189,14 @@ describe('MediaService', () => {
   });
 });
 
-describe('выгрузка: значения для таблиц', () => {
-  it('текст из Telegram не становится формулой, кавычки и переносы экранируются', () => {
+describe('export: spreadsheet values', () => {
+  it('prevents formula injection and escapes quotes and newlines', () => {
     expect(csvCell('=HYPERLINK("http://evil","x")')).toBe(`"'=HYPERLINK(""http://evil"",""x"")"`);
     expect(csvCell('+79991234567')).toBe("'+79991234567");
     expect(csvCell('@user')).toBe("'@user");
     expect(csvCell(-5)).toBe('-5');
-    expect(csvCell('строка, с запятой')).toBe('"строка, с запятой"');
-    expect(csvCell('две\nстроки')).toBe('"две\nстроки"');
+    expect(csvCell('a line, with a comma')).toBe('"a line, with a comma"');
+    expect(csvCell('two\nlines')).toBe('"two\nlines"');
     expect(csvCell(null)).toBe('');
     expect(slugify('@Stonks_NWS  iPhone 15 / ../../etc')).toBe('stonks-nws-iphone-15-etc');
   });
@@ -211,7 +211,7 @@ describe('JobManager', () => {
 
   afterEach(() => storage.close());
 
-  it('задача выполняется, прогресс и результат видны её хозяину', async () => {
+  it('executes jobs and exposes progress and results to their owners', async () => {
     const jobs = new JobManager({ storage, log: silent });
     let release!: () => void;
     const gate = new Promise<void>(r => (release = r));
@@ -229,7 +229,7 @@ describe('JobManager', () => {
     expect(() => jobs.get(job.id, 'partner')).toThrow(/not found/);
   });
 
-  it('waitFor возвращает состояние по таймауту, не дожидаясь конца', async () => {
+  it('waitFor returns current state on timeout before completion', async () => {
     const jobs = new JobManager({ storage, log: silent });
     jobs.register('slow', () => new Promise(() => undefined));
     const job = jobs.start({ userId: 'nick', kind: 'slow', params: {} });
@@ -238,7 +238,7 @@ describe('JobManager', () => {
     jobs.stop();
   });
 
-  it('ошибка исполнителя сохраняется с кодом', async () => {
+  it('stores executor failures with their codes', async () => {
     const jobs = new JobManager({ storage, log: silent });
     jobs.register('export', async () => {
       throw new GatewayError('FLOOD_WAIT', 'wait 400 seconds', { retryAfter: 400 });
@@ -249,7 +249,7 @@ describe('JobManager', () => {
     expect(() => jobs.start({ userId: 'nick', kind: 'unknown', params: {} })).toThrow(/Unknown job kind/);
   });
 
-  it('одновременно идёт не больше заданного числа задач', async () => {
+  it('limits the number of concurrent jobs', async () => {
     const jobs = new JobManager({ storage, log: silent, concurrency: 1 });
     const releases: Array<() => void> = [];
     let running = 0;
@@ -273,7 +273,7 @@ describe('JobManager', () => {
     expect(maxRunning).toBe(1);
   });
 
-  it('остановка шлюза: выполняемая задача видит флаг и остаётся в базе выполняемой, новые не стартуют', async () => {
+  it('shutdown signals running jobs, leaves them running in storage, and starts no new jobs', async () => {
     const jobs = new JobManager({ storage, log: silent, concurrency: 1 });
     let sawStop = false;
     jobs.register('export', async ctx => {
@@ -286,12 +286,12 @@ describe('JobManager', () => {
     await vi.waitFor(() => expect(jobs.get(running.id, 'nick').state).toBe('running'));
     jobs.stop();
     await vi.waitFor(() => expect(sawStop).toBe(true));
-    // исход прерванной задачи не записывается: после старта она вернётся в очередь
+    // Do not record an interrupted outcome; the job is requeued on startup.
     expect(jobs.get(running.id, 'nick').state).toBe('running');
     expect(jobs.get(queued.id, 'nick').state).toBe('queued');
   });
 
-  it('очередь длиннее полусотни: первой идёт самая старая задача', async () => {
+  it('runs the oldest job first even with more than fifty queued jobs', async () => {
     let clock = 1_000;
     const ordered = new SqliteStorage({ path: ':memory:', now: () => (clock += 10) });
     try {
@@ -311,7 +311,7 @@ describe('JobManager', () => {
     }
   });
 
-  it('ожидание по таймауту не копится в памяти', async () => {
+  it('does not accumulate timed-out waiters in memory', async () => {
     const jobs = new JobManager({ storage, log: silent });
     let release!: () => void;
     jobs.register('export', () => new Promise(r => (release = () => r({}))));
@@ -322,11 +322,11 @@ describe('JobManager', () => {
     expect((await jobs.waitFor(job.id, 'nick', 1_000)).state).toBe('done');
   });
 
-  it('задача, которая раз за разом роняет шлюз, перестаёт возобновляться', async () => {
+  it('stops resuming jobs that repeatedly crash the gateway', async () => {
     storage.jobs.create({ id: 'job_bad', userId: 'nick', kind: 'export', params: {} });
     const run = vi.fn(async () => ({}));
     for (let restart = 1; restart <= 3; restart++) {
-      // процесс упал, пока задача выполнялась
+      // The process crashed while the job was running.
       storage.jobs.update('job_bad', { state: 'running' });
       const jobs = new JobManager({ storage, log: silent });
       jobs.register('export', run);
@@ -337,7 +337,7 @@ describe('JobManager', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('после рестарта прерванная задача возвращается в очередь и выполняется', async () => {
+  it('requeues and executes interrupted jobs after restart', async () => {
     storage.jobs.create({ id: 'job_old', userId: 'nick', kind: 'export', params: { chat: '-1001' } });
     storage.jobs.update('job_old', { state: 'running', progress: { rows: 50 } });
     const jobs = new JobManager({ storage, log: silent });

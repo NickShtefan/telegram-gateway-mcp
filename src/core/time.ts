@@ -1,6 +1,6 @@
 /**
- * Дедлайны и паузы. Промис teleproto при сбое сети может не завершиться
- * никогда, поэтому каждый внешний await ограничен по времени.
+ * Deadlines and delays. teleproto promises may never settle after a network
+ * failure, so every external await must be time-bounded.
  */
 
 export class DeadlineError extends Error {
@@ -15,7 +15,7 @@ export class DeadlineError extends Error {
   }
 }
 
-/** Больше 2^31-1 Node молча урезает setTimeout до 1 мс. */
+/** Node silently reduces setTimeout values above 2^31-1 to 1 ms. */
 export const MAX_TIMER_MS = 2_147_483_647;
 
 export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {

@@ -1,10 +1,10 @@
 /**
- * Набор `write`: ответ в комментариях, сообщение, реакция, вступление в чат,
- * нажатие inline-кнопки.
+ * `write` toolset: comment replies, messages, reactions, chat joins,
+ * and inline-button presses.
  *
- * Запись идёт в два шага (решения 4 и 23). Инструмент готовит запрос и
- * возвращает предпросмотр с `approval_id`; действие выполняет шлюз после
- * `tg_confirm`, который агент вызывает, когда владелец согласился.
+ * Writes use two steps (decisions 4 and 23). A tool prepares a request
+ * and returns a preview with `approval_id`; the gateway executes it after
+ * `tg_confirm`, called by the agent once the owner has consented.
  */
 import { z } from 'zod';
 import { GatewayError, type GatewayErrorCode } from '../../core/errors.js';
@@ -25,7 +25,7 @@ const STATE_TEXT: Record<ApprovalRecord['state'], string> = {
   failed: 'failed',
 };
 
-/** Ответ инструмента записи: что именно будет сделано и что делать дальше. */
+/** Write tool response: the exact proposed action and next steps. */
 function confirmNote(approval: ApprovalRecord, ctx: ToolContext): string {
   const account = approval.accountId ? ctx.services.runtime.storage.accounts.get(approval.accountId) : null;
   const lines = ['Nothing has been done in Telegram yet. This is what will be done:', approval.preview];
@@ -37,7 +37,7 @@ function confirmNote(approval: ApprovalRecord, ctx: ToolContext): string {
   lines.push(
     '',
     `Show this to the owner. Only after the owner clearly agrees, call tg_confirm with approval_id ${approval.id}.`,
-    // Заменить формулировку можно только там, где есть текст: у реакции и вступления его нет.
+    // Only actions containing text permit wording changes; reactions and joins do not.
     hasText ? 'If the owner wants other wording, pass it to tg_confirm as "text". To cancel: tg_confirm with action=reject.' : 'To cancel: tg_confirm with action=reject.',
     `The request expires at ${formatDate(Math.floor(approval.expiresAt / 1000))} UTC. Do not repeat the write call itself.`,
   );
@@ -51,7 +51,7 @@ function outcomeOf(approval: ApprovalRecord): string {
   return '';
 }
 
-/** Ответ бота на нажатие кнопки. Это чужой текст: он отдаётся в границах недоверенного контента. */
+/** Bot callback response returned inside the untrusted-content boundary. */
 function botAnswerNote(result: Record<string, unknown>): string {
   const answer = typeof result.bot_answer === 'string' ? result.bot_answer : '';
   const url = typeof result.bot_url === 'string' ? result.bot_url : '';
@@ -63,7 +63,7 @@ function botAnswerNote(result: Record<string, unknown>): string {
   return lines.join('\n');
 }
 
-/** Как назвать сообщение в предпросмотре: ссылкой, а где ссылок нет, номером и чатом. */
+/** Preview message reference: link, or message number and chat when links are unavailable. */
 function messageTarget(where: MessageLocation): string {
   const link = where.commentOf
     ? messageLink({ username: where.commentOf.chat.username, peerKey: where.commentOf.chat.peerKey, messageId: where.commentOf.postId, commentId: where.messageId })
@@ -98,7 +98,7 @@ const tgReply = defineTool({
       throw new GatewayError('INVALID_ARGUMENT', 'tg_reply answers in the comments of a channel post. For other chats use tg_send.');
     }
 
-    // Ссылка на комментарий: отвечаем на него, а не на пост. Что комментарий из ветки этого поста, проверил locateMessage.
+    // Reply to the linked comment, not its post; locateMessage already verified thread membership.
     const commentId = where.commentOf ? where.messageId : undefined;
 
     writeGate.write.assertCanReply(where.accountId);
@@ -155,7 +155,7 @@ const tgSend = defineTool({
 
     const replyToId = args.reply_to;
     if (replyToId !== undefined) {
-      // Проверяется только существование: текст сообщения агенту здесь не отдаётся.
+      // Check existence only; do not expose message text to the agent here.
       const found = await history.byIds(accountId, chat, [replyToId]);
       if (found.messages.length === 0) {
         throw new GatewayError('MESSAGE_NOT_FOUND', `Message ${replyToId} not found in ${chatLabel(chat)}: it was deleted or the id is wrong.`);
@@ -279,7 +279,7 @@ const tgPressButton = defineTool({
       throw new GatewayError('LIMIT_REACHED', `Pressing this button is already prepared (${waiting.id}). Confirm or reject it with tg_confirm first.`);
     }
 
-    // Подпись кнопки написал бот: в предпросмотре она в одну строку и без разметки.
+    // Bot-written labels are flattened to one line without markup in the preview.
     const label = safeLabel(button.text, 64).replace(/"/g, "'") || 'no label';
     const target = messageTarget(where);
     const approval = writeGate.approvals.request({
@@ -321,7 +321,7 @@ const tgConfirm = defineTool({
     const audit = { accountId: before.accountId, peerKey: typeof before.payload.chatKey === 'string' ? before.payload.chatKey : null };
 
     if (before.state !== 'pending') {
-      // Повторный вызов: действие второй раз не выполняется, агент узнаёт прежний исход.
+      // Repeated calls return the stored outcome without executing the action again.
       const detail = outcomeOf(before);
       return { ...audit, text: `Request ${before.id} is already ${STATE_TEXT[before.state]}${detail ? `: ${detail}` : '.'}\nNothing was done by this call.` };
     }
@@ -342,7 +342,7 @@ const tgConfirm = defineTool({
         outcomeUnknown: result.outcome_unknown === true,
       });
     }
-    // Одновременно пришло второе подтверждение: действие выполняет оно.
+    // A concurrent confirmation has already claimed execution.
     return { ...audit, text: `Request ${after.id} is ${STATE_TEXT[after.state]}. Call tg_confirm with this id again to read the outcome.` };
   },
 });

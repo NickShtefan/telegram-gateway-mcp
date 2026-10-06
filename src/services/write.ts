@@ -1,13 +1,13 @@
 /**
- * Действия: ответ в комментариях, сообщение, реакция, вступление в чат, нажатие
- * inline-кнопки. Вызываются
- * только исполнителями шлюза записи (`writegate/index.ts`), то есть после
- * того, как владелец подтвердил действие через своего агента (`tg_confirm`).
+ * Actions: comment replies, messages, reactions, joins, and
+ * inline-button presses. Called
+ * only by write-gateway executors (writegate/index.ts), after the
+ * owner confirms through their agent (tg_confirm).
  *
- * Ответ под постом: `GetDiscussionMessage` находит копию поста в группе
- * обсуждений, дальше `SendMessage` ответом на неё.
- * Лимиты консервативные: сообщения незнакомым людям самое опасное действие для
- * аккаунта (см. risks.md).
+ * Post replies: GetDiscussionMessage locates the post copy in the
+ * discussion group, then SendMessage replies to that copy.
+ * Conservative caps: contacting strangers is the highest-risk account
+ * action (see risks.md).
  */
 import { randomBytes } from 'node:crypto';
 import bigInt from 'big-integer';
@@ -26,21 +26,21 @@ import type { MessageDto } from './messages.js';
 
 export interface WriteLimits {
   repliesPerDay: number;
-  /** Новые диалоги: люди, которым аккаунт ещё не писал. */
+  /** New conversations: people this account has not messaged before. */
   newDialogsPerDay: number;
   joinsPerDay: number;
   reactionsPerDay: number;
 }
 
 /**
- * Пределы по умолчанию. Это осторожные числа шлюза, а не правила Telegram:
- * Telegram своих порогов не публикует и наказывает за массовые сообщения
- * незнакомым людям, вступления и реакции (PEER_FLOOD, заморозка аккаунта).
- * Владелец меняет пределы переменными TG_MCP_LIMIT_*; 0 снимает предел.
+ * Default caps are conservative gateway choices, not Telegram rules:
+ * Telegram does not publish thresholds and penalizes bulk messages
+ * to strangers, joins, and reactions (PEER_FLOOD, account freezes).
+ * Owners override caps through TG_MCP_LIMIT_*; 0 removes a cap.
  */
 export const DEFAULT_WRITE_LIMITS: WriteLimits = { repliesPerDay: 20, newDialogsPerDay: 5, joinsPerDay: 5, reactionsPerDay: 30 };
 
-/** Достигнут ли дневной предел; 0 значит, что предела нет. */
+/** Checks daily caps; 0 means unlimited. */
 function reached(count: number, limit: number): boolean {
   return limit > 0 && count >= limit;
 }
@@ -48,8 +48,8 @@ function reached(count: number, limit: number): boolean {
 const VARIATION_SELECTOR = String.fromCharCode(0xfe0f);
 
 /**
- * Эмодзи реакции в том виде, в каком его принимает Telegram: без селектора
- * варианта (сердце приходит с клавиатуры с ним, а в списке реакций оно без него).
+ * Reaction emoji in the form accepted by Telegram, without variation
+ * selectors (keyboard hearts include them, reaction lists do not).
  */
 export function normalizeReactionEmoji(raw: unknown): string {
   const emoji = typeof raw === 'string' ? raw.trim().split(VARIATION_SELECTOR).join('') : '';
@@ -64,7 +64,7 @@ export interface WriteContext {
   accountId: string;
 }
 
-/** joined: вступил; requested: заявка ждёт админа чата; already: аккаунт уже был участником. */
+/** joined: joined; requested: awaiting chat admin; already: existing membership. */
 export type JoinOutcome = 'joined' | 'requested' | 'already';
 
 export interface SentMessage {
@@ -74,19 +74,19 @@ export interface SentMessage {
 
 export interface ReplyOptions {
   sendAs?: 'account' | 'channel';
-  /** Ответить на этот комментарий в ветке поста, а не на сам пост. */
+  /** Reply to this comment within the post thread instead of the post itself. */
   commentId?: number;
-  /** Показать превью первой ссылки из текста. По умолчанию выключено: уходит ровно то, что было в предпросмотре. */
+  /** Preview the first text link; disabled by default to send exactly the approved preview. */
   linkPreview?: boolean;
 }
 
 export interface SendOptions {
-  /** id сообщения в этом чате, на которое отвечаем. */
+  /** Reply target message ID in this chat. */
   replyToId?: number;
   linkPreview?: boolean;
 }
 
-/** Какая кнопка была в предпросмотре: место в клавиатуре и отпечаток. */
+/** Previewed button position and fingerprint. */
 export interface ButtonTarget {
   messageId: number;
   row: number;
@@ -95,16 +95,16 @@ export interface ButtonTarget {
 }
 
 export interface PressOutcome {
-  /** Текст, которым бот ответил на нажатие (всплывающая строка или окно). Чужой текст. */
+  /** Untrusted bot callback response text, shown as a toast or alert. */
   answer: string | null;
   alert: boolean;
-  /** Ссылка из ответа бота. Шлюз её не открывает. */
+  /** Bot response URL; the gateway does not open it. */
   url: string | null;
-  /** Нажатие ушло, но бот не ответил Telegram вовремя (BOT_RESPONSE_TIMEOUT). */
+  /** Button press delivered, but the bot did not answer in time (BOT_RESPONSE_TIMEOUT). */
   botSilent: boolean;
 }
 
-/** Бот отвечает на нажатие не сразу: Telegram сам ждёт его и возвращает BOT_RESPONSE_TIMEOUT. */
+/** Telegram waits for delayed bot callback responses and may return BOT_RESPONSE_TIMEOUT. */
 const PRESS_DEADLINE_MS = 30_000;
 
 const BUTTON_KIND_TEXT: Record<LocatedButton['kind'], string> = {
@@ -121,7 +121,7 @@ const BUTTON_KIND_TEXT: Record<LocatedButton['kind'], string> = {
   other: 'a button of an unknown kind',
 };
 
-/** Предел длины сообщения Telegram. */
+/** Telegram message length limit. */
 export const MESSAGE_MAX_CHARS = 4096;
 
 export function assertMessageText(text: unknown): string {
@@ -144,7 +144,7 @@ interface UpdatesLike {
   updates?: Array<{ className?: string; id?: number; message?: { id?: number } }>;
 }
 
-/** id отправленного сообщения из ответа Telegram. */
+/** Sent message ID extracted from the Telegram response. */
 export function sentMessageId(result: unknown): number | null {
   const r = result as UpdatesLike | null;
   if (!r || typeof r !== 'object') return null;
@@ -172,7 +172,7 @@ export interface WriteServiceDeps {
   log?: Logger;
 }
 
-/** Telegram уже принял сообщение с этим random_id: повтор после обрыва связи, сообщение доставлено. */
+/** Telegram accepted this random_id previously; a reconnect retry means already delivered. */
 function isDuplicateSend(err: unknown): boolean {
   return isGatewayError(err) && err.telegramCode === 'RANDOM_ID_DUPLICATE';
 }
@@ -183,21 +183,21 @@ export class WriteService {
   private readonly log: Logger;
 
   constructor(private readonly deps: WriteServiceDeps) {
-    // undefined из настроек не должен затирать значение по умолчанию.
+    // Undefined configuration values must not overwrite defaults.
     const custom = Object.fromEntries(Object.entries(deps.limits ?? {}).filter(([, v]) => typeof v === 'number'));
     this.limits = { ...DEFAULT_WRITE_LIMITS, ...custom };
     this.now = deps.now ?? (() => Date.now());
     this.log = deps.log ?? createLogger('write');
   }
 
-  /** Действующие дневные пределы на аккаунт; 0 значит без предела. */
+  /** Effective daily caps per account; 0 means unlimited. */
   get dailyLimits(): WriteLimits {
     return { ...this.limits };
   }
 
   /**
-   * Запись в журнал после того, как действие уже выполнено. Сбой базы здесь не должен
-   * превращать отправленное сообщение в «ошибку»: агент повторил бы отправку.
+   * Journal only after the action succeeds. A storage failure must not turn
+   * a delivered message into an error that prompts an agent to resend it.
    */
   private record(entry: Parameters<WriteStore['recordWrite']>[0]): void {
     try {
@@ -216,14 +216,14 @@ export class WriteService {
     }
   }
 
-  /** Дневной предел ответов под постами. Сколько раз отвечать под одним постом, решает владелец. */
+  /** Daily post-reply cap; the owner decides how often to reply to the same post. */
   assertCanReply(accountId: string): void {
     if (reached(this.deps.store.writesSince(accountId, 'reply', dayStart(this.now())), this.limits.repliesPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.repliesPerDay} replies for this account is reached.`);
     }
   }
 
-  /** Ответ в комментариях к посту канала: на сам пост или на один из комментариев под ним. */
+  /** Replies to a channel post or a comment within its thread. */
   async reply(context: WriteContext, channel: EntityRecord, postId: number, text: string, options: ReplyOptions = {}): Promise<SentMessage> {
     const message = assertMessageText(text);
     this.assertCanReply(context.accountId);
@@ -234,7 +234,7 @@ export class WriteService {
       new Api.messages.SendMessage({
         peer: toInputPeer(root.discussion),
         message,
-        // Ответ на комментарий остаётся в ветке поста: корень ветки передаётся как topMsgId.
+        // Preserve comment-thread membership by passing its root as topMsgId.
         replyTo: options.commentId
           ? new Api.InputReplyToMessage({ replyToMsgId: options.commentId, topMsgId: root.rootId })
           : new Api.InputReplyToMessage({ replyToMsgId: root.rootId }),
@@ -259,7 +259,7 @@ export class WriteService {
     };
   }
 
-  /** Можно ли начать диалог с человеком, которому аккаунт ещё не писал. */
+  /** Checks whether a new conversation may be started with this person. */
   assertCanMessage(accountId: string, peer: EntityRecord): void {
     if (peer.kind !== 'user') return;
     if (peer.meta.bot === true) return;
@@ -272,7 +272,7 @@ export class WriteService {
     }
   }
 
-  /** Сообщение в чат или человеку. */
+  /** Sends a message to a chat or person. */
   async send(context: WriteContext, peer: EntityRecord, text: string, options: SendOptions = {}): Promise<SentMessage> {
     const message = assertMessageText(text);
     this.assertCanMessage(context.accountId, peer);
@@ -301,14 +301,14 @@ export class WriteService {
     };
   }
 
-  /** Дневной предел реакций: реакции под каждым постом подряд выглядят как накрутка. */
+  /** Daily reaction cap; reacting to every consecutive post can look like manipulation. */
   assertCanReact(accountId: string): void {
     if (reached(this.deps.store.writesSince(accountId, 'react', dayStart(this.now())), this.limits.reactionsPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.reactionsPerDay} reactions for this account is reached.`);
     }
   }
 
-  /** Ставит реакцию на сообщение; `emoji = null` снимает свою реакцию. */
+  /** Adds a message reaction; null removes the account's reaction. */
   async react(context: WriteContext, chat: EntityRecord, messageId: number, emoji: string | null): Promise<void> {
     if (emoji !== null) this.assertCanReact(context.accountId);
     await this.deps.tg.invoke(
@@ -333,8 +333,8 @@ export class WriteService {
   }
 
   /**
-   * Кнопка сообщения, которую шлюз может нажать. Нажимаются только кнопки callback:
-   * ссылки, веб-приложения, вход, оплату и игры шлюз не открывает, пароль 2FA не вводит.
+   * Only callback buttons can be pressed. The gateway does not open links,
+   * web apps, sign-in flows, payments, or games, or enter a 2FA password.
    */
   async findButton(accountId: string, chat: EntityRecord, messageId: number, row: number, position: number): Promise<{ button: LocatedButton; message: MessageDto }> {
     const found = await this.deps.history.byIds(accountId, chat, [messageId]);
@@ -358,8 +358,8 @@ export class WriteService {
   }
 
   /**
-   * Нажимает кнопку callback. Сообщение читается заново: если бот его изменил и на
-   * этом месте уже другая кнопка, нажатия не будет. Байты callback берутся только из сообщения.
+   * Rereads a callback button's message before pressing. A changed button
+   * blocks execution; callback bytes come only from the message.
    */
   async press(context: WriteContext, chat: EntityRecord, target: ButtonTarget): Promise<PressOutcome> {
     const found = await this.deps.history.byIds(context.accountId, chat, [target.messageId]);
@@ -384,13 +384,13 @@ export class WriteService {
         botSilent: false,
       };
     } catch (err) {
-      // Нажатие дошло до бота, он не ответил вовремя: это исход, а не сбой.
+      // Delivery with a bot response timeout is an outcome, not an execution failure.
       if (isGatewayError(err) && err.telegramCode === 'BOT_RESPONSE_TIMEOUT') return { answer: null, alert: false, url: null, botSilent: true };
       throw err;
     }
   }
 
-  /** Вступление в публичный чат или по инвайту. Проверку бота-привратника вступление не проходит. */
+  /** Joins public chats or invites without solving gatekeeper-bot challenges. */
   async join(context: WriteContext, target: { chat?: EntityRecord; inviteHash?: string }): Promise<{ chatKey: string | null; outcome: JoinOutcome }> {
     if (reached(this.deps.store.writesSince(context.accountId, 'join', dayStart(this.now())), this.limits.joinsPerDay)) {
       throw new GatewayError('LIMIT_REACHED', `Daily limit of ${this.limits.joinsPerDay} joins for this account is reached.`);
@@ -407,7 +407,7 @@ export class WriteService {
         throw new GatewayError('INVALID_ARGUMENT', 'Only channels, supergroups and invite links can be joined.');
       }
     } catch (err) {
-      // Telegram сообщает эти исходы ошибкой, хотя действие состоялось.
+      // Telegram reports these completed outcomes as errors.
       const code = isGatewayError(err) ? err.telegramCode : undefined;
       if (code === 'INVITE_REQUEST_SENT') outcome = 'requested';
       else if (code === 'USER_ALREADY_PARTICIPANT') return { chatKey, outcome: 'already' };

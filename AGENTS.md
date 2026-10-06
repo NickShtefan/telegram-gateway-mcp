@@ -1,63 +1,64 @@
 # AGENTS.md: tg-mcp
 
-Инструкции для любого агента (Claude Code, Codex, OpenCode, Hermes), который работает в этой папке.
+Instructions for any agent (Claude Code, Codex, OpenCode, Hermes) working in this directory.
 
-## Что это
+## Project
 
-tg-mcp: MCP-шлюз к Telegram. Один демон держит MTProto-сессии подключённых аккаунтов и отдаёт их агентам как MCP-инструменты. Документация в `docs/`, код в `src/`. Что сделано и что проверено, записано в `docs/plan.md`.
+tg-mcp is an MCP gateway to Telegram. One daemon owns the MTProto sessions of connected accounts and exposes them to agents as MCP tools. Documentation is in `docs/`, code in `src/`. Implemented features and verification evidence are recorded in `docs/plan.md`.
 
-## Где работает
+## Environment
 
-- Демон шлюза работает на лабораторной машине `nick@macbook-pro-lab.local` (macOS, Intel, Node 22), рядом с агентами. Разработка идёт на основном Mac.
-- Сессия Telegram создаётся входом отдельно на каждой машине и между машинами не копируется.
-- Шлюзом пользуются двое (владелец и жена владельца), у каждого свои аккаунты Telegram, есть общие (решение 16 в `docs/decisions.md`).
-- Репозиторий приватный, `telegram-gateway-mcp`. `npx tg-mcp` не запускать: в npm под этим именем чужой пакет.
+- The gateway daemon runs on the lab machine `nick@macbook-pro-lab.local` (macOS, Intel, Node 22), alongside the agents. Development takes place on the main Mac.
+- Create a Telegram session by logging in separately on each machine. Never copy sessions between machines.
+- Two people use the gateway (the owner and the owner's wife). Each has personal Telegram accounts, and some accounts are shared (decision 16 in `docs/decisions.md`).
+- The current repository is private, `telegram-gateway-mcp`. Do not run `npx tg-mcp`: that npm name belongs to someone else's package.
 
-## Порядок чтения
+## Reading order
 
-1. `README.md`: что это, что умеет и карта папки.
-2. `docs/decisions.md`: что уже решено и почему. Не пересматривать принятые решения молча; если есть причина, предложи изменение явно.
-3. `docs/open-questions.md`: что ещё не решено. Не принимать эти решения за владельца.
-4. `docs/plan.md`: состояние и структура кода.
-5. `docs/architecture.md` и `docs/tools.md`: как шлюз устроен и что видит агент. Перед тем как менять часть шлюза, найди её там.
+1. `README.md`: purpose, capabilities, and directory map.
+2. `docs/decisions.md`: accepted decisions and their rationale. Do not silently revisit them; explicitly propose a change when warranted.
+3. `docs/open-questions.md`: unresolved questions. Do not decide them for the owner.
+4. `docs/plan.md`: implementation status and code structure.
+5. `docs/architecture.md` and `docs/tools.md`: gateway internals and the agent-facing interface. Find the relevant section before changing a gateway component.
 
-## Язык и стиль
+## Language and style
 
-- Документация и общение с владельцем на русском.
-- Никогда не использовать символ длинного тире (U+2014) ни в тексте, ни в коде, ни в коммитах. Вместо него двоеточие, запятая, скобки или другая фраза. Обычный дефис в составных словах допустим.
-- Коммиты в стиле conventional commits (`feat(scope): ...`, `fix: ...`).
+- All repository content must be in English: documentation, comments, tool and CLI text, tests, examples, scripts, agent instructions, and new commit messages. Do not maintain a Russian edition (decision 43).
+- Communication with the owner remains in Russian unless requested otherwise.
+- Never use the em dash character (U+2014) in text, code, or commits. Use a colon, comma, parentheses, or rephrase. Regular hyphens in compound words are allowed.
+- Use conventional commits (`feat(scope): ...`, `fix: ...`).
 
-## Жёсткие ограничения
+## Hard constraints
 
-- **Чистый MCP.** Шлюз это инструмент для агента, а не агент (решение 25). Он ничего не делает без вызова инструмента: не следит за чатами, не запускает модели, не пишет для них задания, не ведёт правил и поручений, не толкует данные за агента. Не добавлять сюда фоновые наблюдатели, планировщики, запуск `claude -p` и подобное без прямой просьбы владельца.
-- **Своя сессия.** Шлюз работает только на сессиях, созданных его собственным входом (`tg-mcp-admin login`). Не брать строки сессий и токены ботов из других проектов: второй клиент на чужой сессии даёт `AUTH_KEY_DUPLICATED`, и Telegram сбрасывает сессию.
-- **Один процесс на сессию.** Шлюз не должен создавать второй клиент MTProto на той же сессии ни в том же процессе, ни в соседнем. stdio-режим либо проксирует в работающий демон, либо берёт файловую блокировку.
-- **Секреты.** Не печатать и не копировать `.env`, сессии, токены ботов, `API_HASH`, строки подключения с паролями. Не класть секреты в `docs/` и тесты.
-- **Другие репозитории только читаем.** Не менять из этой папки код других проектов без явной просьбы владельца.
-- **Запись в Telegram.** Инструменты записи (вступить, реакция, ответ, сообщение, нажатие кнопки) работают только через шлюз записи с подтверждением: предпросмотр, затем `tg_confirm` после согласия владельца (решение 23). Проверять запись только на своём канале и тестовом аккаунте, не на чужих людях и чатах.
-- **Никогда:** переводы денег, массовые рассылки и вступления, сообщения незнакомым людям без явного согласия владельца.
-- **Логи только в stderr.** В stdio-режиме любая строка в stdout ломает JSON-RPC. Это касается и логгера библиотеки MTProto (по умолчанию он пишет через `console.log`).
-- **Коммиты и пуши.** По решению 19 в `docs/decisions.md` (2026-10-01) агент коммитит после каждого законченного шага с зелёными тестами и пушит в `main` приватного репозитория. Force-push, переписывание истории и пуши в другие репозитории только по явной просьбе владельца.
+- **Pure MCP.** The gateway is a tool for an agent, not an agent (decision 25). It does nothing without a tool call: no chat watching, model execution, model task generation, rule or assignment management, or interpretation of data for the agent. Do not add background watchers, schedulers, `claude -p` execution, or similar features without the owner's direct request.
+- **Own sessions.** Only use sessions created through the gateway's own login (`tg-mcp-admin login`). Never borrow session strings or bot tokens from other projects: a second client on a borrowed session can trigger `AUTH_KEY_DUPLICATED`, causing Telegram to revoke it.
+- **One process per session.** Never create a second MTProto client on the same session, in this process or another. The stdio mode either proxies to the running daemon or acquires the session lock.
+- **Secrets.** Never print or copy `.env`, sessions, bot tokens, `API_HASH`, or connection strings containing passwords. Never put secrets in `docs/` or tests.
+- **Other repositories are read-only.** Do not change another project's code from this directory without an explicit request from the owner.
+- **Telegram writes.** Write tools (join, react, reply, send, press a button) must use the write gate: preview first, then `tg_confirm` after the owner's consent (decision 23). Verify writes only on the owner's channel and test account, never on other people or chats.
+- **Never:** transfer money, send bulk messages, join chats in bulk, or message strangers without the owner's explicit consent.
+- **Logs only to stderr.** Any stdout line in stdio mode breaks JSON-RPC. This includes the MTProto library logger, which uses `console.log` by default.
+- **Commits and pushes.** Under decision 19 in `docs/decisions.md` (2026-10-01), commit after each completed step with green tests and push to `main` of the current private repository. Force pushes, history rewrites, and pushes to other repositories require the owner's explicit request.
 
-## Технологии
+## Technology
 
-- Node.js 22+, TypeScript, ESM.
-- teleproto для MTProto (решение 26): поддерживаемый форк GramJS, версия закреплена точно. Пакет `telegram` (GramJS) архивирован, обратно его не ставить. Обновлять teleproto только осознанно: посмотреть изменения, прогнать тесты и проверку на живом аккаунте. Bot API шлюз не использует: бота согласований нет (решение 23).
-- `@modelcontextprotocol/sdk` и `zod` для MCP.
-- SQLite как хранилище, драйвер `node:sqlite` (решение 19). Схема меняется только новой миграцией в `src/storage/migrations.ts`: опубликованные миграции не правятся.
-- vitest, тесты в `__tests__/` рядом с кодом. Telegram в тестах заменён двойником (`src/__tests__/helpers/fakeTg.ts`), база живёт в памяти, зависимости передаются явно.
+- Node.js 22+, TypeScript, ESM. See decision 42 for the public release's LTS policy.
+- teleproto for MTProto (decision 26): a maintained GramJS fork, pinned to an exact version. The `telegram` package (GramJS) is archived; do not reinstall it. Update teleproto deliberately: review changes, run tests, and verify a live account. The gateway does not use the Bot API; there is no approval bot (decision 23).
+- `@modelcontextprotocol/sdk` and `zod` for MCP.
+- SQLite storage with `node:sqlite` (decision 19). Change the schema only through a new migration in `src/storage/migrations.ts`; never edit published migrations.
+- vitest, with tests in adjacent `__tests__/` directories. Replace Telegram with the test double in `src/__tests__/helpers/fakeTg.ts`, use an in-memory database, and inject dependencies explicitly.
 
-## Правила кода
+## Code rules
 
-- Каждый вызов MTProto идёт через `core/tg.ts` (лимитер и дедлайн). Никаких прямых `client.invoke` мимо очереди.
-- Зависший вызов MTProto не лечится на месте: процесс выходит с кодом 1 и поднимается супервизором.
-- FLOOD_WAIT больше порога не пережидается, а возвращается агенту как ошибка с `retry_after`.
-- accessHash привязан к сессии: кэш сущностей хранится отдельно для каждого аккаунта.
-- id чатов хранить в одной форме; перевод между `-100…` и MTProto через `core/chatId.ts`.
-- Любой текст из Telegram считается чужим контентом и помечается в ответах инструментов.
+- Every MTProto call goes through `core/tg.ts` (limiter and deadline). No direct `client.invoke` calls bypassing the queue.
+- Do not attempt in-process recovery of a stuck MTProto call: exit with code 1 and let the supervisor restart the process.
+- Return FLOOD_WAIT above the threshold as an error with `retry_after`; do not wait it out.
+- accessHash belongs to a session: cache entities separately for each account.
+- Store chat IDs in one canonical form; convert between `-100...` and MTProto through `core/chatId.ts`.
+- Treat every Telegram text as untrusted content and label it in tool responses.
 
-## Готово, когда
+## Definition of done
 
-- `npm run build` и `npm test` проходят.
-- Для MCP-инструментов: один и тот же промпт из `docs/scenarios.md` одинаково отрабатывает в `claude -p`, `codex exec` и `opencode run`.
-- Документация в `docs/` обновлена, если поменялись решения, инструменты или структура.
+- `npm run build` and `npm test` pass.
+- For MCP tools, the same prompt from `docs/scenarios.md` works consistently in `claude -p`, `codex exec`, and `opencode run`.
+- Update `docs/` when decisions, tools, or structure change.

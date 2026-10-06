@@ -1,6 +1,6 @@
 /**
- * Сборка сервисов поверх ядра. Сервисы не знают про MCP и транспорт: их
- * вызывают инструменты и задачи, начатые инструментами (выгрузка, индексация).
+ * Composes services over core. Services have no MCP or transport dependencies;
+ * tools and tool-started jobs (export, indexing) call them.
  */
 import { buildWriteGate, type WriteGate } from '../writegate/index.js';
 import { AccessPolicy } from '../policy/access.js';

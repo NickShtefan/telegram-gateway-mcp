@@ -65,7 +65,7 @@ function makePool(factory: ClientFactory, onFatal = vi.fn()) {
 }
 
 describe('ClientPool', () => {
-  it('подключает аккаунт один раз, даже при параллельных запросах', async () => {
+  it('connects an account once even for concurrent requests', async () => {
     const { factory, created } = makeFactory();
     const { pool } = makePool(factory);
     const [a, b, c] = await Promise.all([pool.getClient('agent'), pool.getClient('agent'), pool.getClient('agent')]);
@@ -77,21 +77,21 @@ describe('ClientPool', () => {
     expect(storage.accounts.get('agent')).toMatchObject({ status: 'active', tgUserId: '1001', username: 'agent_acc' });
   });
 
-  it('аккаунт без сессии просит владельца войти', async () => {
+  it('asks the owner to log in when an account has no session', async () => {
     storage.accounts.upsert({ id: 'fresh' });
     const { pool } = makePool(makeFactory().factory);
     await expect(pool.getClient('fresh')).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED', message: expect.stringContaining('tg-mcp login --account fresh') });
     await expect(pool.getClient('missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('неверный ключ шифрования не даёт клиента', async () => {
+  it('does not return a client with an invalid encryption key', async () => {
     const { factory, created } = makeFactory();
     const pool = new ClientPool({ storage, credentials: () => ({ sessionSecret: 'other', apiId: 1, apiHash: 'h' }), factory, onFatal: vi.fn(), log: silent });
     await expect(pool.getClient('agent')).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
     expect(created).toHaveLength(0);
   });
 
-  it('неавторизованная сессия помечает аккаунт и закрывает клиента', async () => {
+  it('marks unauthorized sessions and closes the client', async () => {
     const { factory, created } = makeFactory(c => c.getMe.mockResolvedValue(null));
     const { pool } = makePool(factory);
     await expect(pool.getClient('agent')).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
@@ -100,7 +100,7 @@ describe('ClientPool', () => {
     expect(pool.identity('agent')).toBeNull();
   });
 
-  it('зависшее подключение требует перезапуска процесса', async () => {
+  it('requires process restart after a hung connection', async () => {
     vi.useFakeTimers();
     const { factory } = makeFactory(c => c.connect.mockReturnValue(new Promise(() => undefined)));
     const { pool, onFatal } = makePool(factory);
@@ -111,7 +111,7 @@ describe('ClientPool', () => {
     expect(onFatal).toHaveBeenCalledTimes(1);
   });
 
-  it('destroyAll закрывает клиентов через destroy', async () => {
+  it('destroyAll closes clients through destroy', async () => {
     const { factory, created } = makeFactory();
     const { pool } = makePool(factory);
     await pool.getClient('agent');
@@ -129,7 +129,7 @@ describe('TgGateway', () => {
     return { tg: new TgGateway({ pool, limiter, entities: storage.entities, log: silent }), created, pool };
   }
 
-  it('вызов идёт через клиента аккаунта, сущности из ответа попадают в кэш', async () => {
+  it('uses the account client and caches response entities', async () => {
     const { tg, created } = makeTg(c =>
       c.invoke.mockResolvedValue({
         messages: [],
@@ -146,7 +146,7 @@ describe('TgGateway', () => {
     expect(tg.laneStatus('agent').callsInWindow).toBe(1);
   });
 
-  it('ошибка авторизации помечает аккаунт и закрывает клиента', async () => {
+  it('marks the account and closes the client after an authorization error', async () => {
     const { tg, created, pool } = makeTg(c => c.invoke.mockRejectedValue(new Error('AUTH_KEY_UNREGISTERED')));
     await expect(tg.invoke('agent', { className: 'users.GetUsers' } as never)).rejects.toMatchObject({ code: 'ACCOUNT_UNAUTHORIZED' });
     expect(storage.accounts.get('agent')?.status).toBe('unauthorized');
@@ -154,22 +154,22 @@ describe('TgGateway', () => {
     expect(pool.identity('agent')).toBeNull();
   });
 
-  it('withClient выполняет операцию с клиентом в полосе', async () => {
+  it('withClient executes an operation inside the account lane', async () => {
     const { tg } = makeTg();
     await expect(tg.withClient('agent', 'download', async client => typeof client.invoke)).resolves.toBe('function');
     await expect(tg.whoami('agent')).resolves.toMatchObject({ username: 'agent_acc' });
   });
 });
 
-describe('библиотека MTProto (teleproto)', () => {
-  it('настоящий клиент создаётся с параметрами шлюза и ничего не пишет в stdout', async () => {
+describe('MTProto library (teleproto)', () => {
+  it('creates a real client with gateway options without stdout logging', async () => {
     const { defaultClientFactory } = await import('../clientPool.js');
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
       const client = defaultClientFactory({ session: '', apiId: 12345, apiHash: 'a'.repeat(32), log: silent });
       expect(client.floodSleepThreshold).toBe(0);
-      // сообщение библиотеки уходит в логгер шлюза (stderr), а не в stdout
+      // Library messages go through the gateway logger (stderr), not stdout.
       (client as unknown as { _log: { warn(message: string): void } })._log.warn('test warning');
       expect(stdout).not.toHaveBeenCalled();
       expect(consoleLog).not.toHaveBeenCalled();
@@ -179,9 +179,9 @@ describe('библиотека MTProto (teleproto)', () => {
     }
   });
 
-  it('читает сессию в формате GramJS: вход, сделанный до смены библиотеки, остаётся рабочим', async () => {
+  it('reads GramJS sessions so logins predating the library migration still work', async () => {
     const { StringSession } = await import('teleproto/sessions');
-    // формат GramJS: версия, номер дата-центра, длина адреса, адрес, порт, ключ 256 байт
+    // GramJS format: version, DC number, address length, address, port, 256-byte key.
     const key = Buffer.alloc(256, 7);
     const address = Buffer.from('149.154.167.91');
     const length = Buffer.alloc(2);
@@ -196,13 +196,13 @@ describe('библиотека MTProto (teleproto)', () => {
     expect(session.serverAddress).toBe('149.154.167.91');
     expect(session.port).toBe(443);
     expect(session.authKey?.getKey()?.equals(key)).toBe(true);
-    // и сохраняет в том же виде
+    // It also saves the same representation.
     expect(session.save()).toBe(legacy);
   });
 });
 
 describe('loginAccount', () => {
-  it('проводит вход и возвращает сессию с данными аккаунта', async () => {
+  it('logs in and returns session and account details', async () => {
     const { factory, created } = makeFactory(c =>
       c.start.mockImplementation(async (params: { phoneCode: () => Promise<string>; password: (h?: string) => Promise<string> }) => {
         expect(await params.phoneCode()).toBe('12345');
@@ -224,7 +224,7 @@ describe('loginAccount', () => {
     expect(created[0]!.destroy).toHaveBeenCalled();
   });
 
-  it('после трёх неверных кодов прерывает вход', async () => {
+  it('aborts login after three invalid codes', async () => {
     const { factory } = makeFactory(c => {
       c.start.mockImplementation(async (params: { onError: (e: Error) => Promise<boolean> }) => {
         expect(await params.onError(new Error('PHONE_CODE_INVALID'))).toBe(false);
@@ -238,12 +238,12 @@ describe('loginAccount', () => {
     ).rejects.toMatchObject({ telegramCode: 'PHONE_CODE_INVALID' });
   });
 
-  it('незарегистрированный номер: вход прерывается, новый аккаунт не создаётся', async () => {
+  it('aborts for unregistered numbers without creating accounts', async () => {
     const { factory, created } = makeFactory(c => {
       c.start.mockImplementation(async (params: { firstAndLastNames: () => Promise<[string, string]>; onError: (e: Error) => Promise<boolean> }) => {
         const refused = (await params.firstAndLastNames().catch((e: unknown) => e)) as Error;
         expect(refused).toBeInstanceOf(Error);
-        // библиотека спрашивает, прекращать ли: с первой же ошибки да
+        // The library asks whether to abort: answer yes on the first error.
         expect(await params.onError(refused)).toBe(true);
         throw new Error('AUTH_USER_CANCEL');
       });
@@ -254,7 +254,7 @@ describe('loginAccount', () => {
     expect(created[0]!.destroy).toHaveBeenCalled();
   });
 
-  it('прерванный ввод кода останавливает вход, а не спрашивает код заново', async () => {
+  it('canceled code entry aborts rather than asking again', async () => {
     const code = vi.fn(async () => {
       throw new Error('Cancelled.');
     });
@@ -271,7 +271,7 @@ describe('loginAccount', () => {
     expect(code).toHaveBeenCalledTimes(1);
   });
 
-  it('проверяет формат телефона', () => {
+  it('validates phone number format', () => {
     expect(normalizePhone('79991234567')).toBe('+79991234567');
     expect(() => normalizePhone('abc')).toThrow(/international format/);
   });
@@ -288,7 +288,7 @@ describe('config', () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it('читает .env из домашней папки, окружение имеет приоритет', () => {
+  it('loads home-directory .env with environment precedence', () => {
     writeFileSync(join(home, '.env'), 'TG_API_ID=12345\nTG_API_HASH="abcdef"\nTG_MCP_PORT=8123\n# comment\n');
     const env: NodeJS.ProcessEnv = { TG_MCP_HOME: home, TG_MCP_PORT: '9000' };
     const config = loadConfig(env);
@@ -297,7 +297,7 @@ describe('config', () => {
     expect(requireApiCredentials(config)).toEqual({ apiId: 12345, apiHash: 'abcdef' });
   });
 
-  it('дневные пределы записи читаются из настроек; опечатка это ошибка, а не предел по умолчанию', () => {
+  it('reads configured daily write limits and rejects typos instead of using defaults', () => {
     expect(loadConfig({ TG_MCP_HOME: home }).writeLimits).toEqual({});
     writeFileSync(join(home, '.env'), 'TG_MCP_LIMIT_NEW_DIALOGS=25\nTG_MCP_LIMIT_REACTIONS=0\n');
     expect(loadConfig({ TG_MCP_HOME: home }).writeLimits).toEqual({ newDialogsPerDay: 25, reactionsPerDay: 0 });
@@ -307,27 +307,27 @@ describe('config', () => {
     }
   });
 
-  it('без учётных данных API объясняет, куда их положить', () => {
+  it('explains where to put missing API credentials', () => {
     const config = loadConfig({ TG_MCP_HOME: home });
     expect(() => requireApiCredentials(config)).toThrow(/TG_API_ID/);
   });
 
-  it('опечатка в наборе инструментов роняет старт, снятый набор automate просто пропускается', () => {
+  it('rejects invalid toolsets but skips the removed automate toolset', () => {
     expect(parseToolsets('core, Write ,index')).toEqual(['core', 'write', 'index']);
-    // старый .env с набором, которого больше нет, не должен ронять демон
+    // An old .env containing the removed toolset must not crash the daemon.
     expect(parseToolsets('core, automate, write')).toEqual(['core', 'write']);
     expect(parseToolsets('automate')).toEqual(['core']);
     expect(parseToolsets(undefined)).toEqual(['core']);
     expect(() => parseToolsets('core,wirte')).toThrow(/Unknown toolset/);
   });
 
-  it('ключ сессий, созданный другим процессом, не перезаписывается', () => {
+  it('does not overwrite a session key created by another process', () => {
     const first = loadSessionSecret(home);
     expect(loadSessionSecret(home)).toBe(first);
     expect(readFileSync(join(home, 'session.key'), 'utf8').trim()).toBe(first);
   });
 
-  it('ключ сессий создаётся один раз с правами 0600', () => {
+  it('creates the session key once with mode 0600', () => {
     const first = loadSessionSecret(home, {});
     const second = loadSessionSecret(home, {});
     expect(first).toBe(second);

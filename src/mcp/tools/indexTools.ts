@@ -1,6 +1,6 @@
 /**
- * Набор `index`: локальный индекс сообщений. `tg_index` складывает сообщения
- * чата в базу шлюза, `tg_local_search` ищет по ним без обращений к Telegram.
+ * `index` toolset: local message index. `tg_index` stores chat messages
+ * in the gateway database; `tg_local_search` searches without Telegram calls.
  */
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';
@@ -15,7 +15,7 @@ import { compactNumber, formatDate, formatMessageList } from '../format.js';
 import { defineTool, type ToolContext, type ToolDef } from '../tool.js';
 import { accountArg, chatLabel, cursorArg, sinceArg, untilArg } from './shared.js';
 
-/** Сколько ждать индексацию в самом вызове, прежде чем вернуть job_id. */
+/** Time to wait for indexing before returning job_id. */
 const INDEX_WAIT_MS = 20_000;
 const DAY = 86_400;
 
@@ -58,12 +58,12 @@ function indexedLine(ctx: ToolContext, item: IndexedChat): string {
   ].join(' | ');
 }
 
-/** Индексы чатов, которые этому пользователю сейчас открыты. */
+/** Chat indexes currently accessible to this user. */
 function visibleIndexes(ctx: ToolContext, accountIds: string[]): Array<{ item: IndexedChat; chat: EntityRecord }> {
   const out: Array<{ item: IndexedChat; chat: EntityRecord }> = [];
   for (const item of ctx.services.indexStore.list(accountIds)) {
     const chat = chatOf(ctx, item.accountId, item.chatKey);
-    // Доступ к чату могли закрыть уже после индексации: такой индекс не виден и не ищется.
+    // Access may have been revoked since indexing; hide the index from listing and search.
     if (chat && ctx.services.scopes.isAllowed(ctx.principal.userId, item.accountId, chat)) out.push({ item, chat });
   }
   return out;
@@ -118,7 +118,7 @@ const tgIndex = defineTool({
     const wanted = args.since ? parseWindow(args.since, undefined, ctx.now()).minDate! : nowSec - INDEX_DEFAULT_DAYS * DAY;
     const sinceTs = Math.max(wanted, nowSec - INDEX_MAX_DAYS * DAY);
 
-    // Один чат индексирует одна задача: вторая только мешала бы первой.
+    // Only one indexing job per chat; a second would interfere.
     const active = [...services.runtime.storage.jobs.list({ state: 'running', limit: 100 }), ...services.runtime.storage.jobs.list({ state: 'queued', limit: 100 })].find(j => {
       const p = j.params as Partial<IndexJobParams>;
       return j.kind === 'index' && p.accountId === accountId && p.chatKey === chat.peerKey;
@@ -144,7 +144,7 @@ const tgLocalSearch = defineTool({
   toolset: 'index',
   title: 'Search the local index',
   description:
-    'Full-text search over chats indexed with tg_index: instant, no Telegram requests, no rate limits. Matches word parts regardless of case and word ending ("велосипед" finds "велосипеды"); every word of the query must be present. Results are as fresh as the last tg_index run for each chat.',
+    'Full-text search over chats indexed with tg_index: instant, no Telegram requests, no rate limits. Matches word parts regardless of case and word ending ("bicycle" finds "bicycles"); every word of the query must be present. Results are as fresh as the last tg_index run for each chat.',
   input: {
     query: z.string().min(1).describe('Words to find; at least one of 3 or more characters.'),
     chat: z.string().optional().describe('Search only this indexed chat. Default: all indexed chats.'),

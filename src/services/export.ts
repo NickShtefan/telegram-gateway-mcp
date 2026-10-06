@@ -1,10 +1,10 @@
 /**
- * Выгрузка в файл (решение 8). Сотни объявлений не влезут в контекст агента,
- * а считает по ним модель хуже, чем код. Поэтому шлюз пишет JSONL или CSV и
- * возвращает путь, число строк, колонки и несколько примеров.
+ * File exports (decision 8). Hundreds of listings exceed agent context,
+ * and code aggregates them more reliably than a model. Write JSONL or CSV
+ * and return the path, row count, columns, and a few examples.
  *
- * Текст отдаётся как есть: разбирать его (цены, тип объявления) дело агента.
- * Авторы хэшируются, телефоны маскируются, пока владелец явно не попросил иначе.
+ * Keep original text; agents interpret prices and listing types.
+ * Hash authors and mask phones unless the owner explicitly asks otherwise.
  */
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, writeSync } from 'node:fs';
@@ -35,9 +35,9 @@ export interface ExportParams {
   maxDate?: number;
   format: ExportFormat;
   maxRows: number;
-  /** Скачать превью фото и записать пути в колонку photo_path. */
+  /** Download photo previews and place paths in photo_path. */
   photos: 'none' | 'thumb';
-  /** Не хэшировать авторов и не маскировать телефоны: только по явной просьбе владельца. */
+  /** Keep author identifiers and phone numbers only on explicit owner request. */
   includeContacts: boolean;
 }
 
@@ -82,7 +82,7 @@ export interface ExportResult extends Record<string, unknown> {
   rows: number;
   scanned: number;
   photos: number;
-  /** Выгрузка остановлена по пределу строк: в чате есть ещё. */
+  /** Export stopped at the row cap; more chat messages remain. */
   truncated: boolean;
   date_from: string | null;
   date_to: string | null;
@@ -90,11 +90,11 @@ export interface ExportResult extends Record<string, unknown> {
   samples: ExportRow[];
 }
 
-/** Значение для CSV по RFC 4180. */
+/** CSV cell following RFC 4180. */
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   let text = String(value);
-  // Текст из Telegram не должен стать формулой, когда файл откроют в таблице.
+  // Prevent Telegram text from becoming formulas when opened in a spreadsheet.
   if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
@@ -102,7 +102,8 @@ export function csvCell(value: unknown): string {
 export function slugify(text: string, maxChars = 40): string {
   const slug = text
     .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/gi, '-')
+    // Preserve Cyrillic filename support using explicit Unicode character ranges.
+    .replace(/[^a-z0-9\u0430-\u044f\u0451]+/gi, '-')
     .replace(/^-+|-+$/g, '');
   return slug.slice(0, maxChars).replace(/-+$/, '') || 'export';
 }
@@ -123,7 +124,7 @@ export class ExportService {
     this.now = deps.now ?? (() => Date.now());
   }
 
-  /** Соль для хэшей авторов: одна на шлюз, чтобы хэши совпадали между выгрузками. */
+  /** One gateway-wide salt keeps author hashes consistent between exports. */
   private salt(): string {
     const key = 'export.author_salt';
     let salt = this.deps.storage.kv.get(key);
@@ -160,7 +161,7 @@ export class ExportService {
     };
   }
 
-  /** Исполнитель задачи `export`: параметры лежат в `job.params`. */
+  /** Export job executor; parameters come from `job.params`. */
   async run(context: JobContext): Promise<ExportResult> {
     const params = context.job.params as unknown as ExportParams;
     const chat = this.deps.storage.entities.get(params.accountId, params.chatKey);
@@ -168,11 +169,11 @@ export class ExportService {
       throw new GatewayError('CHAT_NOT_FOUND', `Chat ${params.chatKey} is not in the cache of account ${params.accountId}. Resolve it with tg_resolve first.`);
     }
     const maxRows = Math.min(Math.max(1, params.maxRows), EXPORT_MAX_ROWS);
-    // Выгрузка идёт фоном: вызовы агента в это время проходят вне очереди.
+    // Exports run in the background so agent calls can use the foreground queue.
     const call: TgCallOptions = { priority: 'background' };
 
     const stamp = new Date(this.now()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-    // Случайный хвост в имени: путь нельзя предсказать и занять заранее.
+    // Random filename suffix prevents path prediction and pre-creation.
     const name = `${stamp}-${slugify([chat.username ?? chat.peerKey, params.query ?? ''].join(' '))}-${randomBytes(3).toString('hex')}.${params.format}`;
     const path = join(this.deps.filesDir, 'exports', context.job.userId, name);
     ensureTrustedDir(dirname(path), this.deps.filesDir);

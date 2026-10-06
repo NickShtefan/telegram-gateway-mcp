@@ -1,9 +1,9 @@
 /**
- * Вход в аккаунт Telegram: телефон, код, пароль 2FA. Вызывается только из
- * `tg-mcp login`, не из инструментов: агент не видит код подтверждения.
+ * Telegram login: phone number, code, and 2FA password. Invoked only through
+ * `tg-mcp login`, never tools: the agent cannot see the verification code.
  *
- * Порядок входа: клиент всегда новый, с пустой сессией, телефон передаётся строкой, а `connect()` перед
- * `start()` не вызывается, чтобы teleproto сам провёл миграцию между дата-центрами.
+ * Login always uses a fresh client with an empty session and a string phone number.
+ * Do not call `connect()` before `start()`: teleproto must handle DC migration itself.
  */
 import type { ClientFactory, AccountIdentity } from './clientPool.js';
 import { classifyError, GatewayError } from './errors.js';
@@ -12,7 +12,7 @@ import { withTimeout } from './time.js';
 
 export interface LoginPrompts {
   code(): Promise<string>;
-  /** Пароль двухфакторной защиты; hint это подсказка, заданная владельцем. */
+  /** Two-factor password; hint is the owner-configured password hint. */
   password(hint?: string): Promise<string>;
 }
 
@@ -23,14 +23,14 @@ export interface LoginOptions {
   phone: string;
   prompts: LoginPrompts;
   log: Logger;
-  /** Сколько человек может думать над кодом или паролем. */
+  /** Time allowed for a human to enter a code or password. */
   inputTimeoutMs?: number;
-  /** Сколько неверных кодов или паролей допустимо, прежде чем прервать вход. */
+  /** Maximum invalid code/password attempts before aborting login. */
   maxAttempts?: number;
 }
 
 export interface LoginResult {
-  /** Строка сессии. Её нельзя логировать: шифруется и уходит в хранилище. */
+  /** Session string: never log it; encrypt and store it. */
   session: string;
   identity: AccountIdentity;
 }
@@ -59,7 +59,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
 
   let errors = 0;
   let lastError: Error | null = null;
-  // Человек прервал ввод (Ctrl-C, таймаут): teleproto проглатывает такую ошибку и спрашивает заново.
+  // Input canceled (Ctrl-C, timeout): teleproto swallows this error and asks again.
   let aborted: Error | null = null;
   const ask = async (label: string, prompt: () => Promise<string>): Promise<string> => {
     try {
@@ -75,7 +75,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
       phoneNumber: phone,
       phoneCode: () => ask('phone code input', () => options.prompts.code()),
       password: (hint?: string) => ask('2FA password input', () => options.prompts.password(hint)),
-      // Без этого teleproto для незарегистрированного номера молча создаёт новый аккаунт и принимает условия Telegram.
+      // Without this, teleproto silently signs up unregistered numbers and accepts Telegram terms.
       firstAndLastNames: async () => {
         aborted = new GatewayError('INVALID_ARGUMENT', 'This phone number has no Telegram account. The gateway does not register new accounts.');
         throw aborted;
@@ -84,7 +84,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
         errors++;
         lastError = aborted ?? err;
         options.log.warn('login step failed', { error: lastError.message, attempt: errors });
-        // true останавливает вход: иначе teleproto спрашивает код заново без конца.
+        // true aborts login; otherwise teleproto keeps asking for another code.
         return aborted !== null || errors >= maxAttempts;
       },
     });
@@ -110,11 +110,11 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
   } catch (err) {
     throw classifyError(aborted ?? lastError ?? err);
   } finally {
-    // Клиент входа закрывается всегда: демон откроет своего с той же сессией.
+    // Always close the login client; the daemon opens its own client with the session.
     try {
       await withTimeout(client.destroy(), 5_000, 'client.destroy');
     } catch {
-      // не мешаем вернуть результат или исходную ошибку
+      // Preserve the result or original error.
     }
   }
 }

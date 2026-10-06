@@ -27,7 +27,7 @@ afterEach(async () => {
   gw.cleanup();
 });
 
-/** Запрос с произвольными заголовками: fetch не даёт подменить Host. */
+/** Request with arbitrary headers: fetch does not allow overriding Host. */
 function raw(method: string, path: string, headers: Record<string, string>, body?: string): Promise<{ status: number; headers: Record<string, unknown>; body: string }> {
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port: http.port, method, path, headers }, res => {
@@ -43,14 +43,14 @@ function raw(method: string, path: string, headers: Record<string, string>, body
 
 const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '1' } } };
 
-describe('HTTP: вход демона', () => {
-  it('healthz отвечает без токена и ничего не раскрывает', async () => {
+describe('HTTP: daemon entry point', () => {
+  it('healthz needs no token and reveals no account information', async () => {
     const res = await fetch(`http://127.0.0.1:${http.port}/healthz`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it('без токена и с чужим токеном 401', async () => {
+  it('returns 401 for missing or invalid tokens', async () => {
     const variants: Array<Record<string, string>> = [{}, { Authorization: 'Bearer ' + 'x'.repeat(43) }, { Authorization: 'Basic abc' }];
     for (const headers of variants) {
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(initialize) });
@@ -59,7 +59,7 @@ describe('HTTP: вход демона', () => {
     }
   });
 
-  it('чужой Host и запрос из браузера отклоняются', async () => {
+  it('rejects foreign Host headers and browser requests', async () => {
     const auth = { Authorization: `Bearer ${gw.tokens.nick}`, 'Content-Type': 'application/json' };
     const rebinding = await raw('POST', '/mcp', { ...auth, Host: 'evil.example.com' }, JSON.stringify(initialize));
     expect(rebinding.status).toBe(403);
@@ -69,7 +69,7 @@ describe('HTTP: вход демона', () => {
     expect(localhost.status).toBe(200);
   });
 
-  it('GET не поддерживается, мусор в теле и неизвестный путь дают понятные коды', async () => {
+  it('rejects GET and reports invalid bodies and unknown paths clearly', async () => {
     const auth = { Authorization: `Bearer ${gw.tokens.nick}` };
     const get = await fetch(url, { headers: auth });
     expect(get.status).toBe(405);
@@ -80,7 +80,7 @@ describe('HTTP: вход демона', () => {
     expect((await fetch(`http://127.0.0.1:${http.port}/other`, { headers: auth })).status).toBe(404);
   });
 
-  it('слишком большое тело получает 413, а не обрыв соединения', async () => {
+  it('returns 413 for oversized bodies rather than dropping the connection', async () => {
     const small = await startHttpServer({ services: gw.services, host: '127.0.0.1', port: 0, toolsets: ['core'], version: 'test', log: silent, maxBodyBytes: 2_000 });
     try {
       const response = await fetch(`http://127.0.0.1:${small.port}/mcp`, {
@@ -95,7 +95,7 @@ describe('HTTP: вход демона', () => {
     }
   });
 
-  it('клиент MCP по HTTP: токен определяет пользователя', async () => {
+  it('MCP HTTP client: the token identifies the user', async () => {
     const connect = async (token: string) => {
       const client = new Client({ name: 'agent', version: '1' });
       await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
@@ -112,7 +112,7 @@ describe('HTTP: вход демона', () => {
     await partner.close();
   });
 
-  it('разбор заголовков', () => {
+  it('parses headers', () => {
     expect(bearerToken({ headers: { authorization: 'Bearer abc' } } as never)).toBe('abc');
     expect(bearerToken({ headers: { authorization: 'bearer   abc  ' } } as never)).toBe('abc');
     expect(bearerToken({ headers: {} } as never)).toBeNull();
@@ -122,7 +122,7 @@ describe('HTTP: вход демона', () => {
   });
 });
 
-describe('stdio-прокладка', () => {
+describe('stdio proxy', () => {
   async function run(lines: string[], options: { token?: string; target?: string } = {}): Promise<Array<Record<string, unknown>>> {
     const input = new PassThrough();
     const output = new PassThrough();
@@ -139,7 +139,7 @@ describe('stdio-прокладка', () => {
       .map(l => JSON.parse(l) as Record<string, unknown>);
   }
 
-  it('проксирует запросы в демон и пишет в stdout только JSON-RPC', async () => {
+  it('proxies requests and writes only JSON-RPC to stdout', async () => {
     const replies = await run([
       JSON.stringify(initialize),
       JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
@@ -154,21 +154,21 @@ describe('stdio-прокладка', () => {
     expect(JSON.stringify(byId.get(3))).toContain('Gateway user: nick');
   });
 
-  it('демон недоступен: запрос получает ошибку, уведомление молчит', async () => {
+  it('unavailable daemon: requests fail and notifications stay silent', async () => {
     const replies = await run([JSON.stringify(initialize), JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })], { target: 'http://127.0.0.1:9/mcp' });
     expect(replies).toHaveLength(1);
     expect(replies[0]).toMatchObject({ id: 1, error: { code: -32000 } });
     expect(JSON.stringify(replies[0])).toContain('daemon is not reachable');
   });
 
-  it('неверный токен и мусор на входе', async () => {
+  it('rejects invalid tokens and malformed input', async () => {
     const denied = await run([JSON.stringify(initialize)], { token: 'wrong-token-wrong-token' });
     expect(JSON.stringify(denied[0])).toContain('rejected the token');
     const garbage = await run(['{not json']);
     expect(garbage[0]).toMatchObject({ id: null, error: { code: -32700 } });
   });
 
-  it('ошибка демона без тела и обрыв ответа доходят до агента как ошибка запроса', async () => {
+  it('reports empty HTTP errors and interrupted responses as request errors', async () => {
     const proxy = async (fetchImpl: typeof fetch): Promise<Array<Record<string, unknown>>> => {
       const input = new PassThrough();
       const output = new PassThrough();
@@ -193,7 +193,7 @@ describe('stdio-прокладка', () => {
     expect(JSON.stringify(broken[0])).toContain('closed the connection');
   });
 
-  it('разбирает ответ потоком событий', () => {
+  it('parses event-stream responses', () => {
     expect(parseResponseBody('text/event-stream', 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n')).toEqual([{ jsonrpc: '2.0', id: 1, result: {} }]);
     expect(parseResponseBody('application/json', '[{"id":1},{"id":2}]')).toHaveLength(2);
     expect(parseResponseBody('application/json', '')).toEqual([]);
@@ -201,7 +201,7 @@ describe('stdio-прокладка', () => {
 });
 
 describe('serve', () => {
-  it('не слушает наружу без явного разрешения владельца', async () => {
+  it('does not listen remotely without explicit owner permission', async () => {
     const io = { out: () => undefined, err: () => undefined, prompt: async () => '' };
     delete process.env.TG_MCP_ALLOW_REMOTE;
     await expect(runServe({ config: { ...gw.config, host: '0.0.0.0', port: 0 }, io, version: 'test', overrides: { storage: new SqliteStorage({ path: ':memory:' }) }, log: silent })).rejects.toMatchObject({
@@ -211,7 +211,7 @@ describe('serve', () => {
     expect(await isLockHeld(gw.config.home)).toBe(false);
   });
 
-  it('поднимает демон под блокировкой и освобождает её при остановке', async () => {
+  it('starts the daemon under a lock and releases it on stop', async () => {
     const storage = new SqliteStorage({ path: ':memory:' });
     const controller = new AbortController();
     const err: string[] = [];
@@ -239,7 +239,7 @@ describe('serve', () => {
     expect(await isLockHeld(gw.config.home)).toBe(true);
     expect((await fetch(`http://127.0.0.1:${port}/healthz`)).status).toBe(200);
 
-    // второй демон на тех же сессиях не стартует
+    // A second daemon cannot start on the same sessions.
     await expect(
       runServe({ config: { ...gw.config, port: 0 }, io: { out: () => undefined, err: () => undefined, prompt: async () => '' }, version: 'test', overrides: { storage: new SqliteStorage({ path: ':memory:' }) }, log: silent }),
     ).rejects.toMatchObject({ code: 'UNAVAILABLE' });

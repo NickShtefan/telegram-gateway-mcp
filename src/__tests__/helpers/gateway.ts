@@ -1,6 +1,6 @@
 /**
- * Тестовый шлюз: настоящие сервисы, хранилище в памяти и двойник Telegram.
- * Два пользователя, как в жизни: у каждого свой аккаунт и один общий.
+ * Test gateway with real services, in-memory storage, and fake Telegram.
+ * Two users, each with a personal account and one shared account.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,7 +24,7 @@ export interface TestGateway {
   tg: FakeTg;
   services: GatewayServices;
   tokens: { nick: string; partner: string };
-  /** MCP-клиент, подключённый к серверу пользователя в памяти. */
+  /** MCP client connected to the user's in-memory server. */
   client(userId: 'nick' | 'partner', toolsets?: string[]): Promise<TestClient>;
   cleanup(): void;
 }

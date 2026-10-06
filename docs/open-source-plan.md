@@ -1,180 +1,182 @@
-# План подготовки tg-mcp к открытию исходников
+# tg-mcp open-source preparation plan
 
-Подготовлен 5 октября 2026.
+Prepared October 5, 2026; updated with subsequent owner decisions.
 
-Цель: открыть исходники так, чтобы внешний пользователь мог понять ограничения шлюза, установить проверенную версию со своими учётными данными и предложить изменение через понятный процесс. До публикации нужно проверить выбранный снимок и материалы нового репозитория, оформить MIT, подготовить установку и доказать работоспособность выпуска.
+Goal: publish source code that lets an external user understand the gateway's limits, install a verified version with their own credentials, and contribute through a clear process. Before publication, audit the selected snapshot and new repository materials, apply MIT, prepare installation, and prove release behavior.
 
-Документ описывает будущую подготовку. Сейчас составлен план и выбраны способ открытия, лицензия, строка правообладателя, название, npm-публикация первого выпуска, имя пакета, владелец и адрес нового репозитория, порядок очистки и переноса, целевые системы; остальные вопросы перечислены в [open-questions.md](open-questions.md). Очистка, аудит, оформление лицензии и публикация остаются впереди.
+The publication method, license, copyright line, name, npm distribution, package name, repository owner and address, cleanup and transfer order, target platforms, Node policy, and English-only repository language have been selected. Remaining questions are in [open-questions.md](open-questions.md). Repository-wide language cleanup is complete and locally verified; see [plan.md](plan.md). General code cleanup, snapshot audit, license files, and publication remain ahead.
 
-## Исходное состояние
+## Baseline
 
-Проверено на коммите `e297ee2adb9d7afc47968c000d3f8781797c1d64` в `main` и на GitHub 5 октября 2026. Это исходная точка плана, а не будущий кандидат на публикацию.
+Verified at `e297ee2adb9d7afc47968c000d3f8781797c1d64` on `main` and GitHub on October 5, 2026. This is the plan's baseline, not a release candidate.
 
-| Область | Подтверждено сейчас | Что ещё требуется |
+| Area | Baseline evidence | Remaining work |
 |---|---|---|
-| Репозиторий | `NickShtefan/telegram-gateway-mcp` приватный, основная ветка `main` | подготовить чистый снимок для нового репозитория и проверить всё, что станет публичным |
-| Лицензия | нет `LICENSE` и поля `license` в `package.json`; GitHub лицензию не определяет | оформить выбранную MIT с согласованным правообладателем после проверки прав и зависимостей |
-| Сборка | `build`, `typecheck`, 694 теста в 21 файле проходят на Node 24.10.0 | чистая установка и проверки на заявленных версиях Node и системах |
-| Проверки GitHub | нет файлов `.github` среди отслеживаемых файлов; API GitHub показывает 0 workflows | CI, проверка секретов, правила для внешних PR |
-| Установка | `package.json` требует Node `>=22.13`, пакет `private: true`; установщик macOS требует `GH_TOKEN` и адрес текущего репозитория | публичный путь установки без доступа к приватному GitHub |
-| Настройки и вклад | нет `.env.example`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` | безопасные примеры, правила поддержки, описание первого выпуска |
-| Данные и история | `.gitignore` исключает `.env`, сессии, SQLite и выгрузки; `session.key` отдельно не исключён; локально доступны 49 коммитов и две ветки | аудит файлов снимка; старые коммиты и данные GitHub не переносятся |
-| Пользовательская документация | подробная русская документация; установка и примеры привязаны к лабораторной машине | общие инструкции и примеры без личной инфраструктуры |
-| MCP и живой Telegram | 23 инструмента; в [plan.md](plan.md) отдельно отмечены полные и частичные проверки | одинаковые сценарии в трёх обязательных клиентах и закрытие пробелов живой проверки |
+| Repository | `NickShtefan/telegram-gateway-mcp` is private; default branch `main` | Prepare a clean snapshot for a new repository; audit everything that will become public |
+| License | No `LICENSE` or package `license` field; GitHub detects no license | Apply the selected MIT license and copyright holder after rights and dependency review |
+| Build | Build, typecheck, and 694 tests in 21 files pass on Node 24.10.0 | Clean installation and checks on declared Node versions and platforms |
+| GitHub checks | No tracked `.github` files; GitHub API lists 0 workflows | CI, secret checks, external PR rules |
+| Installation | Node `>=22.13`, `private: true`; macOS installer requires `GH_TOKEN` and the current repository address | Public installation without private GitHub access |
+| Configuration and contributions | No `.env.example`, `CONTRIBUTING.md`, `SECURITY.md`, or `CHANGELOG.md` | Safe examples, maintenance rules, first release notes |
+| Data and history | `.gitignore` excludes `.env`, sessions, SQLite, exports; `session.key` has no dedicated exclusion; 49 commits and two branches available locally | Audit snapshot files; do not transfer old commits or private GitHub material |
+| User documentation | Detailed documentation initially in Russian; installation and examples tied to the lab | English-only repository under decision 43; general instructions without personal infrastructure |
+| MCP and live Telegram | 23 tools; [plan.md](plan.md) distinguishes complete and partial verification | The same scenarios in three required clients; close live-verification gaps |
 
-Секреты и личные данные в выбранном снимке, права на весь код и транзитивные зависимости пока не аудированы. Установленный демон в рамках составления плана не проверялся и не менялся.
+Secrets and personal data in the selected snapshot, rights to all code, and transitive dependencies have not been audited. Preparing the plan did not verify or modify the installed daemon.
 
-## Принятые решения
+## Accepted decisions
 
-5 октября 2026 владелец выбрал новый репозиторий из чистого снимка без истории текущего приватного репозитория. После переноса дальнейшая разработка ведётся в новом репозитории, текущий сохраняет приватный режим (решение 33).
+On October 5 the owner selected a clean new repository without the current private history. Further development moves there; the existing repository remains private (decision 33).
 
-Лицензия публичного проекта: стандартная MIT (решение 34). Строка правообладателя согласована 6 октября 2026: `Copyright (c) 2026 NickShtefan`. Выбор лицензии не заменяет проверку происхождения кода и оформление `LICENSE`.
+The public project uses standard MIT (decision 34). The copyright line agreed on October 6 is `Copyright (c) 2026 NickShtefan`. Choosing MIT does not replace provenance review or creating `LICENSE`.
 
-## Границы подготовки
+English is the only repository language, with no Russian edition (decision 43). This includes documentation, comments, CLI and tool text, test descriptions and examples, scripts, and agent instructions. Communication with the owner remains in Russian. Preserve behavior, provenance, technical constraints, and Unicode coverage while translating.
 
-Сохраняем чистый MCP, teleproto закреплённой версии, SQLite с новыми миграциями, один процесс на сессию и запись через предпросмотр и `tg_confirm`. У подготовки к публикации нет оснований добавлять наблюдателей, модели, планировщики, Bot API или мосты к чужим проектам.
+## Scope
 
-Первая публикация включает исходники в новом репозитории и npm-пакет по решениям 33 и 36. Для первого выпуска выбраны macOS и Linux, Windows включена как желательная платформа (решение 40), с нативным запуском и проверкой на компьютере владельца (решение 41). Реестры MCP, Docker и новые инструменты можно рассматривать отдельно. Поддержку системы или клиента заявляем только после соответствующей проверки.
+Preserve pure MCP, the pinned teleproto version, SQLite with new migrations, one process per session, and preview followed by `tg_confirm` for writes. Publication preparation does not justify adding watchers, models, schedulers, Bot API integration, or bridges to other projects.
 
-### Проверка Windows, 6 октября 2026
+The first release includes source in the new repository and an npm package (decisions 33 and 36). macOS and Linux are selected; Windows is desired (decision 40), with native execution and testing on the owner's computer (decision 41). MCP registries, Docker, and new tools can be considered separately. Claim platform or client support only after verification.
 
-Агенты доступны на Windows: [Codex](https://learn.chatgpt.com/docs/windows/windows-app#native-sandbox) и [Claude Code](https://code.claude.com/docs/en/setup#set-up-on-windows) поддерживают нативный запуск и WSL; [OpenCode](https://opencode.ai/docs/windows-wsl) допускает нативный запуск и рекомендует WSL. Эти сведения подтверждают наличие клиентов, проверка подключения к нашему шлюзу ещё требуется.
+### Windows inspection, October 6, 2026
 
-В текущем шлюзе найдены части, требующие адаптации для нативной Windows: установщик `scripts/lab-install.sh` использует macOS и launchd, блокировка в `src/core/lock.ts` использует файл Unix-сокета, `src/core/safeFs.ts` проверяет Unix-права и владельца файлов. По [документации Node](https://nodejs.org/docs/latest-v22.x/api/net.html#ipc-support), IPC на Windows использует именованные каналы; [chmod](https://nodejs.org/docs/latest-v22.x/api/fs.html#fschmodpath-mode-callback) не реализует разграничение прав владельца, группы и остальных пользователей. Адаптация должна сохранить один процесс на сессию и выбранную модель изоляции. Она пока не выполнена; Linux и Windows в рамках подготовки не проверялись.
+Agents are available on Windows: [Codex](https://learn.chatgpt.com/docs/windows/windows-app#native-sandbox) and [Claude Code](https://code.claude.com/docs/en/setup#set-up-on-windows) support native execution and WSL; [OpenCode](https://opencode.ai/docs/windows-wsl) supports native execution and recommends WSL. These sources establish client availability; connecting them to this gateway still needs verification.
 
-Владелец выбрал нативную Windows и сообщил о своём Windows-компьютере для испытаний (решение 41). Подготовленный кандидат проверяется на нём с записью версии Windows, архитектуры, Node и результатов установки и работы шлюза. WSL остаётся вариантом запуска Linux-версии; его фактический статус проверки указывается отдельно.
+Current native Windows adaptation points: `scripts/lab-install.sh` uses macOS and launchd; `src/core/lock.ts` uses a Unix socket file; `src/core/safeFs.ts` checks Unix permissions and ownership. [Node IPC](https://nodejs.org/docs/latest-v22.x/api/net.html#ipc-support) uses named pipes on Windows; [chmod](https://nodejs.org/docs/latest-v22.x/api/fs.html#fschmodpath-mode-callback) does not implement owner/group/other permission separation there. Adaptation must preserve one process per session and the selected isolation model. It has not been implemented; Linux and Windows have not been tested during preparation.
 
-## 1 Решения владельца
+The owner selected native Windows and offered a Windows computer for testing (decision 41). Verify the prepared candidate there, recording Windows version, architecture, Node, installation, and gateway results. WSL runs the Linux version; record its actual verification status separately.
 
-**Результат:** согласованный объём первого публичного выпуска и список решений, записанный в `decisions.md` с явными изменениями решений 14 и 19, если они понадобятся.
+## 1 Owner decisions
 
-Способ открытия, MIT, строка правообладателя, название, npm-публикация первого выпуска, имя пакета, владелец и адрес нового репозитория, порядок очистки и переноса, целевые системы, нативный запуск на Windows и политика версий Node уже выбраны (решения 33, 34, 35, 36, 37, 38, 39, 40, 41 и 42). Новый репозиторий: `NickShtefan/telegram-mcp-gateway`, npm-пакет: `telegram-mcp-gateway`, публичный заголовок: `Unofficial Telegram MCP Gateway`. Сначала очищаем текущий репозиторий, переносим проверенный снимок в новый приватный, после проверок выпуска открываем доступ. Остаётся согласовать:
+**Deliverable:** agreed first-release scope and decisions in `decisions.md`, explicitly revising decisions 14 and 19 if needed.
 
-- **npm-аккаунт и запуск.** Наличие аккаунта пока не подтверждено: 6 октября владелец сообщил, что его, вероятно, нет. До публикации проверить существующий аккаунт и восстановить доступ либо зарегистрировать новый, уточнить логин владельца пакета. Подготовить обычный и изолированный способы запуска. Занятое npm-имя `tg-mcp` не использовать. Предложение: сохранить CLI `tg-mcp`; имя пакета не обязано совпадать с именем команды. Схему установщика из решения 22 пересматривать явно, если она меняется.
-- **Поддерживаемые среды.** Для первого выпуска выбраны macOS и Linux, нативная Windows желательна; есть компьютер владельца для испытаний. Политика Node принята в решении 42: рекомендуемая Node 24 LTS, совместимость с веткой 22 начиная с 22.13; более новая рекомендуемая LTS допускается после проверки шлюза. На 6 октября 2026 самая новая LTS-ветка: 24, ветка 26 имеет статус Current; её переход в LTS запланирован на 28 октября 2026. Источники: [статусы Node](https://nodejs.org/en/about/previous-releases), [расписание Node](https://github.com/nodejs/Release/blob/main/schedule.json). При подготовке выпуска повторно проверить статус LTS, уточнить версии систем и клиентов, зафиксировать точные версии Node. Окончательную матрицу поддержки подтвердить испытаниями; при препятствиях для Windows согласовать её статус с владельцем.
-- **Вклад и сопровождение.** Кто принимает PR и выпускает версии, нужен ли DCO, как сообщать об уязвимости, что считается обязательной поддержкой. Предложение: внешние изменения через PR с обязательными проверками; автоматический прямой push в `main` пересмотреть явно, как изменение решения 19.
-- **Язык публичных материалов.** Русская документация остаётся основной по текущим правилам. Английский README и инструкции для участников добавлять только после согласования языковой политики.
+Decisions 33 through 43 select the publication method, MIT, copyright line, naming, npm publication, package name, repository owner and address, cleanup and transfer order, platforms, native Windows, Node policy, and repository language. Repository: `NickShtefan/telegram-mcp-gateway`; npm package: `telegram-mcp-gateway`; public title: `Unofficial Telegram MCP Gateway`. Clean the current repository, transfer a vetted snapshot to the new private repository, verify the release, then open access. Remaining matters:
 
-Отдельно согласовать документируемые сценарии работы с данными Telegram. Актуальные [Content Licensing Terms](https://telegram.org/tos/content-licensing) ограничивают использование данных для ИИ и описывают исключения при явном, информированном и продолжающемся согласии всех соответствующих пользователей, ограниченном конкретным контентом и контекстом. Публичность канала, личное использование и малый объём не являются названной в этих условиях заменой согласия.
+- **npm account and execution.** The account is unconfirmed: on October 6 the owner said they probably do not have one. Verify/recover an existing account or register a new one before publishing, and record the package owner's username. Prepare ordinary and isolated execution. Do not use the third-party npm name `tg-mcp`. Proposal: retain the `tg-mcp` CLI; package and command names need not match. Explicitly revise decision 22 if the installation model changes.
+- **Supported environments.** macOS and Linux are selected, native Windows desired, and an owner's computer is available for testing. Decision 42 recommends Node 24 LTS and supports Node 22 from 22.13; a newer recommended LTS is allowed after gateway verification. On October 6, 24 is the latest LTS; 26 is Current, with LTS scheduled for October 28. Sources: [Node statuses](https://nodejs.org/en/about/previous-releases), [schedule](https://github.com/nodejs/Release/blob/main/schedule.json). Recheck LTS status during release preparation, establish OS/client versions, and record exact Node versions. Prove the final matrix; agree Windows status with the owner if blockers remain.
+- **Contributions and maintenance.** Who accepts PRs and releases versions, whether DCO is needed, how vulnerabilities are reported, and what maintenance is promised. Proposal: external changes through PRs with required checks; explicitly revisit direct automatic `main` pushes as a change to decision 19.
 
-Для каждого публичного кейса указать, какие данные получает агент, чьи согласия нужны и как соблюдаются их границы. Наличие своего канала не означает наличия согласия авторов всех комментариев. Первые демонстрации строить на синтетических данных и контролируемых тестовых чатах с соответствующим согласием участников. Проверить применимость пунктов [API Terms](https://core.telegram.org/api/terms) к шлюзу: согласие на действия, собственный `api_id`, название и оформление приложения, показ sponsored messages при доступе к каналам. Лицензия исходников сама по себе не разрешает использовать чужой контент.
+Separately agree documented Telegram data scenarios. The [Content Licensing Terms](https://telegram.org/tos/content-licensing) restrict AI use and describe exceptions involving explicit, informed, continuing consent from all relevant users, limited to specific content and context. Public channels, personal use, and low volume are not named substitutes for that consent.
 
-**Критерий завершения:** владелец выбрал лицензию, модель публикации и сопровождения; для предлагаемых публичных сценариев разобраны условия Telegram и сняты вопросы применимости. Неразрешённые вопросы явно остаются препятствием для соответствующих заявлений и демонстраций.
+For each public scenario, identify the data the agent receives, whose consent is required, and how its scope is respected. Owning a channel does not establish consent from every comment author. Initial demonstrations use synthetic data and controlled test chats with appropriate participant consent. Review the [API Terms](https://core.telegram.org/api/terms) for applicability: action consent, own `api_id`, app naming and presentation, and sponsored messages when accessing channels. Source licensing does not itself authorize use of other people's content.
 
-## 2 Очистка текущего репозитория и аудит снимка
+**Completion:** the owner has selected licensing, publication, and maintenance models; Telegram terms and applicability questions are resolved for proposed public scenarios. Unresolved questions remain blockers for the associated claims and demonstrations.
 
-**Результат:** очищенный код текущего репозитория, список переносимых файлов и отчёт с охватом проверки, найденными классами данных, исправлениями и оставшимися ограничениями. Самих секретных значений в отчёте нет.
+## 2 Current repository cleanup and snapshot audit
 
-1. Зафиксировать SHA перед очисткой и инвентаризировать файлы текущего репозитория. Убрать устаревшие черновики, дубли, временные артефакты и подтверждённо неиспользуемый код; проверять ссылки из кода, сборки, CLI, тестов и документации, а не считать отсутствие одного импорта доказательством. В отчёте перечислить удалённые пути и причины. Сохранить рабочие возможности, нужные тесты, происхождение материалов и обязательные уведомления. Проверить сборку и тесты после изменений; пользовательские данные и состояние аккаунтов остаются вне очистки.
-2. Зафиксировать исходный SHA после очистки и состав снимка по списку разрешённых файлов. Сформировать отдельную папку без старой `.git`, состояния шлюза, конфигов клиентов, локальных данных и результатов прогонов. Старые ветки, теги, refs PR и материалы приватного GitHub в новый репозиторий не переносить.
-3. Выполнить проверку секретов во всех файлах снимка с редактированием значений в результатах. Добавить правила для Telegram API hash, bearer-токенов, строк сессий и ключей шифрования; автоматический сканер дополнить ручной проверкой документации и фикстур. После создания первого коммита проверить, что у него нет родителей и новая история не содержит старых коммитов.
-4. Проверить телефоны, реальные имена и usernames, личные ссылки и инвайты, id чатов, адреса машин, пути владельца и данные других проектов. Различать публичные контакты сопровождающего, явно разрешённые примеры и чужие личные данные.
-5. Проверить новые описание репозитория, релиз, вложения и логи CI до публикации. Если отдельный материал из прежних issues или документации понадобится перенести, включить его в аудит как новый публичный материал. Полный аудит приватной истории и её очистка для выбранного способа открытия не требуются; проверка происхождения кода остаётся в этапе 3.
-6. Дополнить исключения для `session.key`, папки состояния шлюза, логов и резервных копий. Проверить будущий архив выпуска по списку разрешённых файлов: никакого состояния Telegram, конфигов клиентов и результатов живых прогонов.
-7. При найденном действующем секрете удалить его из ещё не опубликованного снимка и отдельно оценить, кому он уже был доступен и нужен ли отзыв. Для MTProto-сессии завершение сессии и новый вход выполняет владелец на нужной машине. Если секрет успел попасть в новый коммит, не публиковать эту историю, подготовить исправленный первый коммит и проверить его заново. Очистку старой приватной истории или force-push не выполнять без отдельного разрешения.
+**Deliverable:** cleaned code, a transfer manifest, and a report describing coverage, data classes found, remediation, and limitations. Never include secret values.
 
-**Критерий завершения:** очистка выполнена и обоснована списком изменений, сборка и тесты проходят, проверены все материалы выбранного способа публикации, подтверждённые утечки устранены с нужным отзывом секретов, повторная проверка чистая. Частичную проверку не описывать как отсутствие секретов.
+1. Record the pre-cleanup SHA and inventory files. Remove obsolete drafts, duplicates, temporary artifacts, and demonstrably unused code. Check references from code, builds, CLI, tests, and documentation; one missing import is insufficient evidence. List removed paths and reasons. Preserve working features, necessary tests, provenance, and mandatory notices. Translate all repository text into English under decision 43, including comments, examples, scripts, and tests; preserve meaningful Unicode coverage. Verify build and tests after changes. User data and account state are outside cleanup.
+2. Record the post-cleanup source SHA and an explicit allowed-file manifest. Prepare a separate directory without the old `.git`, gateway state, client configuration, local data, or run outputs. Do not transfer old branches, tags, PR refs, or private GitHub materials.
+3. Scan every snapshot file for secrets with values redacted in results. Add Telegram API hash, bearer-token, session-string, and encryption-key rules; complement scanning with manual documentation and fixture review. After the initial commit, verify no parents and no old commits in the new history.
+4. Check phone numbers, real names/usernames, personal links/invites, chat IDs, host addresses, owner paths, and other project data. Distinguish public maintainer contacts, explicitly authorized examples, and other people's personal data.
+5. Audit the new description, release, attachments, and CI logs before publication. Treat any transferred issue/document material as new public material. The chosen publication method does not require auditing or rewriting the entire private history; provenance remains part of stage 3.
+6. Extend exclusions for `session.key`, gateway state, logs, and backups. Check the future release archive against an allowed-file manifest: no Telegram state, client configurations, or live-run output.
+7. If an active secret is found, remove it from the unpublished snapshot and assess prior exposure and revocation separately. The owner terminates MTProto sessions and logs in again on the appropriate machine. If a secret entered a new commit, do not publish that history: prepare and recheck a corrected initial commit. Do not rewrite the old private history or force-push without separate authorization.
 
-## 3 Лицензия и происхождение кода
+**Completion:** cleanup is justified by an explicit change list, build/tests pass, all selected publication materials are checked, confirmed leaks and necessary revocations are resolved, and rescanning is clean. Do not describe partial coverage as proof of no secrets. No Russian text remains in repository files; a Cyrillic scan and manual review support that claim.
 
-**Результат:** `LICENSE`, согласованные метаданные пакета и перечень обязательных уведомлений о стороннем коде.
+## 3 License and provenance
 
-- Проверить авторство и право открыть каждый источник: код, документацию, заимствованные фрагменты, тестовые данные и будущие изображения. Получить разрешения правообладателей там, где они нужны.
-- Проверить точные версии прямых и транзитивных зависимостей, реальные файлы лицензий и обязательные уведомления. Сейчас lock-файл обозначает teleproto, MCP SDK и zod как MIT, big-integer как Unlicense; это исходная подсказка, а не полный аудит совместимости.
-- После выбора владельца добавить неизменённый текст лицензии, правильного правообладателя, поле `license`, `repository`, `homepage` и `bugs` в метаданные. Добавлять `NOTICE` или перечень сторонних лицензий там, где это требуется выбранной лицензией и составом распространения.
-- Описать условия принятия внешнего вклада. Не вводить ограничения по сфере использования внутри стандартной open-source лицензии; правила Telegram и правила проекта изложить отдельно.
+**Deliverable:** `LICENSE`, agreed package metadata, and mandatory third-party notices.
 
-**Критерий завершения:** происхождение материалов проверено, лицензия выбрана владельцем, все обязательные уведомления входят в исходники и распространяемые артефакты.
+- Verify authorship and rights for code, documentation, borrowed fragments, test data, and future images. Obtain rights-holder permission where needed.
+- Check exact direct/transitive versions, actual license files, and required notices. The lock file currently labels teleproto, MCP SDK, and zod as MIT, big-integer as Unlicense; this is a starting point, not a full compatibility audit.
+- Add the unmodified license text, correct copyright holder, and package `license`, `repository`, `homepage`, and `bugs` fields. Include `NOTICE` or a third-party license inventory where required by licenses and distribution contents.
+- Define contribution terms. Do not add use-field restrictions to standard open-source licensing; document Telegram and project rules separately.
 
-## 4 Установка и документация для внешнего пользователя
+**Completion:** provenance is verified, the owner selected the license, and all mandatory notices are included in source and distributed artifacts.
 
-**Результат:** человек без доступа к вашей лаборатории проходит установку по опубликованным инструкциям.
+## 4 External installation and documentation
 
-- Переписать README вокруг назначения шлюза, инструментов, поддерживаемых систем, установки, ограничений и ссылки на лицензию. Текущий частный сценарий установки отделить от общего руководства; убрать личные сведения, которые не нужны пользователю.
-- Добавить `.env.example` только с пустыми секретными полями и безопасными настройками. Объяснить получение собственных API credentials, отдельный вход на каждой машине, хранение состояния и выдачу токена MCP. Перенос чужих сессий не предлагать.
-- Подготовить npm-пакет с готовой сборкой и CLI, установку проверенной версии без обязательного `GH_TOKEN` и публичные метаданные. Для публикуемого пакета убрать `private: true` на этапе подготовки выпуска; в текущем приватном пакете защита пока сохраняется. Текущая приватная установка должна оставаться работоспособной до открытия. Изолированную установку согласовать с решением 22, связывая точную версию пакета с проверенным исходным SHA. Любое изменение установщика проверить отдельно: это исполняемый под root код.
-- Описать границы обычного запуска из клона и изолированного запуска. Если агент имеет shell-доступ к пользователю демона или может переписать его код и Node, шифрование сессии не даёт заявленной в решении 17 изоляции. Сохранить защищённый способ установки и обновления.
-- Подготовить установку и запуск на macOS, Linux и нативной Windows, включая инструкции для PowerShell. Проверить блокировку единственного процесса, пути, защиту ключа и сессий, безопасную работу с файлами и перезапуск демона. Для нативной Windows адаптировать Unix-зависимые части и проверить фактические права доступа; отключение проверок безопасности не считать переносом на новую систему.
-- Дать общие конфиги HTTP и stdio для Claude Code, Codex, OpenCode; Hermes описать с фактическим статусом проверки. Примеры токенов только placeholders.
-- Вынести ограничения доступа и подтверждения ближе к началу README. `write` выключен по умолчанию, `tg_confirm` требует вопроса в клиенте; сервер не удостоверяет согласие человека. Метки чужого текста снижают риск prompt injection, но не гарантируют защиту агента.
-- Описать данные SQLite, аудит, индекс, выгрузки, сроки хранения и удаление. Предупредить, что после передачи данных модели их обработка зависит от выбранного клиента и провайдера. Обновление, резервное копирование и восстановление объяснить с учётом необратимых миграций.
-- Переделать публичные примеры из `use-cases.md` и `scenarios.md` под согласованные в этапе 1 условия. Удалить обещания безопасной массовой автоматизации или гарантии отсутствия ограничений Telegram, если они обнаружатся.
+**Deliverable:** someone without lab access completes installation using the published instructions.
 
-**Критерий завершения:** установка из проверенного снимка и подключение проходят без личных файлов владельца; публичный способ получения исходников подготовлен; README не обещает больше, чем проверено; установка сохраняет один процесс на сессию и выбранную модель изоляции. Анонимное скачивание из GitHub проверяется сразу после открытия на этапе 7.
+- Rewrite README around gateway purpose, tools, platforms, installation, limits, and licensing. Separate private lab deployment from the general guide; remove personal details external users do not need. Use English only, without a parallel Russian edition (decision 43).
+- Add `.env.example` with empty secret fields and safe defaults. Explain obtaining own API credentials, independent login on every machine, state storage, and issuing an MCP token. Never suggest borrowing sessions.
+- Prepare the npm package with built code and CLI, versioned installation without mandatory `GH_TOKEN`, and public metadata. Remove `private: true` during release preparation; retain protection in the current private package for now. Keep private installation working until publication. Preserve decision 22's isolation, linking the exact package version to a verified source SHA. Verify installer changes separately: the installer executes as root.
+- Explain ordinary clone execution and isolated execution. If the agent can execute as the daemon user or modify its code/Node, session encryption does not provide decision 17's isolation. Preserve protected installation and updating.
+- Prepare macOS, Linux, and native Windows installation, including PowerShell instructions. Check single-process ownership, paths, key/session protection, safe file operations, and daemon restart. Adapt Unix-dependent code and verify actual access rights on native Windows; disabling checks is not a valid port.
+- Provide generic HTTP and stdio configurations for Claude Code, Codex, and OpenCode; describe Hermes with its actual verification status. Tokens in examples are placeholders only.
+- Put access and confirmation limits near the start of README. `write` is off by default; `tg_confirm` must prompt in the client; the server does not attest human consent. Untrusted-text labels reduce prompt-injection risk without guaranteeing agent protection.
+- Explain SQLite data, audit, index, exports, retention, and deletion. Model-side handling depends on the selected client/provider after data is passed to it. Explain updates, backups, and recovery with irreversible migrations in mind.
+- Adapt public `use-cases.md` and `scenarios.md` examples to stage 1's agreed terms. Remove any promises of safe bulk automation or immunity from Telegram limits if found.
 
-## 5 Автоматические проверки и приём внешнего вклада
+**Completion:** installation and connection work without owner-specific files, public source acquisition is prepared, README claims match evidence, and installation preserves session ownership and isolation. Check anonymous GitHub download immediately after opening access in stage 7.
 
-**Результат:** проверяемый PR и понятные правила работы сопровождающего.
+## 5 Automated checks and external contributions
 
-- Добавить CI: `npm ci --ignore-scripts`, `npm run build`, `npm run typecheck`, `npm test`. Минимальная версия Node должна соответствовать `engines`; матрица включает macOS, Linux и нативную Windows по решениям 40 и 41. Проверить работу SQLite и FTS5, а не только компиляцию. Чистую установку npm-пакета и запуск проверить на каждой заявленной среде; статус Windows подтвердить её собственным прогоном.
-- По решению 42 проверять Node 22.13, актуальное обновление ветки 22 и актуальное обновление рекомендуемой LTS (сейчас 24). Если к подготовке выпуска доступна более новая LTS, проверить её той же матрицей до изменения рекомендации. Записать точные версии Node и результаты в отчёт кандидата.
-- Добавить проверку секретов и зависимостей с понятным разбором находок. teleproto не обновлять автоматически; обновление требует просмотра изменений и живой проверки по решению 26.
-- Проверить состав будущего npm-пакета через `npm pack --dry-run`, затем сам tarball: входит только нужное, CLI запускается, импорты разрешаются, JSON-RPC stdout не загрязняется. Проверить установку из tarball в чистой среде без исходного checkout и доступа к приватному GitHub.
-- Изучить существующие проверки изоляции пользователей и аккаунтов, доступа после отзыва скоупа, повторного подтверждения, рестарта во время записи, FLOOD_WAIT, дедлайнов, блокировки сессии и безопасной записи файлов. Добавлять тесты только для обнаруженных пробелов и изменений.
-- Добавить `CONTRIBUTING.md`, `SECURITY.md`, шаблоны issue и PR, журнал изменений. Указать приватный канал сообщений об уязвимостях, поддерживаемые версии и запрет прикладывать секреты или личные переписки. Правила общения и DCO оформить согласно решению владельца.
-- После согласованного изменения решения 19 настроить проверки и ревью для `main`. Workflow для внешних PR не получает Telegram-сессий, секретов выпуска или привилегированного доступа; недоверенный код не запускать на лабораторной машине. Выпуск выполняется отдельно от PR-проверок.
+**Deliverable:** verifiable PRs and clear maintainer rules.
 
-**Критерий завершения:** CI проходит на согласованной матрице, секреты не доступны внешним PR, требования к вкладу и сообщениям об уязвимостях понятны. Настройки защиты `main` проверены фактически.
+- Add CI: `npm ci --ignore-scripts`, `npm run build`, `npm run typecheck`, `npm test`. The minimum Node must match `engines`; the matrix includes macOS, Linux, and native Windows under decisions 40 and 41. Verify SQLite/FTS5 behavior, not just compilation. Test clean package installation and execution in every declared environment; establish Windows status through its own run.
+- Under decision 42, test Node 22.13, the latest 22 update, and the latest update of the recommended LTS (currently 24). If a newer LTS exists during preparation, run the same matrix before changing the recommendation. Record exact Node versions and results in the candidate report.
+- Add secret and dependency checks with a clear process for findings. Do not automatically update teleproto: review changes and perform live verification under decision 26.
+- Check `npm pack --dry-run`, then the actual tarball: only required files, working CLI and imports, clean JSON-RPC stdout. Install the tarball in a clean environment without the original checkout or private GitHub access.
+- Review user/account isolation, scope revocation, repeated confirmation, restart during a write, FLOOD_WAIT, deadlines, session locking, and safe-file tests. Add tests only for real gaps and changes.
+- Add `CONTRIBUTING.md`, `SECURITY.md`, issue/PR templates, and a changelog in English. Identify a private vulnerability channel, supported versions, and the prohibition on submitting secrets/private chats. Adopt conduct and DCO rules according to the owner's decision.
+- After explicitly revising decision 19, configure checks and review for `main`. External PR workflows must not receive Telegram sessions, publishing secrets, or privileged access. Do not run untrusted code on the lab machine. Release execution is separate from PR checking.
 
-## 6 Проверка кандидата на выпуск
+**Completion:** CI passes the agreed matrix, external PRs cannot access secrets, and contribution/security requirements are clear. Verify actual `main` protection settings.
 
-**Результат:** отчёт на один точный SHA с независимыми доказательствами для кода, установки и клиентов.
+## 6 Release candidate verification
 
-1. Сформировать первый коммит в отдельном локальном репозитории без старой истории. На этом новом SHA повторить чистую установку, build, typecheck, тесты и CI. Зафиксировать новый SHA, версии Node, системы, состав артефакта и его контрольную сумму; исходный SHA приватного репозитория сохранить отдельно в отчёте подготовки. Хэши коммитов будут разными, соответствие доказывается содержимым снимка.
+**Deliverable:** one exact SHA report, with independent code, installation, and client evidence.
 
-   Удалённый CI требует нового репозитория, уже созданного владельцем. При согласовании приватной подготовки первый коммит переносится туда для проверки до открытия доступа. До этого подтверждены только локальные проверки; результат GitHub CI остаётся непроверенным.
-2. До открытия репозитория установить на чистое окружение из проверенного локального архива этого SHA; остальной путь публичной инструкции пройти полностью. Отдельно отметить, что анонимное получение исходников ещё не проверено и будет проверено на этапе 7. Хозяин тестового аккаунта сам вводит код и 2FA, вход создаёт новую сессию на этой машине. Проверить старт, перезапуск, отсутствие второго клиента, права файлов, обновление и восстановление после ошибки обновления. Копировать сессию или возвращать старую схему БД не предлагать.
+1. Create an initial commit in a separate local repository without old history. Repeat clean installation, build, typecheck, tests, and CI at that new SHA. Record new SHA, Node versions, platforms, artifact contents, and checksum; record the private source SHA separately. The commit hashes differ; snapshot contents prove correspondence.
 
-   Для нативной Windows пройти установку и работу CLI и демона из PowerShell на Windows-компьютере владельца. Проверить подключение MCP-клиента, блокировку второго процесса, перезапуск и фактические права доступа к ключу и сессии. Записать версию Windows, архитектуру, Node, SHA и результаты; прогоны в WSL учитывать как проверки Linux-среды.
-3. Один и тот же подготовленный промпт из `scenarios.md` выполнить через `claude -p`, `codex exec` и `opencode run`. Сравнить вызовы инструментов, доступ и порядок подтверждения; одинаковая формулировка ответов модели не требуется. Для каждого обещанного сценария сохранить очищенный результат. Отсутствие провайдера для OpenCode из текущего `plan.md` нужно устранить до выполнения этого критерия.
-4. Живую запись проверять только на собственном канале и тестовом аккаунте, с предпросмотром и согласием перед `tg_confirm`. Закрыть отмеченные в `plan.md` пробелы: `send_as`, снятие реакции, `reply_to`, `link_preview`, успешный callback и отказ после изменения кнопки. Если возможность остаётся без полной живой проверки, явно ограничить её заявленный статус или отложить обещание её поддержки.
-5. Проверить публичные демонстрации на синтетических данных и разрешённых тестовых чатах. Не включать реальные сессии, токены, телефоны и личные переписки в записи, отчёт и релиз.
+   Remote CI needs the new repository created by the owner. Under the private-preparation model, transfer the initial commit there for checks before opening access. Until then, only local checks are proven; GitHub CI remains unverified.
+2. Before opening access, install a verified local archive of that SHA in a clean environment and complete the remaining public guide. Explicitly record that anonymous source acquisition is still unverified and will be checked in stage 7. The test-account owner enters login code/2FA themselves, creating a new session on that machine. Verify start, restart, no second client, file rights, updates, and recovery after a failed update. Do not copy sessions or roll back the database schema.
 
-**Критерий завершения:** нет незакрытых блокирующих ошибок, каждый заявленный клиент прошёл обязательный сценарий, а статус каждой функции подтверждён или честно ограничен. Зелёные тесты на двойнике не заменяют доказательство установки и живого поведения.
+   On the owner's Windows computer, install and run CLI/daemon natively from PowerShell. Check MCP connection, second-process rejection, restart, and actual key/session access rights. Record Windows version, architecture, Node, SHA, and results; WSL runs count as Linux-environment checks.
+3. Run the same prepared `scenarios.md` prompt through `claude -p`, `codex exec`, and `opencode run`. Compare tool calls, access, and confirmation order; identical model prose is unnecessary. Save sanitized evidence for every promised scenario. Resolve the lab's missing OpenCode model provider recorded in `plan.md` before claiming completion.
+4. Verify live writes only on the owner's channel/test account, with preview and consent before `tg_confirm`. Close `plan.md` gaps: `send_as`, reaction removal, `reply_to`, `link_preview`, successful callback, and rejection after a button changes. If an action remains incompletely verified, limit its declared status or defer support claims.
+5. Use synthetic data and authorized test chats for public demos. Never include sessions, tokens, phone numbers, or private chats in recordings, reports, or releases.
 
-## 7 Открытие репозитория и первый выпуск
+**Completion:** no unresolved blocking failures, every declared client passes the required scenario, and each feature is verified or accurately limited. Green Telegram-double tests do not prove installation or live behavior.
 
-**Результат:** публичный репозиторий и npm-версия, которые соответствуют проверенному кандидату.
+## 7 Open access and first release
 
-- Подготовить npm-аккаунт владельца: проверить существующий доступ либо создать новый аккаунт, выбрать логин и контактный email для публичных метаданных, подтвердить email. Для интерактивной публикации настроить 2FA; способ автоматической публикации определить при подготовке workflow. В документы записывать только публичные сведения об аккаунте. Аккаунт не требуется для очистки кода и локальной подготовки пакета. Источники: [создание npm-аккаунта](https://docs.npmjs.com/creating-a-new-npm-user-account/), [аутентификация публикации](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/).
-- Подготовить короткий пакет для окончательного решения владельца: точный SHA, лицензию, отчёт аудита, результаты CI и живых проверок, поддерживаемые среды, инструкцию установки и текст release notes.
-- Непосредственно перед публикацией повторно проверить файлы первого коммита, описание и артефакты нового репозитория: после аудита могли добавиться новые чувствительные материалы.
-- Новый репозиторий владелец создаёт приватным до удалённых проверок CI по решению 39. После принятия отчёта этапа 6 открыть доступ к проверенному кандидату без старых веток, тегов и приватной истории, затем оформить тег и релиз на проверенном новом SHA. Не называть существующую версию `0.1.0` стабильной без отдельного решения.
-- Опубликовать npm-пакет из проверенного коммита нового репозитория под согласованным именем. Связать версию и состав пакета с исходным SHA, проверить анонимную установку именно опубликованной версии и запуск CLI. Учётные данные публикации не передавать проверкам внешних PR.
-- После переноса вести дальнейшую разработку в новом репозитории. Обновить ссылки и установщик для нового адреса; текущий репозиторий сохранить приватным, автоматическую синхронизацию двух историй не вводить.
-- Сразу проверить анонимный доступ: клонирование, установку без GitHub-токена, ссылки, лицензию, состав релиза, настройки защиты ветки, отсутствие личных данных.
-- Настроить приём issues и приватных сообщений об уязвимостях. Каталоги MCP оставить отдельным шагом с выбранным владельцем именем и проверенной сборкой, если они понадобятся.
+**Deliverable:** a public repository and npm version corresponding to the verified candidate.
 
-Возврат репозитория в private не отзывает уже скачанные копии и публичные форки, что отражено в [документации GitHub](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility). Если после публикации обнаружится утечка, сначала отозвать секреты и закрыть источник, затем устранять материалы и предупреждать затронутых пользователей согласованным способом.
+- Prepare the owner's npm account: verify existing access or create an account, choose username/public-contact email, and verify email. Configure 2FA for interactive publishing; decide automated publishing authentication with the workflow. Record public account information only. An account is unnecessary for code cleanup and local packaging. Sources: [npm account setup](https://docs.npmjs.com/creating-a-new-npm-user-account/), [publishing authentication](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/).
+- Prepare a concise owner approval package: exact SHA, license, audit report, CI/live results, supported environments, installation guide, and release notes.
+- Recheck initial-commit files, repository description, and artifacts immediately before publication: new sensitive material may have appeared after the audit.
+- Under decision 39, the owner creates the repository privately before remote CI. After accepting stage 6's report, open access to the verified candidate without old branches, tags, or private history; tag and release the verified new SHA. Do not call the existing `0.1.0` stable without a separate decision.
+- Publish the package from the verified new-repository commit under its agreed name. Link version and contents to the source SHA; check anonymous installation of that exact published version and CLI execution. Never share publishing credentials with external PR checks.
+- Continue development in the new repository after transfer. Update links/installer; keep the old repository private and do not introduce automatic synchronization of both histories.
+- Immediately check anonymous clone/installation without a GitHub token, links, license, release contents, branch protection, and absence of personal data.
+- Enable issues and private vulnerability reports. MCP catalogs remain a separate step with an owner-selected name and verified build if needed.
 
-**Критерий завершения:** опубликован именно проверенный SHA и соответствующий npm-пакет, новый пользователь проходит установку опубликованной версии без приватного доступа, репозиторий имеет лицензию и рабочий процесс приёма изменений.
+Making a repository private again does not revoke downloaded copies or public forks ([GitHub documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)). If a leak is found after publication, revoke secrets and stop the source first, then remove material and notify affected users through an agreed process.
 
-## Последовательность и ответственность
+**Completion:** the verified SHA and corresponding npm package are published; a new user installs the published version without private access; licensing and the contribution process work.
 
-| Этап | Зависимости | Кто отвечает |
+## Sequence and responsibility
+
+| Stage | Dependencies | Responsibility |
 |---|---|---|
-| 1 Решения владельца | исходный обзор | владелец выбирает, агент готовит варианты и доводы |
-| 2 Очистка и аудит | выбран порядок из решения 39 | агент очищает код и проверяет снимок, владелец решает вопросы отзыва секретов |
-| 3 Лицензия | выбор владельца и проверка происхождения | агент готовит файлы, владелец подтверждает права и лицензию |
-| 4 Установка и документация | выбранные имя, среды и допустимые сценарии | агент готовит и проверяет, владелец выполняет sudo и вход |
-| 5 CI и вклад | согласованная матрица и правила сопровождения; новый приватный репозиторий для удалённых проверок | агент готовит, владелец создаёт репозиторий по решению 39 |
-| 6 Кандидат на выпуск | завершены 2, 3, 4 и 5 | агент проверяет точный SHA, владелец подтверждает живую запись |
-| 7 Публикация | принят отчёт этапа 6 | открытие доступа и npm-публикация выполняются в согласованном объёме |
+| 1 Owner decisions | Baseline review | Owner chooses; agent prepares options and evidence |
+| 2 Cleanup and audit | Decision 39's sequence | Agent cleans/audits; owner decides secret revocation |
+| 3 Licensing | Owner selection and provenance | Agent prepares; owner confirms rights and license |
+| 4 Installation and docs | Names, environments, acceptable scenarios | Agent prepares/verifies; owner performs sudo/login |
+| 5 CI and contributions | Matrix/maintenance policy; new private repo for remote checks | Agent prepares; owner creates repository under decision 39 |
+| 6 Candidate | Stages 2, 3, 4, 5 complete | Agent verifies exact SHA; owner confirms live writes |
+| 7 Publication | Stage 6 report accepted | Open access and publish npm within agreed scope |
 
-После этапа 1 аудит, лицензирование, документацию и CI можно вести независимо там, где их зависимости уже закрыты. Любые изменения после проверки кандидата требуют повторить затронутые проверки на новом SHA.
+After stage 1, audit, licensing, docs, and CI can progress independently where dependencies are closed. Changes after candidate verification require repeating affected checks at the new SHA.
 
-## Условия готовности к публикации
+## Publication gates
 
-- [ ] Решения владельца зафиксированы, изменения решений 14 и 19 сделаны явно.
-- [ ] Текущий репозиторий очищен перед переносом; удалённые материалы и причины перечислены, работоспособность подтверждена сборкой и тестами.
-- [ ] Все файлы снимка и материалы нового репозитория проверены; новая история начинается с первого коммита без родителей и старых refs; личные данные удалены или разрешены к публикации, вопросы отзыва найденных секретов закрыты.
-- [ ] Лицензия, права на материалы и обязательные уведомления проверены.
-- [ ] Пользователь устанавливает шлюз из проверенного снимка по общим инструкциям без доступа к лаборатории; анонимная загрузка из GitHub подготовлена и включена в проверку сразу после открытия.
-- [ ] Подтверждены заявленные системы и Node; проходят CI, сборка, проверка типов и тесты.
-- [ ] Один сценарий проходит в Claude Code, Codex и OpenCode; статусы живых проверок отражены точно.
-- [ ] Публичные кейсы учитывают условия Telegram и согласия; ограничения `tg_confirm`, доступа к сессии и prompt injection описаны явно.
-- [ ] Есть правила PR, приватный канал сообщений об уязвимостях и ответственный за выпуск.
-- [ ] Учётная запись владельца npm-пакета определена, email подтверждён и аутентификация публикации подготовлена.
-- [ ] Владелец разрешил публикацию конкретного SHA и понимает, какие материалы станут публичными.
+- [ ] Owner decisions recorded; changes to decisions 14 and 19 explicit.
+- [ ] Current repository cleaned before transfer; removed paths/reasons listed; build/tests prove behavior.
+- [x] English-only repository content under decision 43; no Russian edition or remaining Russian prose in tracked files.
+- [ ] Snapshot and new-repository materials audited; initial commit has no parents/old refs; personal data removed or authorized; necessary secret revocations resolved.
+- [ ] Licensing, material rights, and mandatory notices verified.
+- [ ] Generic installation from the verified snapshot works without lab access; anonymous GitHub download is prepared and checked immediately after opening.
+- [ ] Declared platforms and Node versions verified; CI, build, typecheck, tests pass.
+- [ ] One scenario completes in Claude Code, Codex, and OpenCode; live status is accurate.
+- [ ] Public scenarios account for Telegram terms/consent; `tg_confirm`, session access, and prompt-injection limits explained.
+- [ ] PR rules, private vulnerability channel, and release owner exist.
+- [ ] npm owner identified, email verified, publishing authentication prepared.
+- [ ] Owner approves publication of the exact SHA and knows which materials become public.
 
-Вопросы владельца прорабатываются по одному. Способ открытия, MIT, строка правообладателя, название, npm-публикация, имя пакета, владелец и адрес нового репозитория, порядок очистки и переноса, целевые системы, нативный запуск на Windows и политика версий Node выбраны. Проверка или создание npm-аккаунта остаётся задачей перед публикацией; ближайший вопрос владельца: язык публичной документации. Первый технический шаг после согласования подготовки: очистка текущего репозитория, затем аудит выбранного снимка с отчётом без секретных значений. Публикация нового репозитория и npm-пакета выполняется на этапе выпуска.
+Owner questions are resolved one at a time. Decisions through 43 establish publication, licensing, naming, npm distribution, repository ownership, cleanup/transfer, platforms, native Windows, Node, and English-only content. npm account verification/registration remains a pre-publication task. The next owner question is the public contribution/merge policy. Repository-wide language cleanup is complete; general cleanup and snapshot audit follow with a report containing no secret values. Publication happens at the release stage.

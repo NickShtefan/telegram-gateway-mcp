@@ -1,33 +1,33 @@
 /**
- * Разбор и сборка ссылок Telegram. Агент может передать чат или сообщение в
- * любой форме: `@username`, помеченный id, ссылка t.me, приватная ссылка
- * `t.me/c/…`, инвайт или deep link `tg://…`. Здесь всё это приводится к одной
- * структуре. Только чистые функции: без сети, без резолва username в id.
+ * Parses and constructs Telegram links. Agents may reference chats or messages
+ * by `@username`, marked ID, t.me link, private link,
+ * `t.me/c/...`, invite, or `tg://...` deep link. Normalize these forms
+ * into one structure using pure functions, without network calls or ID resolution.
  */
 import { isBotApiChannelId, looksLikePeerKey, parsePeerKey, peerKey, toBotApiChatId, toMtprotoChannelId } from '../core/chatId.js';
 import { GatewayError } from '../core/errors.js';
 
 export type ChatTarget =
-  /** Без @, регистр как во входной строке. */
+  /** Username without @, preserving input case. */
   | { type: 'username'; username: string }
-  /** Помеченный id строкой, см. `src/core/chatId.ts`. */
+  /** Marked ID as a string; see `src/core/chatId.ts`. */
   | { type: 'peer'; peerKey: string }
-  /** Хеш приватной инвайт-ссылки. */
+  /** Private invite hash. */
   | { type: 'invite'; hash: string };
 
 export interface ParsedRef {
   chat: ChatTarget;
-  /** id поста или сообщения. */
+  /** Post or message ID. */
   messageId?: number;
-  /** id темы форума (`t.me/name/TOPIC/MSG`, `t.me/c/ID/TOPIC/MSG` или `?thread=N`). */
+  /** Forum topic ID (`t.me/name/TOPIC/MSG`, `t.me/c/ID/TOPIC/MSG`, or `?thread=N`). */
   topicId?: number;
-  /** `?comment=N`: комментарий под постом канала. */
+  /** `?comment=N`: a comment on a channel post. */
   commentId?: number;
 }
 
 const HOSTS = new Set(['t.me', 'telegram.me', 'telegram.dog']);
 
-/** Первые сегменты пути t.me, которые не являются username. */
+/** First t.me path segments that are not usernames. */
 const RESERVED_SEGMENTS = new Set([
   'joinchat',
   'addstickers',
@@ -49,12 +49,12 @@ const RESERVED_SEGMENTS = new Set([
   's',
 ]);
 
-/** 4-32 символа, начинается с буквы, не заканчивается подчёркиванием. */
+/** 4-32 characters, beginning with a letter and not ending with an underscore. */
 const USERNAME_RE = /^[A-Za-z][A-Za-z0-9_]{2,30}[A-Za-z0-9]$/;
 const INVITE_HASH_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const CHANNEL_ID_RE = /^\d{1,18}$/;
 const ID_RE = /^\d{1,10}$/;
-/** id сообщений и тем в MTProto: int32. */
+/** MTProto message and topic IDs are int32. */
 const MAX_ID = 2_147_483_647;
 const MAX_ECHO = 80;
 
@@ -67,7 +67,7 @@ const ACCEPTED_FORMS =
 
 const USERNAME_RULES = '4 to 32 characters, only letters, digits and underscore, starts with a letter, does not end with an underscore';
 
-/** Чужой ввод в тексте ошибки: в кавычках, с экранированием и ограничением длины. */
+/** Quotes, escapes, and truncates untrusted input for error messages. */
 function quote(value: string): string {
   return JSON.stringify(value.length > MAX_ECHO ? `${value.slice(0, MAX_ECHO)}...` : value);
 }
@@ -84,7 +84,7 @@ function safeDecode(value: string): string {
   }
 }
 
-/** Параметры запроса: `a=1&b&c=3`. При повторе ключа берётся первое значение. */
+/** Query parameters such as `a=1&b&c=3`; duplicate keys use the first value. */
 function parseQuery(query: string | undefined): Map<string, string> {
   const params = new Map<string, string>();
   if (!query) return params;
@@ -118,7 +118,7 @@ function inviteTarget(hash: string | undefined, input: string): ChatTarget {
   return { type: 'invite', hash };
 }
 
-/** «Голый» id канала из `t.me/c/ID` или `tg://privatepost?channel=ID` -> помеченный id. */
+/** Converts bare channel IDs from t.me/c/ID or tg://privatepost?channel=ID to marked IDs. */
 function channelTarget(value: string | undefined, input: string): ChatTarget {
   if (value === undefined || !CHANNEL_ID_RE.test(value) || BigInt(value) === 0n) {
     return fail(
@@ -135,7 +135,7 @@ interface RefIds {
   commentId?: number;
 }
 
-/** Числовые сегменты после чата: `MSG` или `TOPIC/MSG`. */
+/** Numeric segments after a chat: `MSG` or `TOPIC/MSG`. */
 function pathIds(rest: string[], input: string): RefIds {
   if (rest.length === 0) return {};
   if (rest.length === 1) return { messageId: positiveInt(rest[0]!, 'message id', input) };
@@ -145,7 +145,7 @@ function pathIds(rest: string[], input: string): RefIds {
   return fail(input, 'too many path segments after the chat (expected MESSAGE_ID or TOPIC_ID/MESSAGE_ID)');
 }
 
-/** `?thread=` и `?comment=`. Тема из пути важнее темы из запроса. */
+/** `?thread=` and `?comment=`; path topics take precedence over query topics. */
 function withQueryIds(ids: RefIds, params: Map<string, string>, input: string): RefIds {
   const out: RefIds = { ...ids };
   const thread = params.get('thread');
@@ -161,7 +161,7 @@ function withQueryIds(ids: RefIds, params: Map<string, string>, input: string): 
   return out;
 }
 
-/** Собирает результат без ключей со значением undefined. */
+/** Builds results without undefined keys. */
 function buildRef(chat: ChatTarget, ids: RefIds): ParsedRef {
   const ref: ParsedRef = { chat };
   if (ids.messageId !== undefined) ref.messageId = ids.messageId;
@@ -170,7 +170,7 @@ function buildRef(chat: ChatTarget, ids: RefIds): ParsedRef {
   return ref;
 }
 
-/** Deep links: `tg://resolve`, `tg://privatepost`, `tg://join` (и форма без `//`). */
+/** Deep links: tg://resolve, tg://privatepost, tg://join, including forms without //. */
 function parseTgLink(raw: string, input: string): ParsedRef {
   const m = /^tg:(?:\/\/)?([^?#]*)(?:\?([^#]*))?/i.exec(raw);
   const action = (m?.[1] ?? '').replace(/\/+$/, '').toLowerCase();
@@ -199,7 +199,7 @@ function parseTgLink(raw: string, input: string): ParsedRef {
   return fail(input, `unsupported tg:// link ${quote(action)} (supported: resolve, privatepost, join)`);
 }
 
-/** Ссылки `t.me/…`, `telegram.me/…`, `telegram.dog/…` со схемой или без неё. */
+/** t.me, telegram.me, and telegram.dog links, with or without a scheme. */
 function parseHttpLink(raw: string, input: string): ParsedRef {
   const m = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?([^/?#]*)([^?#]*)(?:\?([^#]*))?/.exec(raw);
   const scheme = m?.[1]?.toLowerCase();
@@ -219,7 +219,7 @@ function parseHttpLink(raw: string, input: string): ParsedRef {
     return fail(input, 'it is not a username, a numeric chat id or a Telegram link');
   }
 
-  // Пустые сегменты отбрасываются: так переживаем хвостовой и двойной слэш.
+  // Discard empty segments to handle trailing and doubled slashes.
   const segments = (m?.[3] ?? '').split('/').filter(s => s !== '').map(safeDecode);
   const params = parseQuery(m?.[4]);
   if (segments.length === 0) return fail(input, 'the link has no chat in its path');
@@ -227,7 +227,7 @@ function parseHttpLink(raw: string, input: string): ParsedRef {
   let first = segments[0]!;
   let rest = segments.slice(1);
 
-  // Инвайт: t.me/+HASH. Та же форма с одними цифрами: ссылка по номеру телефона.
+  // Invite: t.me/+HASH. The digits-only form refers to a phone number.
   if (first.startsWith('+')) {
     const hash = first.slice(1);
     if (/^\d+$/.test(hash)) return fail(input, 'links by phone number (t.me/+PHONE) are not supported');
@@ -247,7 +247,7 @@ function parseHttpLink(raw: string, input: string): ParsedRef {
     return buildRef(chat, withQueryIds(pathIds(rest.slice(1), input), params, input));
   }
 
-  // Веб-превью t.me/s/username[/MSG]: то же самое, что без /s/.
+  // Web previews t.me/s/username[/MSG] are equivalent to links without /s/.
   if (lower === 's') {
     if (rest.length === 0) return fail(input, 'the web preview link t.me/s/ has no username');
     first = rest[0]!;
@@ -279,7 +279,7 @@ export function parseRef(input: string): ParsedRef {
 
   if (looksLikePeerKey(raw)) {
     if (BigInt(raw) === 0n) return fail(input, 'a chat id must not be zero');
-    // Через parsePeerKey и peerKey: каноническая запись без ведущих нулей.
+    // parsePeerKey and peerKey produce canonical IDs without leading zeros.
     return { chat: { type: 'peer', peerKey: peerKey(parsePeerKey(raw)) } };
   }
 
@@ -296,10 +296,10 @@ function isPositiveId(value: number | undefined): value is number {
 /**
  * Builds a t.me link to a message, or null when no link form exists (users, basic groups).
  *
- * Ссылки на сообщения есть только у каналов и супергрупп, поэтому для любого
- * другого `peerKey` результат null, даже если username задан. Невалидный
- * `messageId` тоже даёт null: функция вызывается при выводе сообщений и не
- * должна ронять ответ инструмента.
+ * Message links exist only for channels and supergroups. Other peer keys
+ * return null even when a username is supplied. Invalid message IDs
+ * also return null: formatting tools must not fail
+ * because a link cannot be constructed.
  */
 export function messageLink(target: {
   username?: string | null;

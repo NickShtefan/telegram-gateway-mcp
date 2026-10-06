@@ -1,6 +1,6 @@
 /**
- * Хранилище на SQLite через встроенный `node:sqlite` (решение 19).
- * Один файл, без внешних сервисов. Схема версионируется через PRAGMA user_version.
+ * SQLite storage using built-in `node:sqlite` (decision 19).
+ * A single file without external services. PRAGMA user_version versions the schema.
  */
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import type { Sealed } from '../core/crypto.js';
@@ -55,7 +55,7 @@ function parseJson<T>(value: unknown, fallback: T): T {
 }
 
 export interface SqliteStorageOptions {
-  /** Путь к файлу или ':memory:' для тестов. */
+  /** File path, or ':memory:' for tests. */
   path: string;
   now?: () => number;
 }
@@ -81,7 +81,7 @@ export class SqliteStorage implements Storage {
     this.now = options.now ?? (() => Date.now());
     this.db.exec('PRAGMA foreign_keys = ON');
     if (options.path !== ':memory:') {
-      // Сначала таймаут ожидания: демон и команды владельца открывают базу одновременно.
+      // Set the busy timeout first: the daemon and owner commands open the database concurrently.
       this.db.exec('PRAGMA busy_timeout = 5000');
       this.db.exec('PRAGMA journal_mode = WAL');
     }
@@ -97,7 +97,7 @@ export class SqliteStorage implements Storage {
     this.kv = this.createKvRepo();
   }
 
-  /** Версия схемы после миграций. */
+  /** Schema version after migrations. */
   schemaVersion(): number {
     const row = this.db.prepare('PRAGMA user_version').get() as Row | undefined;
     return num(row?.user_version);
@@ -108,7 +108,7 @@ export class SqliteStorage implements Storage {
     for (let version = current; version < MIGRATIONS.length; version++) {
       this.db.exec('BEGIN IMMEDIATE');
       try {
-        // Пока ждали блокировку, миграцию мог применить другой процесс.
+        // Another process may have applied the migration while this one waited for the lock.
         if (this.schemaVersion() > version) {
           this.db.exec('COMMIT');
           continue;
@@ -123,7 +123,7 @@ export class SqliteStorage implements Storage {
     }
   }
 
-  /** Подготовленные выражения кэшируются по тексту запроса. */
+  /** Prepared statements are cached by query text. */
   prepare(sql: string): StatementSync {
     let stmt = this.statements.get(sql);
     if (!stmt) {
@@ -135,7 +135,7 @@ export class SqliteStorage implements Storage {
 
   transaction<T>(fn: () => T): T {
     if (this.txDepth > 0) {
-      // Вложенный вызов работает внутри внешней транзакции.
+      // Nested calls run inside the outer transaction.
       return fn();
     }
     this.db.exec('BEGIN IMMEDIATE');
@@ -308,8 +308,8 @@ export class SqliteStorage implements Storage {
       updatedAt: num(row.updated_at),
     });
     const put = (entity: Omit<EntityRecord, 'updatedAt'>): void => {
-      // Username принадлежит одному чату: когда его занял другой, у прежнего он убирается.
-      // Иначе запросы и одобренные сообщения уходили бы в старый чат.
+      // A username belongs to one chat; remove it from the old chat when another claims it.
+      // Otherwise requests and approved messages could target the former chat.
       if (entity.username) {
         this.prepare('UPDATE entities SET username = NULL WHERE account_id = ? AND username = ? AND peer_key != ?').run(
           entity.accountId,
@@ -317,16 +317,16 @@ export class SqliteStorage implements Storage {
           entity.peerKey,
         );
       }
-      // accessHash и username не затираются пустыми значениями: частичные
-      // объекты (min) приходят без них и не должны портить кэш.
+      // Do not overwrite accessHash and username with missing values: partial
+      // (min) objects omit them and must not damage the cache.
       this.prepare(
         `INSERT INTO entities (account_id, peer_key, kind, access_hash, username, title, meta, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(account_id, peer_key) DO UPDATE SET
            kind = excluded.kind,
            access_hash = COALESCE(excluded.access_hash, entities.access_hash),
-           -- Неполный объект (min) username не несёт и чужое значение не затирает. Полный
-           -- объект записывает username как есть: снятое имя должно исчезнуть из кэша.
+           -- Partial (min) objects omit usernames and preserve cached values. Full
+           -- objects store the supplied username, clearing names that were removed.
            username = CASE WHEN excluded.meta = '{}' THEN COALESCE(excluded.username, entities.username) ELSE excluded.username END,
            title = COALESCE(excluded.title, entities.title),
            meta = CASE WHEN excluded.meta = '{}' THEN entities.meta ELSE excluded.meta END,

@@ -5,23 +5,23 @@ import { normalizeReactions, reactionKey, totalReactions } from '../reactions.js
 import { DeadlineError, withTimeout } from '../time.js';
 
 describe('crypto', () => {
-  it('шифрует и расшифровывает сессию', () => {
+  it('encrypts and decrypts sessions', () => {
     const sealed = seal('1BQANOTAREALSESSION==', 'secret-key');
     expect(sealed.data).not.toContain('1BQANOTAREALSESSION');
     expect(unseal(sealed, 'secret-key')).toBe('1BQANOTAREALSESSION==');
   });
 
-  it('у каждой записи свой iv', () => {
+  it('uses a unique IV for each record', () => {
     expect(seal('same', 'k').iv).not.toBe(seal('same', 'k').iv);
   });
 
-  it('чужой ключ и порча данных дают ошибку', () => {
+  it('rejects the wrong key and corrupted data', () => {
     const sealed = seal('payload', 'right');
     expect(() => unseal(sealed, 'wrong')).toThrow();
     expect(() => unseal({ ...sealed, data: 'zz' }, 'right')).toThrow();
   });
 
-  it('хэши токенов сравниваются за постоянное время', () => {
+  it('compares token hashes in constant time', () => {
     const token = randomToken();
     expect(token.length).toBeGreaterThanOrEqual(40);
     expect(safeEqualHex(sha256Hex(token), sha256Hex(token))).toBe(true);
@@ -31,14 +31,14 @@ describe('crypto', () => {
 });
 
 describe('log', () => {
-  it('пишет строку с уровнем, тегом и полями', () => {
+  it('logs level, tag, and fields', () => {
     const lines: string[] = [];
     const log = createLogger('core', { level: 'debug', write: l => lines.push(l), now: () => new Date(0) });
     log.child('limiter').info('queued', { account: 'agent', n: 2 });
     expect(lines).toEqual(['1970-01-01T00:00:00.000Z INFO [core:limiter] queued {"account":"agent","n":2}']);
   });
 
-  it('уважает уровень и прячет секреты', () => {
+  it('honors the log level and redacts secrets', () => {
     const lines: string[] = [];
     const log = createLogger('t', { level: 'warn', write: l => lines.push(l) });
     log.info('skipped');
@@ -53,14 +53,14 @@ describe('log', () => {
 });
 
 describe('reactions', () => {
-  it('даёт ключ реакции: эмодзи, кастомный эмодзи, платная', () => {
+  it('identifies standard, custom, and paid reactions', () => {
     expect(reactionKey({ className: 'ReactionEmoji', emoticon: '👍' })).toBe('👍');
     expect(reactionKey({ className: 'ReactionCustomEmoji', documentId: 5368324170671202286n })).toBe('custom:5368324170671202286');
     expect(reactionKey({ className: 'ReactionPaid' })).toBe('paid');
     expect(reactionKey(null)).toBe('null');
   });
 
-  it('нормализует счётчики по убыванию', () => {
+  it('normalizes counters in descending order', () => {
     const reactions = normalizeReactions({
       results: [
         { reaction: { emoticon: '🔥' }, count: 2 },
@@ -79,11 +79,11 @@ describe('reactions', () => {
 });
 
 describe('time', () => {
-  it('withTimeout отдаёт результат и снимает таймер', async () => {
+  it('withTimeout returns the result and clears its timer', async () => {
     await expect(withTimeout(Promise.resolve(5), 1000, 'op')).resolves.toBe(5);
   });
 
-  it('withTimeout бросает DeadlineError на зависшем промисе', async () => {
+  it('withTimeout throws DeadlineError for a hung promise', async () => {
     vi.useFakeTimers();
     try {
       const hung = new Promise<never>(() => undefined);

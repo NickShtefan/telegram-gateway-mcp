@@ -1,7 +1,7 @@
 /**
- * Чтение: лента чата с курсором, окно по датам, тема форума, сообщения по id,
- * контекст вокруг сообщения, альбом целиком. Лента идёт через GetHistory с
- * offsetId и отсечкой по дате, сообщения по id через GetMessages пачками по 100.
+ * Reads cursor-paginated history, date windows, forum topics, message IDs,
+ * surrounding context, and complete albums. History uses GetHistory with
+ * offsetId and date bounds; ID lookup uses GetMessages batches of 100.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
@@ -12,14 +12,14 @@ import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntityRecord } from '../storage/port.js';
 import { normalizeMessages, totalCount, type MessageDto } from './messages.js';
 
-/** Предел Telegram на одну страницу истории и на один GetMessages. */
+/** Telegram page limit for history and GetMessages. */
 export const PAGE_MAX = 100;
 
 export interface HistoryParams {
   limit: number;
-  /** Читать сообщения старше этого id; 0 или не задано: с самого нового. */
+  /** Read messages older than this ID; zero or undefined starts at the newest. */
   offsetId?: number;
-  /** Unix-секунды: не старше и не новее. */
+  /** Unix timestamps for oldest and newest allowed messages. */
   minDate?: number;
   maxDate?: number;
   topicId?: number;
@@ -27,10 +27,10 @@ export interface HistoryParams {
 
 export interface HistoryPage {
   messages: MessageDto[];
-  /** Сырые сообщения teleproto в том же порядке: нужны для скачивания медиа. */
+  /** Raw teleproto messages in the same order, needed for media downloads. */
   raw: unknown[];
   total: number | null;
-  /** id для следующей страницы; null, если дальше ничего нет. */
+  /** Next-page ID, or null when there are no more messages. */
   nextOffsetId: number | null;
 }
 
@@ -46,7 +46,7 @@ function rawMessages(result: unknown): RawMessage[] {
 export class HistoryService {
   constructor(private readonly tg: Tg) {}
 
-  /** В личном чате автора своих сообщений Telegram не присылает: нормализатору нужен сам аккаунт. */
+  /** Private outgoing messages omit authors; normalization needs account identity. */
   private async selfIn(accountId: string, chat: EntityRecord): Promise<AccountIdentity | undefined> {
     return chat.kind === 'user' ? this.tg.whoami(accountId) : undefined;
   }
@@ -54,7 +54,7 @@ export class HistoryService {
   async page(accountId: string, chat: EntityRecord, params: HistoryParams, options?: TgCallOptions): Promise<HistoryPage> {
     const limit = Math.min(Math.max(1, params.limit), PAGE_MAX);
     const offsetId = params.offsetId ?? 0;
-    // offsetDate работает только для первой страницы: дальше позицию задаёт offsetId.
+    // offsetDate applies only to the first page; later pages use offsetId.
     const offsetDate = offsetId === 0 && params.maxDate ? params.maxDate : 0;
     const peer = toInputPeer(chat);
 
@@ -83,7 +83,7 @@ export class HistoryService {
     };
   }
 
-  /** Сообщения по id, до 100 за вызов. Сообщения из других чатов отбрасываются. */
+  /** Looks up at most 100 message IDs and filters messages from other chats. */
   async byIds(accountId: string, chat: EntityRecord, ids: number[], options?: TgCallOptions): Promise<HistoryPage> {
     const unique = [...new Set(ids)].filter(id => Number.isInteger(id) && id > 0);
     if (unique.length === 0) return { messages: [], raw: [], total: 0, nextOffsetId: null };
@@ -96,8 +96,8 @@ export class HistoryService {
         ? await this.tg.invoke(accountId, new Api.channels.GetMessages({ channel: toInputChannel(chat), id: inputIds }), options)
         : await this.tg.invoke(accountId, new Api.messages.GetMessages({ id: inputIds }), options);
 
-    // messages.GetMessages ищет по id во всех личных чатах и группах аккаунта:
-    // оставляем только сообщения запрошенного чата, иначе это обход скоупов.
+    // messages.GetMessages searches IDs across all account private chats and groups;
+    // keep only the requested chat to prevent scope bypass.
     const self = await this.selfIn(accountId, chat);
     const dtos = normalizeMessages(result, chat.kind === 'channel' ? chat.peerKey : undefined, self).filter(m => m.chatKey === chat.peerKey);
     const keptIds = new Set(dtos.map(m => m.id));
@@ -109,7 +109,7 @@ export class HistoryService {
     };
   }
 
-  /** Сообщение и его окружение: `before` более старых и `after` более новых. */
+  /** Message context: `before` older messages and `after` newer messages. */
   async around(
     accountId: string,
     chat: EntityRecord,
@@ -126,7 +126,7 @@ export class HistoryService {
     const common = {
       peer: toInputPeer(chat),
       offsetId: messageId,
-      // Отрицательный addOffset сдвигает окно к более новым сообщениям.
+      // Negative addOffset shifts the window toward newer messages.
       addOffset: -(a + 1),
       offsetDate: 0,
       limit: a + b + 1,
@@ -142,8 +142,8 @@ export class HistoryService {
   }
 
   /**
-   * Альбом целиком по одному его сообщению: соседи с тем же groupedId.
-   * В альбоме до 10 сообщений подряд, поэтому хватает окна в 9 в обе стороны.
+   * Collects an album from one member by neighboring messages with the same groupedId.
+   * Albums have at most 10 consecutive messages, so a window of 9 on each side is enough.
    */
   async album(accountId: string, chat: EntityRecord, messageId: number, options?: TgCallOptions): Promise<HistoryPage> {
     const window = await this.around(accountId, chat, messageId, 9, 9, undefined, options);

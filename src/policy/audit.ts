@@ -1,6 +1,6 @@
 /**
- * Аудит: каждый вызов инструмента с временем, пользователем, аккаунтом, чатом
- * и исходом. Нужен, чтобы видеть, что читал агент, и чтобы настраивать лимиты.
+ * Audit each tool call with time, user, account, chat,
+ * and outcome, supporting activity review and limit configuration.
  */
 import { isGatewayError } from '../core/errors.js';
 import { createLogger, redactFields, type Logger } from '../core/log.js';
@@ -17,7 +17,7 @@ export interface AuditCall {
   error?: unknown;
 }
 
-/** Длинные значения аргументов в аудите обрезаются: текст сообщений там не нужен целиком. */
+/** Truncate long argument values; audit does not need complete message text. */
 function compactArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(redactFields(args))) {
@@ -56,7 +56,7 @@ export class Audit {
         floodWaitSeconds: isGatewayError(error, 'FLOOD_WAIT') ? (error.retryAfter ?? null) : null,
       });
     } catch (err) {
-      // Сбой записи аудита не должен ломать вызов инструмента.
+      // Audit storage failures must not fail the tool call.
       this.log.error('audit write failed', { error: err as Error, tool: call.tool });
     }
   }

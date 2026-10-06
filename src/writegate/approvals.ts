@@ -1,10 +1,10 @@
 /**
- * Подтверждение записи. Любое действие, которое что-то меняет в Telegram,
- * идёт в два шага (решения 4 и 23): инструмент записи создаёт запрос и
- * возвращает предпросмотр, а выполняет действие шлюз после вызова `tg_confirm`.
+ * Write confirmation. Every action that changes Telegram state
+ * uses two steps (decisions 4 and 23): a write tool creates a request
+ * and returns a preview; the gateway executes it after `tg_confirm`.
  *
- * Запрос живёт недолго: он нужен на время разговора агента с владельцем
- * («вот что я отправлю» и «да»). Очереди черновиков шлюз не ведёт.
+ * Requests have a short lifetime for the conversation between agent and owner
+ * (a proposed action and consent). The gateway does not maintain a draft queue.
  */
 import { randomBytes } from 'node:crypto';
 import { GatewayError, isGatewayError } from '../core/errors.js';
@@ -17,18 +17,18 @@ export interface ApprovalRequest {
   userId: string;
   accountId: string | null;
   kind: string;
-  /** Аргументы действия. Поле `text` это черновик, который владелец может заменить. */
+  /** Action arguments. The owner can replace the draft in the `text` field. */
   payload: Record<string, unknown>;
-  /** Что и где будет сделано: пишет шлюз, чужого текста здесь нет. */
+  /** Gateway-generated description of what will happen and where, without untrusted text. */
   title: string;
 }
 
-/** Исполнитель действия после подтверждения. Возвращает итог одной строкой для агента. */
+/** Action executor after confirmation. Returns a one-line outcome for the agent. */
 export type ApprovalExecutor = (approval: ApprovalRecord) => Promise<{ summary: string; data?: Record<string, unknown> }>;
 
 interface ExecutorEntry {
   run: ApprovalExecutor;
-  /** Можно ли заменить текст черновика при подтверждении. */
+  /** Whether confirmation can replace the draft text. */
   editable: boolean;
 }
 
@@ -39,12 +39,12 @@ export interface ApprovalsOptions {
   ttlMs?: number;
 }
 
-/** Сколько живёт запрос: время на то, чтобы показать предпросмотр и получить ответ. */
+/** Request lifetime: time to present a preview and obtain a response. */
 export const APPROVAL_TTL_MS = 30 * 60 * 1000;
-/** Сколько хранятся решённые запросы. */
+/** Retention period for resolved requests. */
 const KEEP_DECIDED_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Текст действия в том виде, в каком он уйдёт в Telegram и показан в предпросмотре. */
+/** Exact outgoing action text shown in the preview and sent to Telegram. */
 function cleanDraft(text: string): string {
   const clean = sanitizeOutgoing(text).trim();
   if (!clean) throw new GatewayError('INVALID_ARGUMENT', 'Message text is empty.');
@@ -72,10 +72,10 @@ export class Approvals {
     this.executors.set(kind, { run, editable: options.editable ?? false });
   }
 
-  /** Создаёт запрос на действие. В Telegram при этом ничего не происходит. */
+  /** Creates an action request without changing anything in Telegram. */
   request(request: ApprovalRequest): ApprovalRecord {
     if (!this.executors.has(request.kind)) throw new GatewayError('INVALID_ARGUMENT', `Unknown action kind "${request.kind}".`);
-    // Подтверждается ровно то, что уйдёт: текст чистится до показа, а не после.
+    // Confirm exactly what will be sent: sanitize before the preview, not afterward.
     const payload = typeof request.payload.text === 'string' ? { ...request.payload, text: cleanDraft(request.payload.text) } : request.payload;
     return this.store.createApproval({
       id: `ap_${randomBytes(5).toString('hex')}`,
@@ -88,12 +88,12 @@ export class Approvals {
     });
   }
 
-  /** Запрос того же вида, который ещё ждёт решения: второй такой же не создаётся. */
+  /** Finds a pending request of the same kind to prevent duplicates. */
   findPending(userId: string, kind: string, match: (payload: Record<string, unknown>) => boolean): ApprovalRecord | null {
     return this.store.listApprovals(userId, ['pending', 'executing']).find(a => a.kind === kind && a.expiresAt > this.now() && match(a.payload)) ?? null;
   }
 
-  /** Запрос пользователя. Чужой запрос неотличим от несуществующего. */
+  /** Looks up a user request. Another user's request is indistinguishable from a missing one. */
   status(id: string, userId: string): ApprovalRecord {
     const approval = this.store.getApproval(id);
     if (!approval || approval.userId !== userId) throw new GatewayError('NOT_FOUND', `Approval "${id}" not found.`);
@@ -101,9 +101,9 @@ export class Approvals {
   }
 
   /**
-   * Подтверждает и выполняет действие. `text` заменяет черновик словами
-   * владельца. Повторный вызов действие второй раз не выполнит: вернётся
-   * запись с уже известным исходом.
+   * Confirms and executes an action. `text` replaces the draft with
+   * the owner's wording. Repeated calls do not execute it again:
+   * they return the record with the known outcome.
    */
   async confirm(id: string, userId: string, text?: string): Promise<ApprovalRecord> {
     const approval = this.status(id, userId);
@@ -120,14 +120,14 @@ export class Approvals {
     return this.store.getApproval(id)!;
   }
 
-  /** Отменяет запрос без действия. */
+  /** Rejects a request without executing the action. */
   reject(id: string, userId: string): ApprovalRecord {
     this.status(id, userId);
     this.store.transitionApproval(id, ['pending'], 'rejected');
     return this.store.getApproval(id)!;
   }
 
-  /** Выполняет подтверждённое действие. Два одновременных подтверждения не выполнят его дважды. */
+  /** Executes a confirmed action. Concurrent confirmations cannot execute it twice. */
   private async execute(id: string): Promise<void> {
     if (!this.store.transitionApproval(id, ['pending'], 'executing')) return;
     const approval = this.store.getApproval(id)!;
@@ -139,15 +139,15 @@ export class Approvals {
     } catch (err) {
       const message = isGatewayError(err) ? `${err.code}: ${err.message}` : (err as Error).message;
       this.log.warn('confirmed action failed', { approval: id, kind: approval.kind, error: message });
-      // Код ошибки хранится отдельно: агент, подтвердивший действие, получает её в обычном виде.
+      // Store the error code separately so the confirming agent receives a normal tool error.
       const detail = isGatewayError(err) ? { code: err.code, message: err.message, retry_after: err.retryAfter, outcome_unknown: err.outcomeUnknown === true } : {};
       this.store.updateApproval(id, { state: 'failed', result: { error: message, ...detail } });
     }
   }
 
   /**
-   * После рестарта: действия, которые выполнялись в момент остановки. Дошло ли
-   * сообщение до Telegram, неизвестно, поэтому повторять его шлюз не станет.
+   * After a restart, actions interrupted during execution have unknown outcomes.
+   * The gateway cannot know whether Telegram received them and will not retry them.
    */
   recover(): number {
     const stuck = this.store.approvalsInState('executing');
@@ -160,7 +160,7 @@ export class Approvals {
     return stuck.length;
   }
 
-  /** Уборка: просроченные запросы закрываются, старые решённые удаляются. */
+  /** Housekeeping: expire pending requests and delete old resolved records. */
   sweep(): number {
     const expired = this.store.expireApprovals();
     this.store.pruneApprovals(this.now() - KEEP_DECIDED_MS);

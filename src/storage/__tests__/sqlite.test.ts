@@ -19,12 +19,12 @@ afterEach(() => {
   storage.close();
 });
 
-describe('SqliteStorage: схема', () => {
-  it('применяет все миграции', () => {
+describe('SqliteStorage: schema', () => {
+  it('applies all migrations', () => {
     expect(storage.schemaVersion()).toBe(MIGRATIONS.length);
   });
 
-  it('после миграций остаются таблицы записи, таблиц автоматизации нет', () => {
+  it('retains write tables and removes automation tables after migrations', () => {
     const tables = (storage.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map(t => t.name);
     expect(tables).toEqual(expect.arrayContaining(['approvals', 'writes', 'chat_snapshots', 'indexed_chats', 'indexed_messages']));
     for (const gone of ['watches', 'watch_state', 'inbox', 'rules', 'rule_fires', 'runner_jobs', 'scoped_tokens', 'tasks', 'task_messages']) {
@@ -32,11 +32,11 @@ describe('SqliteStorage: схема', () => {
     }
   });
 
-  it('миграции 7 и 8 убирают остатки бота, поручений и предел «один ответ на пост», не теряя правил владельца, запросов и журнала записи', () => {
+  it('migrations 7 and 8 remove bot and task remnants and the single-reply cap while preserving owner scopes, approvals, and the write journal', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tgmcp-migrate-'));
     const path = join(dir, 'gateway.sqlite');
     try {
-      // база в том виде, в каком её оставила версия 6
+      // Database left by version 6.
       const old = new DatabaseSync(path);
       old.exec('PRAGMA foreign_keys = ON');
       for (const sql of MIGRATIONS.slice(0, 6)) old.exec(sql);
@@ -67,18 +67,18 @@ describe('SqliteStorage: схема', () => {
         expect(columns('writes')).not.toContain('source');
         expect(columns('scope_rules')).toEqual(['user_id', 'account_id', 'target', 'effect', 'created_at']);
 
-        // правила владельца на месте, в том числе режим личных чатов; открытое поручением исчезло
+        // Owner scopes survive, including private-chat mode; task-created access disappears.
         expect(upgraded.scopes.list('nick', 'agent').map(r => `${r.effect} ${r.target}`)).toEqual(['allow *private-send', 'deny -1000000000500', 'allow seller']);
         expect(upgraded.users.get('nick')).toMatchObject({ tokenSha256: 'h1', defaultAccount: 'agent' });
         expect(upgraded.db.prepare("SELECT state, result FROM approvals WHERE id = 'ap_1'").get()).toMatchObject({ state: 'executed', result: '{"summary":"Sent"}' });
         expect((upgraded.db.prepare('SELECT COUNT(*) AS n FROM writes').get() as { n: number }).n).toBe(2);
-        // миграция 8: второй ответ под тем же постом больше не запрещён базой
+        // Migration 8: the database allows multiple replies to the same post.
         upgraded.db.prepare("INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id) VALUES (12, 'nick', 'agent', 'reply', '-1000000000500', 10, 79)").run();
         expect((upgraded.db.prepare("SELECT COUNT(*) AS n FROM writes WHERE kind = 'reply' AND post_id = 10").get() as { n: number }).n).toBe(2);
-        // одно правило на цель: повторная запись меняет его, а не добавляет второе
+        // One rule per target: another write updates it instead of adding a duplicate.
         upgraded.scopes.put({ userId: 'nick', accountId: 'agent', target: '@Seller', effect: 'deny' });
         expect(upgraded.scopes.list('nick', 'agent').filter(r => r.target === 'seller')).toEqual([expect.objectContaining({ effect: 'deny' })]);
-        // каскад по удалению пользователя пережил пересборку таблицы
+        // User deletion cascades survive the table rebuild.
         upgraded.users.remove('nick');
         expect(upgraded.scopes.list('nick', 'agent')).toEqual([]);
       } finally {
@@ -89,16 +89,16 @@ describe('SqliteStorage: схема', () => {
     }
   });
 
-  it('FTS5 доступен в node:sqlite', () => {
+  it('provides FTS5 through node:sqlite', () => {
     storage.db.exec('CREATE VIRTUAL TABLE fts_probe USING fts5(body)');
-    storage.db.prepare('INSERT INTO fts_probe (body) VALUES (?)').run('продам велосипед недорого');
-    const rows = storage.db.prepare("SELECT body FROM fts_probe WHERE fts_probe MATCH 'велосипед'").all();
+    storage.db.prepare('INSERT INTO fts_probe (body) VALUES (?)').run('selling an inexpensive bicycle');
+    const rows = storage.db.prepare("SELECT body FROM fts_probe WHERE fts_probe MATCH 'bicycle'").all();
     expect(rows).toHaveLength(1);
   });
 });
 
-describe('SqliteStorage: пользователи и аккаунты', () => {
-  it('находит пользователя по хэшу токена, сам токен не хранит', () => {
+describe('SqliteStorage: users and accounts', () => {
+  it('finds users by token hash without storing the token', () => {
     const token = 'user-token';
     storage.users.create({ id: 'nick', tokenSha256: sha256Hex(token) });
     expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
@@ -106,12 +106,12 @@ describe('SqliteStorage: пользователи и аккаунты', () => {
     expect(JSON.stringify(storage.users.list())).not.toContain(token);
   });
 
-  it('два пользователя с одним токеном невозможны', () => {
+  it('rejects two users with the same token', () => {
     storage.users.create({ id: 'a', tokenSha256: 'h' });
     expect(() => storage.users.create({ id: 'b', tokenSha256: 'h' })).toThrow();
   });
 
-  it('доступ: свой аккаунт, чужой и общий', () => {
+  it('handles access to owned, unowned, and shared accounts', () => {
     storage.users.create({ id: 'nick', tokenSha256: 'h1' });
     storage.users.create({ id: 'partner', tokenSha256: 'h2' });
     for (const id of ['nick', 'partner', 'agent']) storage.accounts.upsert({ id });
@@ -119,7 +119,7 @@ describe('SqliteStorage: пользователи и аккаунты', () => {
     storage.accounts.grant('partner', 'partner');
     storage.accounts.grant('agent', 'nick');
     storage.accounts.grant('agent', 'partner');
-    storage.accounts.grant('agent', 'partner'); // повтор не ломает
+    storage.accounts.grant('agent', 'partner'); // Repeated grants are harmless.
 
     expect(storage.accounts.hasAccess('nick', 'nick')).toBe(true);
     expect(storage.accounts.hasAccess('nick', 'partner')).toBe(false);
@@ -131,14 +131,14 @@ describe('SqliteStorage: пользователи и аккаунты', () => {
     expect(storage.accounts.hasAccess('partner', 'agent')).toBe(false);
   });
 
-  it('upsert аккаунта обновляет только переданные поля', () => {
+  it('upserts only the supplied account fields', () => {
     storage.accounts.upsert({ id: 'agent', username: 'agent_bot_like', status: 'active' });
     clock = 2_000;
     const updated = storage.accounts.upsert({ id: 'agent', tgUserId: '42' });
     expect(updated).toMatchObject({ username: 'agent_bot_like', tgUserId: '42', status: 'active', createdAt: 1_000, updatedAt: 2_000 });
   });
 
-  it('удаление аккаунта убирает сессию, доступ и кэш сущностей', () => {
+  it('removes sessions, grants, and entity caches when deleting an account', () => {
     storage.users.create({ id: 'nick', tokenSha256: 'h1' });
     storage.accounts.upsert({ id: 'agent' });
     storage.accounts.grant('agent', 'nick');
@@ -151,8 +151,8 @@ describe('SqliteStorage: пользователи и аккаунты', () => {
   });
 });
 
-describe('SqliteStorage: сессии', () => {
-  it('хранит сессию только в зашифрованном виде', () => {
+describe('SqliteStorage: sessions', () => {
+  it('stores sessions only in encrypted form', () => {
     storage.accounts.upsert({ id: 'agent' });
     storage.sessions.put('agent', seal('1BQA-plain-session', 'key'));
     const raw = JSON.stringify(storage.db.prepare('SELECT * FROM sessions').all());
@@ -163,13 +163,13 @@ describe('SqliteStorage: сессии', () => {
   });
 });
 
-describe('SqliteStorage: кэш сущностей', () => {
+describe('SqliteStorage: entity cache', () => {
   beforeEach(() => {
     storage.accounts.upsert({ id: 'a1' });
     storage.accounts.upsert({ id: 'a2' });
   });
 
-  it('accessHash хранится отдельно для каждого аккаунта', () => {
+  it('stores accessHash separately for each account', () => {
     storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: '111', username: 'News', title: 'News', meta: {} });
     storage.entities.put({ accountId: 'a2', peerKey: '-1005', kind: 'channel', accessHash: '222', username: 'News', title: 'News', meta: {} });
     expect(storage.entities.get('a1', '-1005')?.accessHash).toBe('111');
@@ -177,23 +177,23 @@ describe('SqliteStorage: кэш сущностей', () => {
     expect(storage.entities.getByUsername('a1', '@NEWS')?.peerKey).toBe('-1005');
   });
 
-  it('неполный объект не затирает accessHash и meta', () => {
+  it('does not overwrite accessHash and meta with partial objects', () => {
     storage.entities.put({ accountId: 'a1', peerKey: '77', kind: 'user', accessHash: '555', username: 'seller', title: 'Seller', meta: { bot: false } });
     storage.entities.put({ accountId: 'a1', peerKey: '77', kind: 'user', accessHash: null, username: null, title: 'Seller New', meta: {} });
     expect(storage.entities.get('a1', '77')).toMatchObject({ accessHash: '555', username: 'seller', title: 'Seller New', meta: { bot: false } });
   });
 
-  it('username, перешедший к другому чату, у прежнего убирается', () => {
+  it('clears a username from its former chat when it moves to another chat', () => {
     storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: '1', username: 'shop', title: 'Old shop', meta: { broadcast: true } });
     storage.entities.put({ accountId: 'a2', peerKey: '-1005', kind: 'channel', accessHash: '2', username: 'shop', title: 'Old shop', meta: { broadcast: true } });
     storage.entities.put({ accountId: 'a1', peerKey: '-1009', kind: 'channel', accessHash: '3', username: 'Shop', title: 'New shop', meta: { broadcast: true } });
     expect(storage.entities.getByUsername('a1', 'shop')?.peerKey).toBe('-1009');
     expect(storage.entities.get('a1', '-1005')?.username).toBeNull();
-    // кэш другого аккаунта не трогаем: он узнает о смене сам
+    // Another account's cache learns about the change independently.
     expect(storage.entities.get('a2', '-1005')?.username).toBe('shop');
   });
 
-  it('полный объект без username снимает имя, неполный его не трогает', () => {
+  it('clears missing usernames on full objects but preserves them on partial objects', () => {
     storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: '1', username: 'shop', title: 'Shop', meta: { broadcast: true } });
     storage.entities.put({ accountId: 'a1', peerKey: '-1005', kind: 'channel', accessHash: null, username: null, title: 'Shop', meta: {} });
     expect(storage.entities.get('a1', '-1005')?.username).toBe('shop');
@@ -202,7 +202,7 @@ describe('SqliteStorage: кэш сущностей', () => {
     expect(storage.entities.getByUsername('a1', 'shop')).toBeNull();
   });
 
-  it('putMany пишет пачкой', () => {
+  it('writes a batch with putMany', () => {
     storage.entities.putMany(
       Array.from({ length: 50 }, (_, i) => ({ accountId: 'a1', peerKey: String(i + 1), kind: 'user' as const, accessHash: String(i), username: null, title: null, meta: {} })),
     );
@@ -211,8 +211,8 @@ describe('SqliteStorage: кэш сущностей', () => {
   });
 });
 
-describe('SqliteStorage: аудит, задачи, kv, транзакции', () => {
-  it('аудит фильтруется по пользователю и чистится по времени', () => {
+describe('SqliteStorage: audit, tasks, kv, and transactions', () => {
+  it('filters audit by user and removes old entries', () => {
     const base = { accountId: 'agent', args: { chat: '@x' }, peerKey: '-1001', resultCount: 3, durationMs: 12, errorCode: null, floodWaitSeconds: null };
     storage.audit.add({ ...base, ts: 100, userId: 'nick', tool: 'tg_read_history' });
     storage.audit.add({ ...base, ts: 200, userId: 'partner', tool: 'tg_resolve', errorCode: 'FLOOD_WAIT', floodWaitSeconds: 30 });
@@ -222,7 +222,7 @@ describe('SqliteStorage: аудит, задачи, kv, транзакции', ()
     expect(storage.audit.recent()).toHaveLength(1);
   });
 
-  it('задача проходит состояния и возвращается в очередь после рестарта', () => {
+  it('advances task states and requeues interrupted tasks after restart', () => {
     storage.jobs.create({ id: 'j1', userId: 'nick', accountId: 'agent', kind: 'export', params: { chat: '-1001' } });
     storage.jobs.update('j1', { state: 'running', progress: { done: 100, total: 400 } });
     expect(storage.jobs.get('j1')).toMatchObject({ state: 'running', progress: { done: 100, total: 400 }, result: null });
@@ -233,7 +233,7 @@ describe('SqliteStorage: аудит, задачи, kv, транзакции', ()
     expect(storage.jobs.list({ userId: 'partner' })).toHaveLength(0);
   });
 
-  it('очередь задач читается от старых к новым', () => {
+  it('reads the task queue oldest first', () => {
     for (let i = 1; i <= 60; i++) {
       clock += 10;
       storage.jobs.create({ id: `job_${i}`, userId: 'nick', kind: 'export', params: {} });
@@ -242,20 +242,20 @@ describe('SqliteStorage: аудит, задачи, kv, транзакции', ()
     expect(storage.jobs.list({ state: 'queued', limit: 1 })[0]!.id).toBe('job_60');
   });
 
-  it('повторный close не падает', () => {
+  it('allows repeated close calls', () => {
     const other = new SqliteStorage({ path: ':memory:' });
     other.close();
     expect(() => other.close()).not.toThrow();
   });
 
-  it('kv хранит и перезаписывает значения', () => {
+  it('stores and replaces kv values', () => {
     expect(storage.kv.get('k')).toBeNull();
     storage.kv.set('k', '1');
     storage.kv.set('k', '2');
     expect(storage.kv.get('k')).toBe('2');
   });
 
-  it('транзакция откатывается при ошибке', () => {
+  it('rolls back a transaction on failure', () => {
     expect(() =>
       storage.transaction(() => {
         storage.kv.set('tx', 'value');

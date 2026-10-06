@@ -1,9 +1,9 @@
 /**
- * Миграции схемы. Индекс в массиве плюс один это версия (PRAGMA user_version).
- * Опубликованные миграции не меняются: новое добавляется следующей записью.
+ * Schema migrations. The array index plus one is the version (PRAGMA user_version).
+ * Published migration statements stay unchanged; add new migrations at the end.
  */
 export const MIGRATIONS: string[] = [
-  // 1: пользователи, аккаунты, сессии, кэш сущностей, аудит, задачи
+  // 1: users, accounts, sessions, entity cache, audit, tasks
   `
   CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -85,22 +85,22 @@ export const MIGRATIONS: string[] = [
   );
   `,
 
-  // 2: скоупы доступа: что пользователю открыто или закрыто сверх правил по умолчанию
+  // 2: access scopes beyond the default rules
   `
   CREATE TABLE scope_rules (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- ключ чата или username в нижнем регистре без @
+    -- chat key or lowercase username without @
     target TEXT NOT NULL,
     effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),
-    -- откуда правило: owner (владелец через CLI) или task:<id> (поручение открыло диалог)
+    -- rule source: owner (owner CLI) or task:<id> (a task opened the conversation)
     source TEXT NOT NULL DEFAULT 'owner',
     created_at INTEGER NOT NULL,
     PRIMARY KEY (user_id, account_id, target, source)
   );
   `,
 
-  // 3: автоматизация: наблюдение, входящие, согласования, правила, журнал записи, очередь запусков агента
+  // 3: automation: watchers, inbox, approvals, rules, write journal, agent launch queue
   `
   CREATE TABLE watches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,7 +111,7 @@ export const MIGRATIONS: string[] = [
     UNIQUE (user_id, account_id, chat_key)
   );
 
-  -- Один опрос на пару «аккаунт и чат», сколько бы пользователей его ни наблюдало.
+  -- One poll per account/chat pair, regardless of how many users watch it.
   CREATE TABLE watch_state (
     account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     chat_key TEXT NOT NULL,
@@ -141,7 +141,7 @@ export const MIGRATIONS: string[] = [
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     account_id TEXT,
     kind TEXT NOT NULL,
-    -- откуда запрос: tool, rule:<id> или task:<id>
+    -- request source: tool, rule:<id>, or task:<id>
     source TEXT NOT NULL,
     payload TEXT NOT NULL,
     preview TEXT NOT NULL,
@@ -176,7 +176,7 @@ export const MIGRATIONS: string[] = [
     UNIQUE (rule_id, chat_key, message_id)
   );
 
-  -- Журнал записи в Telegram: дневные лимиты и «один ответ на пост с аккаунта» (решение 18).
+  -- Telegram write journal: daily caps and one reply per post per account (decision 18).
   CREATE TABLE writes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts INTEGER NOT NULL,
@@ -206,7 +206,7 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX runner_jobs_user ON runner_jobs(user_id, state);
 
-  -- Токены с ограниченными правами: выдаются запущенному агенту на одно дело.
+  -- Restricted tokens issued to a launched agent for a single task.
   CREATE TABLE scoped_tokens (
     token_sha256 TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -215,12 +215,12 @@ export const MIGRATIONS: string[] = [
   );
   `,
 
-  // 4: поручения: цель, рамки, переписка и состояние хранит шлюз (решения 10 и 13)
+  // 4: tasks: the gateway stores goals, constraints, conversations, and state (decisions 10 and 13)
   `
   CREATE TABLE tasks (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    -- аккаунт шлюза, который ведёт переписку
+    -- gateway account handling the conversation
     account_id TEXT,
     via TEXT NOT NULL,
     peer_key TEXT NOT NULL,
@@ -249,7 +249,7 @@ export const MIGRATIONS: string[] = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     ts INTEGER NOT NULL,
-    -- peer: собеседник, agent: отправлено шлюзом, owner: указание владельца, system: служебная запись
+    -- peer: contact; agent: sent by gateway; owner: owner instruction; system: internal record
     role TEXT NOT NULL,
     text TEXT NOT NULL,
     tg_message_id INTEGER
@@ -257,11 +257,11 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX task_messages_task ON task_messages(task_id, id);
   `,
 
-  // 5: число участников по дням (рост канала) и локальный индекс сообщений с полнотекстовым поиском
+  // 5: daily participant counts and a local message index with full-text search
   `
   CREATE TABLE chat_snapshots (
     chat_key TEXT NOT NULL,
-    -- день в UTC, ГГГГ-ММ-ДД: один снимок на чат в день
+    -- UTC date, YYYY-MM-DD: one snapshot per chat per day
     day TEXT NOT NULL,
     ts INTEGER NOT NULL,
     members INTEGER NOT NULL,
@@ -271,7 +271,7 @@ export const MIGRATIONS: string[] = [
   CREATE TABLE indexed_chats (
     account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     chat_key TEXT NOT NULL,
-    -- индекс полон для сообщений не старше этой даты (unix-секунды)
+    -- index is complete for messages newer than this timestamp (Unix seconds)
     since_ts INTEGER NOT NULL,
     newest_id INTEGER NOT NULL DEFAULT 0,
     oldest_id INTEGER NOT NULL DEFAULT 0,
@@ -287,23 +287,23 @@ export const MIGRATIONS: string[] = [
     chat_key TEXT NOT NULL,
     message_id INTEGER NOT NULL,
     date INTEGER NOT NULL,
-    -- сообщение в едином виде (MessageDto), как его отдают инструменты чтения
+    -- normalized message (MessageDto), as returned by read tools
     dto TEXT NOT NULL,
     UNIQUE (account_id, chat_key, message_id)
   );
   CREATE INDEX indexed_messages_date ON indexed_messages(account_id, chat_key, date);
 
-  -- Триграммы: «велосипед» находит и «велосипеды», и «велосипедом», регистр не важен.
+  -- Trigrams: 'bicycle' also matches 'bicycles'; matching is case-insensitive.
   CREATE VIRTUAL TABLE indexed_fts USING fts5(text, tokenize='trigram');
 
-  -- Текст в поиске не должен пережить сообщение, в том числе при удалении аккаунта.
+  -- Search text must not outlive its message, including on account deletion.
   CREATE TRIGGER indexed_messages_delete AFTER DELETE ON indexed_messages BEGIN
     DELETE FROM indexed_fts WHERE rowid = old.rowid;
   END;
   `,
 
-  // 6: шлюз стал чистым MCP (решение 25): наблюдение, входящие, правила, запуски агента и поручения убраны.
-  // Запросы на запись (approvals) и журнал записи (writes) остаются.
+  // 6: pure MCP gateway (decision 25): remove watchers, inbox, rules, agent launches, and tasks.
+  // Keep confirmation requests (approvals) and the write journal (writes).
   `
   DROP TABLE IF EXISTS task_messages;
   DROP TABLE IF EXISTS tasks;
@@ -316,9 +316,9 @@ export const MIGRATIONS: string[] = [
   DROP TABLE IF EXISTS watches;
   `,
 
-  // 7: остатки бота согласований и поручений в оставшихся таблицах. Telegram id пользователя и
-  // сообщение бота не нужны (решение 23); источник у запросов, записей журнала и правил скоупов
-  // всегда был один, а правила, открытые поручениями, удаляются вместе с ним (решение 25).
+  // 7: remaining bot and task fields. User Telegram IDs and
+  // bot messages are unnecessary (decision 23); request, journal, and scope sources
+  // are always the same, while task-created scopes are removed (decision 25).
   `
   ALTER TABLE users DROP COLUMN telegram_id;
   ALTER TABLE approvals DROP COLUMN bot_chat_id;
@@ -329,7 +329,7 @@ export const MIGRATIONS: string[] = [
   CREATE TABLE scope_rules_v7 (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- ключ чата, username в нижнем регистре без @ или служебная цель режима личных чатов
+    -- chat key, lowercase username without @, or internal private-chat mode target
     target TEXT NOT NULL,
     effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),
     created_at INTEGER NOT NULL,
@@ -341,7 +341,7 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE scope_rules_v7 RENAME TO scope_rules;
   `,
 
-  // 8: предела «один ответ на пост с аккаунта» больше нет (решение 29): сколько раз отвечать, решает владелец.
+  // 8: remove the one-reply-per-post-per-account cap (decision 29); the owner decides reply frequency.
   `
   DROP INDEX IF EXISTS writes_one_reply;
   `,

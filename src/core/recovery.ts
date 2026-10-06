@@ -1,7 +1,7 @@
 /**
- * Страж зависаний. Зависший вызов teleproto нельзя безопасно отменить, а второй
- * клиент на той же сессии даёт AUTH_KEY_DUPLICATED. Поэтому процесс выходит
- * с кодом 1, и супервизор (launchd) поднимает его с чистого листа.
+ * Hang watchdog. A hung teleproto call cannot be safely canceled, and a
+ * second client on the same session causes AUTH_KEY_DUPLICATED. Exit
+ * with code 1 and let the supervisor (launchd) restart a fresh process.
  */
 import { createLogger, type Logger } from './log.js';
 
@@ -10,13 +10,13 @@ export type ExitProcess = (code: number) => void;
 export interface FatalHandlerOptions {
   exit?: ExitProcess;
   log?: Logger;
-  /** Выполняется перед выходом, например закрытие базы. Ошибки игнорируются. */
+  /** Before-exit cleanup, e.g. closing the database. Errors are ignored. */
   beforeExit?: () => void;
-  /** Выполняется сразу: отклонить всё, что ждёт в очередях, чтобы вызывающие узнали об ошибке. */
+  /** Immediately reject queued work so callers learn about the failure. */
   prepare?: () => void;
   /**
-   * Сколько ждать между `prepare` и выходом. За это время обработчики ошибок
-   * успевают записать исход: иначе запрос на запись остался бы «выполняется» навсегда.
+   * Delay between `prepare` and exit, allowing error handlers
+   * to record outcomes; otherwise writes could remain executing forever.
    */
   graceMs?: number;
 }
@@ -34,13 +34,13 @@ export function createFatalHandler(options: FatalHandlerOptions = {}): FatalHand
     try {
       options.prepare?.();
     } catch {
-      // выход важнее аккуратной остановки
+      // Exiting takes priority over graceful shutdown.
     }
     const finish = (): void => {
       try {
         options.beforeExit?.();
       } catch {
-        // выход важнее аккуратного закрытия
+        // Exiting takes priority over graceful close.
       }
       exit(1);
     };

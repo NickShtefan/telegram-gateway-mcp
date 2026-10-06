@@ -1,6 +1,6 @@
 /**
- * Управление пользователями и аккаунтами шлюза (решение 16). Чистые функции
- * над хранилищем: команды CLI только разбирают аргументы и печатают результат.
+ * Gateway user/account management (decision 16). Pure storage functions;
+ * CLI commands only parse arguments and print results.
  */
 import { randomToken, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
@@ -22,7 +22,7 @@ export function assertId(kind: 'user' | 'account', id: string): string {
 
 export interface NewUser {
   user: UserRecord;
-  /** Токен показывается один раз: шлюз хранит только его хэш. */
+  /** Show tokens only once; the gateway stores only their hashes. */
   token: string;
 }
 
@@ -49,7 +49,7 @@ export function addUser(
   });
 }
 
-/** Выпускает новый токен; старый перестаёт работать сразу. */
+/** Issue a new token and immediately revoke the old one. */
 export function rotateToken(storage: Storage, userId: string): string {
   if (!storage.users.get(userId)) throw new GatewayError('NOT_FOUND', `User "${userId}" does not exist.`);
   const token = randomToken(32);
@@ -127,7 +127,7 @@ export interface AccountView {
   displayName: string | null;
   hasSession: boolean;
   users: string[];
-  /** Общий аккаунт: доступ есть у нескольких пользователей (решение 18). */
+  /** Shared account: accessible to multiple users (decision 18). */
   shared: boolean;
 }
 
@@ -146,7 +146,7 @@ export function describeAccounts(storage: Storage): AccountView[] {
   });
 }
 
-/** Цель правила скоупа: username без @ в нижнем регистре или ключ чата. */
+/** Scope target: lowercase username without @, or a chat key. */
 export function scopeTarget(chat: string): string {
   const parsed = parseRef(chat);
   if (parsed.chat.type === 'username') return parsed.chat.username.toLowerCase();
@@ -162,8 +162,8 @@ function assertUserAccount(storage: Storage, userId: string, accountId: string):
 }
 
 /**
- * Открывает (allow) или закрывает (deny) чат пользователю на аккаунте.
- * Личные переписки закрыты, пока владелец не открыл их явно.
+ * Allow or deny a chat for a user/account.
+ * Private conversations remain closed until the owner explicitly grants access.
  */
 export function setScope(storage: Storage, userId: string, accountId: string, chat: string, effect: ScopeEffect): string {
   assertUserAccount(storage, userId, accountId);
@@ -177,7 +177,7 @@ export function removeScope(storage: Storage, userId: string, accountId: string,
   return storage.scopes.remove(userId, accountId, scopeTarget(chat));
 }
 
-/** Правила для чатов, без служебной записи о режиме личных чатов. */
+/** Chat rules excluding the internal private-mode record. */
 export function listScopes(storage: Storage, userId: string, accountId: string): ScopeRule[] {
   assertUserAccount(storage, userId, accountId);
   return storage.scopes.list(userId, accountId).filter(r => !isPrivateModeTarget(r.target));
@@ -188,7 +188,7 @@ export function getPrivateMode(storage: Storage, userId: string, accountId: stri
   return readPrivateMode(storage, userId, accountId);
 }
 
-/** Режим личных чатов: closed, send (только писать) или open (читать и писать). */
+/** Private-chat mode: closed, send-only, or open for read/write. */
 export function setPrivateMode(storage: Storage, userId: string, accountId: string, mode: string): PrivateMode {
   assertUserAccount(storage, userId, accountId);
   if (!(PRIVATE_MODES as readonly string[]).includes(mode)) {

@@ -1,6 +1,6 @@
 /**
- * `tg-mcp login --account <имя>`: вход в аккаунт Telegram и сохранение
- * зашифрованной сессии. Код и пароль 2FA вводит хозяин аккаунта.
+ * `tg-mcp login --account <name>`: log into Telegram and store
+ * an encrypted session. The account owner enters login code and 2FA password.
  */
 import { loginAccount } from '../core/auth.js';
 import { defaultClientFactory, type ClientFactory } from '../core/clientPool.js';

@@ -1,15 +1,15 @@
 /**
- * Статистика канала: охват, вовлечённость, частота постов, динамика.
+ * Channel statistics: reach, engagement, posting frequency, and trends.
  *
- * Формулы: средние и медианные
- * просмотры, охват (просмотры к подписчикам), ERR (реакции к просмотрам),
- * разброс просмотров, сравнение свежей половины периода со старой. Оценки,
- * баллы и «вердикты» оттуда не перенесены: шлюз отдаёт числа, выводы делает
- * агент (решение 7).
+ * Formulas include mean and median
+ * views, reach (views/subscribers), ERR (reactions/views),
+ * view dispersion, and comparison of the recent and older period halves.
+ * No scores or verdicts are assigned: the gateway returns numbers,
+ * and the agent interprets them (decision 7).
  *
- * Рост подписчиков Telegram отдаёт только админам канала. Для чужих каналов
- * шлюз запоминает число участников каждый раз, когда видит его, и показывает
- * изменение между снимками.
+ * Telegram exposes subscriber growth only to channel administrators.
+ * For other channels, retain participant counts when observed and show
+ * changes between snapshots.
  */
 import type { ReactionCount } from '../core/reactions.js';
 import type { TgCallOptions } from '../core/tg.js';
@@ -21,7 +21,7 @@ import type { Resolver } from './resolve.js';
 
 export const STATS_MAX_DAYS = 180;
 export const STATS_MAX_POSTS = 1000;
-/** Просмотры свежего поста ещё растут: в средние он не идёт. */
+/** Recent posts are still gaining views and are excluded from averages. */
 const SETTLE_SECONDS = 24 * 3600;
 const DAY = 86_400;
 
@@ -31,7 +31,7 @@ export interface MemberSnapshot {
   members: number;
 }
 
-/** Снимки числа участников по дням. Число публичное, поэтому хранится на чат, а не на аккаунт. */
+/** Daily public participant snapshots, stored per chat rather than per account. */
 export class SnapshotStore {
   constructor(
     private readonly storage: SqliteStorage,
@@ -49,7 +49,7 @@ export class SnapshotStore {
       .run(chatKey, new Date(ts).toISOString().slice(0, 10), ts, Math.trunc(members));
   }
 
-  /** Снимки чата от старых к новым. */
+  /** Chat snapshots, oldest first. */
   list(chatKey: string): MemberSnapshot[] {
     return (this.storage.db.prepare('SELECT day, ts, members FROM chat_snapshots WHERE chat_key = ? ORDER BY day').all(chatKey) as Array<Record<string, unknown>>).map(r => ({
       day: String(r.day),
@@ -60,7 +60,7 @@ export class SnapshotStore {
 }
 
 export interface WeekBucket {
-  /** Понедельник недели, ГГГГ-ММ-ДД (UTC). */
+  /** Monday of the week, YYYY-MM-DD in UTC. */
   weekStart: string;
   posts: number;
   avgViews: number | null;
@@ -68,18 +68,18 @@ export interface WeekBucket {
 
 export interface ChannelStats {
   posts: number;
-  /** Сколько постов пошло в расчёт просмотров (без самых свежих). */
+  /** Post count used for view calculations, excluding the newest posts. */
   settledPosts: number;
   postsPerWeek: number;
-  /** Дата самого старого поста в расчёте, unix-секунды. */
+  /** Unix timestamp of the oldest post used in calculations. */
   oldestDate: number | null;
   avgViews: number | null;
   medianViews: number | null;
-  /** Разброс просмотров: стандартное отклонение к среднему, %. */
+  /** View standard deviation divided by mean, percent. */
   viewsSpread: number | null;
-  /** Средние просмотры к числу подписчиков, %. */
+  /** Mean views divided by subscribers, percent. */
   reachRate: number | null;
-  /** Реакции к просмотрам, %. */
+  /** Reactions divided by views, percent. */
   err: number | null;
   reactionsPerPost: number;
   commentsPerPost: number | null;
@@ -87,11 +87,11 @@ export interface ChannelStats {
   topReactions: Array<{ reaction: string; share: number }>;
   reactionKinds: number;
   forwardedShare: number;
-  /** Изменение средних просмотров: свежая половина периода против старой, %. */
+  /** Mean view change between the recent and older period halves, percent. */
   viewsTrend: number | null;
   weeks: WeekBucket[];
   topPosts: MessageDto[];
-  /** Для групп: сколько разных авторов писало. */
+  /** For groups: number of distinct posting authors. */
   authors: number;
 }
 
@@ -104,7 +104,7 @@ function median(values: number[]): number {
 const avg = (values: number[]): number => values.reduce((s, v) => s + v, 0) / values.length;
 const round1 = (value: number): number => Math.round(value * 10) / 10;
 
-/** Альбом это один пост: остаётся сообщение с подписью, счётчики берутся наибольшие. */
+/** Counts albums as one post, retaining a captioned message and maximum counters. */
 export function collapseAlbums(messages: MessageDto[]): MessageDto[] {
   const out: MessageDto[] = [];
   const albums = new Map<string, MessageDto>();
@@ -136,11 +136,11 @@ function mondayOf(unixSeconds: number): string {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - shift)).toISOString().slice(0, 10);
 }
 
-/** Считает показатели по постам окна. `messages` в любом порядке, служебные и альбомы обрабатываются здесь. */
+/** Calculates window metrics from unordered messages, handling service messages and albums. */
 export function computeStats(messages: MessageDto[], members: number | null, nowSec: number, windowStartSec: number): ChannelStats {
   const posts = collapseAlbums(messages).sort((a, b) => b.date - a.date);
   const withViews = posts.filter(p => p.views !== null);
-  // Свежие посты ещё набирают просмотры. Если кроме них почти ничего нет, считаем по всем.
+  // Recent posts are still gaining views; use all posts if too few mature posts remain.
   const settledOnly = withViews.filter(p => p.date <= nowSec - SETTLE_SECONDS);
   const settled = settledOnly.length >= 3 ? settledOnly : withViews;
   const views = settled.map(p => p.views!);
@@ -166,7 +166,7 @@ export function computeStats(messages: MessageDto[], members: number | null, now
     viewsSpread = round1((Math.sqrt(variance) / avgViews) * 100);
   }
 
-  // Тренд: середина периода делит посты на свежие и старые.
+  // Split the period at its midpoint into recent and older posts.
   const middle = (nowSec + windowStartSec) / 2;
   const newer = settled.filter(p => p.date >= middle).map(p => p.views!);
   const older = settled.filter(p => p.date < middle).map(p => p.views!);
@@ -217,9 +217,9 @@ export function computeStats(messages: MessageDto[], members: number | null, now
 export interface StatsReport {
   stats: ChannelStats;
   members: number | null;
-  /** Самый ранний снимок числа участников внутри периода, если он не сегодняшний. */
+  /** Earliest participant snapshot within the period, excluding today's snapshot. */
   earlier: MemberSnapshot | null;
-  /** Лента оборвана пределом числа постов, период покрыт не целиком. */
+  /** Post cap truncated history before the full period was covered. */
   truncated: boolean;
 }
 

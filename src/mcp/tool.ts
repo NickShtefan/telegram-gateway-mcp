@@ -1,7 +1,7 @@
 /**
- * Каркас инструментов. Инструмент объявляется один раз и не знает о транспорте
- * (registerTool, zod-схема, readOnlyHint). Обёртка добавляет то, что одинаково для всех: аудит, ошибки
- * в виде `isError` с понятным текстом и `retry_after`, контекст пользователя.
+ * Tool framework. Tools are declared once without transport dependencies
+ * (registerTool, zod schema, readOnlyHint). The wrapper adds shared audit,
+ * user context, and errors as `isError` with clear text and `retry_after`.
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
@@ -22,7 +22,7 @@ export interface ToolImage {
 export interface ToolOutput {
   text: string;
   images?: ToolImage[];
-  /** Для аудита: какой аккаунт и чат затронуты, сколько сообщений отдано. */
+  /** Audit metadata: account, chat, and number of returned messages. */
   accountId?: string | null;
   peerKey?: string | null;
   count?: number | null;
@@ -32,12 +32,12 @@ export interface ToolContext {
   services: GatewayServices;
   principal: Principal;
   now(): number;
-  /** Аккаунт вызова: запрошенный или по умолчанию, с проверкой доступа. */
+  /** Resolves the requested or default account with an access check. */
   account(requested?: string): string;
   /**
-   * Находит чат по ссылке, username или id и проверяет скоупы пользователя.
-   * `action` по умолчанию `read`; `write` нужен инструменту, который только
-   * пишет в чат и не показывает его сообщения.
+   * Resolves a chat by link, username, or ID and checks user scopes.
+   * `action` defaults to `read`; `write` is for tools that only
+   * write to a chat without displaying its messages.
    */
   openChat(ref: string, accountId: string, action?: ScopeAction): Promise<{ parsed: ParsedRef; chat: EntityRecord }>;
 }
@@ -47,22 +47,22 @@ export type ToolShape = Record<string, z.ZodTypeAny>;
 export interface ToolDef<S extends ToolShape = ToolShape> {
   name: string;
   toolset: string;
-  /** Инструмент доступен при любом составе наборов: состояние шлюза агент видит всегда. */
+  /** Always available regardless of toolset selection, so agents can inspect gateway status. */
   always?: boolean;
   title: string;
   description: string;
   input: S;
-  /** Инструмент ничего не меняет в Telegram. */
+  /** Whether the tool leaves Telegram state unchanged. */
   readOnly: boolean;
   handler(args: { [K in keyof S]: z.infer<S[K]> }, context: ToolContext): Promise<ToolOutput>;
 }
 
-/** Помогает TypeScript вывести типы аргументов из схемы. */
+/** Helps TypeScript infer argument types from the schema. */
 export function defineTool<S extends ToolShape>(def: ToolDef<S>): ToolDef<S> {
   return def;
 }
 
-/** Текст ошибки для агента: код, объяснение и, если есть, когда повторить. */
+/** Agent error text: code, explanation, and retry timing when available. */
 export function formatToolError(err: GatewayError): string {
   const lines = [`Error: ${err.code}`, err.message];
   if (err.retryAfter !== undefined) lines.push(`retry_after: ${err.retryAfter}`);
@@ -70,7 +70,7 @@ export function formatToolError(err: GatewayError): string {
   return lines.join('\n');
 }
 
-/** Любая ошибка -> GatewayError. Ошибки самого шлюза (баги) не выдаются за ошибки Telegram. */
+/** Converts errors to GatewayError without disguising gateway bugs as Telegram errors. */
 export function toGatewayError(err: unknown, log: Logger, tool: string): GatewayError {
   if (isGatewayError(err)) return err;
   const looksLikeTelegram =
@@ -104,7 +104,7 @@ export function createToolContext(options: RegisterOptions): ToolContext {
   };
 }
 
-/** Регистрирует инструменты включённых наборов на сервере одного пользователя. */
+/** Registers enabled toolsets on a per-user server. */
 export function registerTools(server: McpServer, tools: ToolDef[], options: RegisterOptions): string[] {
   const context = createToolContext(options);
   const registered: string[] = [];
@@ -122,7 +122,7 @@ export function registerTools(server: McpServer, tools: ToolDef[], options: Regi
         annotations: {
           readOnlyHint: tool.readOnly,
           destructiveHint: !tool.readOnly,
-          // Telegram это внешний мир: содержимое ответов не контролируется шлюзом.
+          // Telegram is external: the gateway cannot control response contents.
           openWorldHint: true,
         },
       },

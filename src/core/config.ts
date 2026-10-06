@@ -1,8 +1,8 @@
 /**
- * Конфигурация шлюза. Всё состояние лежит в домашней папке шлюза
- * (`TG_MCP_HOME`, по умолчанию `~/.tg-mcp`): база, ключ шифрования сессий
- * и `.env`. На лабораторной машине это домашняя папка отдельного пользователя
- * macOS, агентам она недоступна (решение 17).
+ * Gateway configuration. All state is in the gateway home directory
+ * (`TG_MCP_HOME`, default `~/.tg-mcp`): database, session encryption key,
+ * and `.env`. On the lab machine this is a separate macOS user's home
+ * and is inaccessible to agents (decision 17).
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -13,18 +13,18 @@ import { GatewayError } from './errors.js';
 export interface GatewayConfig {
   home: string;
   dbPath: string;
-  /** Папка для выгрузок и картинок: её читают агенты. */
+  /** Export/image directory readable by agents. */
   filesDir: string;
   host: string;
   port: number;
   toolsets: string[];
   apiId: number | null;
   apiHash: string | null;
-  /** Дневные пределы записи, заданные владельцем. Чего здесь нет, берётся по умолчанию. */
+  /** Owner-configured daily write limits. Missing values use defaults. */
   writeLimits: WriteLimitsConfig;
 }
 
-/** Пределы записи на один аккаунт в сутки. 0 снимает предел. */
+/** Per-account daily write limits; 0 removes a limit. */
 export interface WriteLimitsConfig {
   repliesPerDay?: number;
   newDialogsPerDay?: number;
@@ -42,7 +42,7 @@ export const WRITE_LIMIT_ENV: Record<keyof WriteLimitsConfig, string> = {
 export const DEFAULT_PORT = 7777;
 export const DEFAULT_HOST = '127.0.0.1';
 export const KNOWN_TOOLSETS = ['core', 'discover', 'analytics', 'index', 'write'] as const;
-/** Наборы, которых больше нет. В старом .env они не должны ронять демон: просто пропускаются. */
+/** Removed toolsets are skipped so old .env files do not crash startup. */
 export const RETIRED_TOOLSETS: readonly string[] = ['automate'];
 
 function expandHome(path: string): string {
@@ -53,7 +53,7 @@ export function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolve(expandHome(env.TG_MCP_HOME?.trim() || '~/.tg-mcp'));
 }
 
-/** Подхватывает `<home>/.env`, не затирая то, что уже есть в окружении. */
+/** Load `<home>/.env` without overriding existing environment variables. */
 export function loadEnvFile(home: string, env: NodeJS.ProcessEnv = process.env): void {
   const path = join(home, '.env');
   if (!existsSync(path)) return;
@@ -77,7 +77,7 @@ export function parseToolsets(raw: string | undefined): string[] {
     .filter(s => !RETIRED_TOOLSETS.includes(s));
   const unknown = requested.filter(t => !(KNOWN_TOOLSETS as readonly string[]).includes(t));
   if (unknown.length > 0) {
-    // Опечатка в списке не должна молча сузить набор инструментов.
+    // A typo must not silently reduce the available toolsets.
     throw new GatewayError(
       'INVALID_ARGUMENT',
       `Unknown toolset(s): ${unknown.join(', ')}. Known: ${KNOWN_TOOLSETS.join(', ')}.`,
@@ -91,7 +91,7 @@ export function parseWriteLimits(env: NodeJS.ProcessEnv = process.env): WriteLim
   for (const [key, name] of Object.entries(WRITE_LIMIT_ENV) as Array<[keyof WriteLimitsConfig, string]>) {
     const raw = (env[name] ?? '').trim();
     if (raw === '') continue;
-    // Опечатка в числе не должна молча вернуть предел по умолчанию или снять его.
+    // Invalid numbers must not silently restore defaults or disable limits.
     if (!/^\d{1,6}$/.test(raw)) {
       throw new GatewayError('INVALID_ARGUMENT', `${name} must be a whole number of actions per day (0 turns the limit off), got "${raw}".`);
     }
@@ -136,8 +136,8 @@ export function requireApiCredentials(config: GatewayConfig): { apiId: number; a
 }
 
 /**
- * Секрет, которым шифруются сессии. Берётся из `TG_MCP_SESSION_KEY`, иначе из
- * файла `<home>/session.key`; при первом запуске файл создаётся с правами 0600.
+ * Session encryption secret from `TG_MCP_SESSION_KEY`, otherwise
+ * `<home>/session.key`; create it with mode 0600 on first use.
  */
 export function loadSessionSecret(home: string, env: NodeJS.ProcessEnv = process.env): string {
   const fromEnv = env.TG_MCP_SESSION_KEY?.trim();
@@ -151,7 +151,7 @@ export function loadSessionSecret(home: string, env: NodeJS.ProcessEnv = process
   }
   const secret = randomToken(32);
   try {
-    // wx: если ключ успел создать другой процесс, берём его, а не перезаписываем.
+    // wx: use a key created concurrently by another process; never overwrite it.
     writeFileSync(path, secret + '\n', { mode: 0o600, flag: 'wx' });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;

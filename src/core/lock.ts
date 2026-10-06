@@ -1,10 +1,10 @@
 /**
- * Блокировка «один процесс на сессии шлюза». Демон слушает unix-сокет в своей
- * домашней папке; пока сокет отвечает, второй процесс сессии не открывает.
+ * Enforce one process owning gateway sessions. The daemon listens on a Unix
+ * socket in its home; while it responds, no second process opens sessions.
  *
- * Почему сокет, а не PID-файл: PID-файл переживает падение процесса, а PID
- * может достаться чужому процессу. Сокет мёртвого процесса не отвечает
- * (ECONNREFUSED), и это видно сразу.
+ * A socket avoids stale PID files and PID reuse by unrelated processes.
+ * A dead process leaves a nonresponding socket
+ * (ECONNREFUSED), which can be detected immediately.
  */
 import { existsSync, unlinkSync } from 'node:fs';
 import { connect, createServer, type Server } from 'node:net';
@@ -15,7 +15,7 @@ export function lockPath(home: string): string {
   return join(home, 'daemon.sock');
 }
 
-/** Предел длины пути unix-сокета (sun_path): 104 байта на macOS, 108 на Linux, вместе с завершающим нулём. */
+/** Unix socket sun_path limits: 104 bytes on macOS, 108 on Linux, including the NUL terminator. */
 const SOCKET_PATH_MAX = process.platform === 'darwin' ? 103 : 107;
 
 function pathFits(path: string): boolean {
@@ -29,10 +29,10 @@ function pathTooLong(home: string): GatewayError {
   );
 }
 
-/** Отвечает ли живой процесс на сокете блокировки. */
+/** Whether a live process answers on the lock socket. */
 export function isLockHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
   const path = lockPath(home);
-  // По такому пути сокет создать нельзя, значит и владельца у него быть не может.
+  // The path cannot host a socket, so it cannot have an owner.
   if (!pathFits(path)) return Promise.resolve(false);
   if (!existsSync(path)) return Promise.resolve(false);
   return new Promise<boolean>(resolve => {
@@ -53,8 +53,8 @@ export interface DaemonLock {
 }
 
 /**
- * Берёт блокировку или бросает ошибку, если её держит живой процесс.
- * Сокет от умершего процесса удаляется и занимается заново.
+ * Acquire the lock or throw if a live process owns it.
+ * Remove and rebind a dead process's socket.
  */
 export async function acquireLock(home: string): Promise<DaemonLock> {
   const path = lockPath(home);
@@ -68,26 +68,26 @@ export async function acquireLock(home: string): Promise<DaemonLock> {
   const listen = (): Promise<Server> =>
     new Promise<Server>((resolve, reject) => {
       const server: Server = createServer(socket => {
-        // Сокет нужен только как признак жизни: соединение сразу закрывается.
+        // The socket only proves liveness; close connections immediately.
         socket.end();
       });
       server.once('error', reject);
       server.listen(path, () => resolve(server));
     });
 
-  // Сначала пробуем занять сокет: bind атомарен, два процесса одновременно его не получат.
-  // Проверка «жив ли владелец» нужна, только когда файл сокета уже есть.
+  // Try binding first: bind is atomic, so two processes cannot own the socket.
+  // Probe the owner only if the socket path is already occupied.
   let server: Server;
   try {
     server = await listen();
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
     if (await isLockHeld(home)) throw held();
-    // Сокет остался от умершего процесса.
+    // The socket belonged to a dead process.
     try {
       unlinkSync(path);
     } catch {
-      // файл уже убрал другой процесс
+      // Another process may already have removed it.
     }
     try {
       server = await listen();
@@ -108,7 +108,7 @@ export async function acquireLock(home: string): Promise<DaemonLock> {
           try {
             if (existsSync(path)) unlinkSync(path);
           } catch {
-            // файл уже убран
+            // Already removed.
           }
           resolve();
         });

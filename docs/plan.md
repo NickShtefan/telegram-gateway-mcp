@@ -1,90 +1,92 @@
-# Состояние и план
+# Status and plan
 
-Обновлено 6 октября 2026. Статус живых проверок ниже записан по результатам 2 октября; при подготовке плана открытия они не повторялись.
+Updated October 6, 2026. Live verification below reflects October 2 results; it was not repeated while preparing the open-source plan.
 
-## Что сделано
+## Implemented
 
-Шлюз написан и установлен на лабораторной машине: демон под пользователем `tgmcp`, аккаунт `agent` подключён, шлюз добавлен в Claude Code (профиль владельца) и в Hermes под именем `tg-gateway`. Включены все пять наборов инструментов.
+The gateway is implemented and installed on the lab machine: the daemon runs as `tgmcp`, the `agent` account is connected, and the gateway is registered in Claude Code (the owner's profile) and Hermes as `tg-gateway`. All five toolsets are enabled.
 
-| Возможность | Состояние |
+| Capability | Status |
 |---|---|
-| Чтение: карточка чата, лента, сообщение с контекстом, комментарии, темы форумов | работает на живом Telegram |
-| Поиск: по каналам и группам аккаунта, по хэштегу, внутри чата | работает на живом Telegram |
-| Список чатов аккаунта | работает на живом Telegram |
-| Выгрузка в файл, скачивание фото | работает на живом Telegram |
-| Поиск каналов, похожие каналы, источники репостов | работает на живом Telegram |
-| Статистика канала | работает на живом Telegram |
-| Локальный индекс и поиск по нему | работает на живом Telegram |
-| Режим личных чатов (`scope private`), настраиваемые дневные пределы | проверено на живом шлюзе |
-| Личная переписка: у каждого сообщения виден автор, собеседник или сам аккаунт (`this account`) | работает на живом Telegram |
-| Запись: сообщение человеку (`tg_send`, затем `tg_confirm`) | работает на живом Telegram |
-| Запись: ответ под постом (`tg_reply`, затем `tg_confirm`) | работает на живом Telegram: комментарий дошёл, повторное подтверждение второй раз не отправляет |
-| Запись: реакция (`tg_react`, затем `tg_confirm`) | работает на живом Telegram: реакция поставлена и заменила прежнюю реакцию аккаунта |
-| Запись: вступление (`tg_join`, затем `tg_confirm`) | работает на живом Telegram: аккаунт вступил в публичную супергруппу |
-| Запись: ответ от имени канала (`send_as`), снятие реакции | проверено до предпросмотра; подтверждённое действие на живом Telegram не выполнялось |
-| Поиск по открытым личным чатам (`where=private`) | работает на живом Telegram |
-| Ответ на конкретный комментарий или сообщение (`reply_to`), превью ссылок (`link_preview`) | проверено до предпросмотра; подтверждённое действие на живом Telegram не выполнялось |
-| Темы форума: список, фильтр по названию, чтение и поиск внутри темы | работает на живом Telegram |
-| Скрытые ссылки и inline-кнопки в полном режиме: место, подпись, вид, адрес кнопки-ссылки | работает на живом Telegram |
-| Нажатие inline-кнопки (`tg_press_button`, затем `tg_confirm`) | на живом Telegram проверены отказы (кнопка-ссылка, нет такой кнопки, нет клавиатуры); подтверждённое нажатие callback-кнопки не выполнялось |
+| Reading: chat details, history, a message with context, comments, forum topics | Works on live Telegram |
+| Search: account channels and groups, hashtags, within a chat | Works on live Telegram |
+| Account dialog list | Works on live Telegram |
+| File export, photo download | Works on live Telegram |
+| Channel discovery, similar channels, forwarding sources | Works on live Telegram |
+| Channel statistics | Works on live Telegram |
+| Local indexing and search | Works on live Telegram |
+| Private-chat mode (`scope private`), configurable daily limits | Verified on the live gateway |
+| Private conversations: each message identifies its author, the peer or `this account` | Works on live Telegram |
+| Write: direct message (`tg_send`, then `tg_confirm`) | Works on live Telegram |
+| Write: reply under a post (`tg_reply`, then `tg_confirm`) | Works on live Telegram: the comment arrived; repeated confirmation does not send it twice |
+| Write: reaction (`tg_react`, then `tg_confirm`) | Works on live Telegram: the reaction was added and replaced the account's previous reaction |
+| Write: join (`tg_join`, then `tg_confirm`) | Works on live Telegram: the account joined a public supergroup |
+| Write: send as a channel (`send_as`), remove a reaction | Verified through preview; no confirmed live action |
+| Search accessible private chats (`where=private`) | Works on live Telegram |
+| Reply to a specific comment or message (`reply_to`), link preview (`link_preview`) | Verified through preview; no confirmed live action |
+| Forum topics: listing, title filtering, reading, searching within a topic | Works on live Telegram |
+| Hidden links and inline buttons in full mode: position, label, type, link-button URL | Works on live Telegram |
+| Inline button press (`tg_press_button`, then `tg_confirm`) | Live rejection cases verified (URL button, missing button, missing keyboard); no confirmed live callback press |
 
-2 октября 2026 прогнаны подряд на живом шлюзе 22 инструмента (все, кроме появившегося позже `tg_press_button`): чтение целиком, запись до предпросмотра с отменой каждого запроса.
+On October 2, 2026, 22 tools were exercised sequentially on the live gateway (all except the later `tg_press_button`): full reading, writes through preview with cancellation of every request.
 
-Клиенты: в Claude Code шлюз подключён, владелец работает через него; сценарий «сводка по каналу» целиком прошёл в Codex; в Hermes проверены подключение и вызов инструмента; в OpenCode проверено подключение, для полного прогона на лабораторной машине нет провайдера моделей.
+Clients: the owner uses the gateway in Claude Code; the channel-summary scenario completed in Codex; Hermes connection and a tool call were verified; OpenCode connection was verified, but the lab machine lacks a model provider for the full scenario.
 
-Тесты: 694 теста на двойнике Telegram. Ошибки Telegram в тестах создаются настоящими классами библиотеки, каждый запрос сериализуется ими же.
+Tests: 694 tests using a Telegram double. Telegram errors use the library's real classes, and every request is serialized by those classes.
 
-## Что осталось владельцу
+## Remaining owner tasks
 
-1. В настройках Claude Code разрешить сервер `tg-gateway` целиком, а `tg_confirm` оставить с вопросом ([connect.md](connect.md)).
-2. Настроить расписание у агента, если нужно следить за каналом или вести переписку ([connect.md](connect.md)).
+1. In Claude Code, allow the whole `tg-gateway` server while keeping `tg_confirm` subject to a question ([connect.md](connect.md)).
+2. Configure a schedule in the agent if channel monitoring or conversation management is needed ([connect.md](connect.md)).
 
-## Подготовка к открытию исходников
+## Open-source preparation
 
-Создан [план перехода к open-source](open-source-plan.md): решения владельца, очистка текущего репозитория и аудит снимка, лицензия, общая установка, CI и приём вклада, проверка кандидата и публикация. План составлен по текущему коду и настройкам GitHub 5 октября 2026, затем обновлён по решениям владельца; build, typecheck и все 694 теста прошли на Node 24.10.0 при исходном обзоре.
+The [open-source plan](open-source-plan.md) covers owner decisions, private-repository cleanup and snapshot audit, licensing, general installation, CI and contributions, candidate verification, and publication. It was prepared from the code and GitHub settings on October 5, 2026, then updated with owner decisions. Build, typecheck, and all 694 tests passed on Node 24.10.0 during the initial review.
 
-5 октября владелец выбрал новый репозиторий из чистого снимка без старой истории, с дальнейшей разработкой в нём (решение 33), и лицензию MIT (решение 34). 6 октября согласована строка `Copyright (c) 2026 NickShtefan`. Текущий репозиторий остаётся приватным. Следующие вопросы прорабатываются по одному. Аудит снимка, оформление лицензии и публикация пока не выполнены.
+On October 5 the owner chose a clean new repository without private history, with further development there (decision 33), and MIT (decision 34). On October 6 the copyright line was agreed: `Copyright (c) 2026 NickShtefan`. The current repository remains private. Open questions are handled one at a time. Snapshot audit, license files, and publication remain incomplete.
 
-6 октября подготовлено [исследование названия](naming-research.md): проверены столкновения в GitHub и npm, поиск в MCP Registry и рекомендации платформ. Владелец выбрал `telegram-mcp-gateway` и публичный заголовок `Unofficial Telegram MCP Gateway` (решение 35), затем npm-публикацию первого выпуска (решение 36), имя пакета `telegram-mcp-gateway` без scope (решение 37) и новый репозиторий в личном аккаунте `NickShtefan/telegram-mcp-gateway` (решение 38).
+The October 6 [naming research](naming-research.md) examined GitHub and npm collisions, MCP Registry search, and platform guidance. The owner chose `telegram-mcp-gateway` and the public title `Unofficial Telegram MCP Gateway` (decision 35), npm publication in the first release (decision 36), the unscoped package name `telegram-mcp-gateway` (decision 37), and the personal repository `NickShtefan/telegram-mcp-gateway` (decision 38).
 
-Порядок подготовки согласован в решении 39: сначала очистка кода и файлов текущего репозитория, затем аудит и перенос подготовленного снимка в новый приватный репозиторий, CI и проверки выпуска, открытие доступа и npm-публикация. Очистка пока не выполнялась.
+Decision 39 sets the order: clean the current private repository, audit and transfer a vetted snapshot into a new private repository, complete CI and release checks, then open access and publish to npm. General obsolete-code and artifact cleanup has not started.
 
-Наличие npm-аккаунта не подтверждено: 6 октября владелец сообщил, что его, вероятно, нет. До публикации запланированы проверка или создание аккаунта, подтверждение email и настройка аутентификации публикации. Логин ещё не выбран; это задача подготовки выпуска.
+An npm account is not confirmed: on October 6 the owner said they probably do not have one. Account verification or registration, email verification, and publishing authentication are planned before publication. The username is not selected yet; this is a release-preparation task.
 
-Для первого выпуска согласованы macOS и Linux, Windows включена как желательная платформа (решение 40). Для Windows выбран нативный запуск и испытания на компьютере владельца (решение 41); WSL остаётся вариантом запуска Linux-версии. Проверены официальные сведения о Windows у клиентов и прочитаны зависимые от системы части шлюза: установщик macOS, блокировка Unix-сокетом, проверки прав файлов. Адаптация и проверки на Linux и Windows пока не выполнялись.
+macOS and Linux are selected for the first release, with Windows as a desired platform (decision 40). Windows must run natively and be tested on the owner's Windows computer (decision 41); WSL runs the Linux version. Official client documentation and platform-dependent gateway code have been inspected: the macOS installer, Unix-socket lock, and file-permission checks. Linux and Windows adaptation and testing have not been performed.
 
-Политика Node согласована в решении 42: рекомендовать Node 24 LTS или более новую LTS после проверки шлюза, поддерживать ветку 22 начиная с 22.13. По официальным источникам на 6 октября 2026 Node 24 является самой новой LTS; Node 26 пока Current, переход в LTS запланирован на 28 октября. Проверка всей матрицы и обновление среды относятся к подготовке выпуска. Ближайший вопрос владельца: язык публичной документации.
+Decision 42 recommends Node 24 LTS, or a newer LTS after gateway verification, and supports Node 22 from 22.13. Official sources on October 6 list Node 24 as the latest LTS; Node 26 is Current, with LTS scheduled for October 28. Full matrix verification and environment updates belong to release preparation.
 
-## Структура кода
+Decision 43 makes English the only repository language, with no Russian edition. Repository-wide translation includes documentation, agent instructions, comments, tests, examples, and scripts. Language cleanup is complete: documentation, comments, tool examples, tests, scripts, agent instructions, and .gitignore are English. All 110 tracked text files were scanned, with no remaining Cyrillic or literal em dash. Build, typecheck, all 694 tests in 21 files, installer syntax, and local documentation links passed on macOS with Node 24.10.0. Production-token comparison against the pre-translation commit found identical behavior in 62 files and only translated tool-description examples in two; SQL statements and filename character ranges remain equivalent. Unicode sanitization and accented full-text search coverage are retained. No lab deployment or live Telegram action was performed. Communication with the owner stays in Russian. The next owner question is the public repository's contribution and merge policy.
 
-Один npm-пакет `telegram-gateway-mcp` (приватный), команда `tg-mcp`.
+## Code structure
+
+One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.
 
 ```
 tg-mcp/
 ├── src/
-│   ├── core/         # пул клиентов, лимитер, страж зависаний, вход, шифрование сессий,
-│   │                 # кэш сущностей, ошибки, конфигурация, блокировка демона, общая папка
-│   ├── storage/      # порт хранилища, реализация на SQLite, миграции
-│   ├── policy/       # пользователи и доступ, скоупы чатов, пометка чужого текста, аудит
-│   ├── services/     # ссылки, резолвер, чтение, поиск, комментарии, темы, диалоги,
-│   │                 # поиск каналов, статистика, индекс, выгрузка, медиа, действия, задачи
-│   ├── writegate/    # запросы на запись, подтверждение, журнал для пределов
-│   ├── mcp/          # инструменты, каркас, форматтер, курсоры, разбор аргументов
-│   ├── transport/    # Streamable HTTP и stdio-прокладка
+│   ├── core/         # client pool, limiter, watchdog, login, session encryption,
+│   │                 # entity cache, errors, configuration, daemon lock, shared files
+│   ├── storage/      # storage port, SQLite implementation, migrations
+│   ├── policy/       # users, access, chat scopes, untrusted-text labels, audit
+│   ├── services/     # links, resolver, reads, search, comments, topics, dialogs,
+│   │                 # discovery, statistics, index, export, media, actions, tasks
+│   ├── writegate/    # write requests, confirmation, limit journal
+│   ├── mcp/          # tools, framework, formatting, cursors, argument parsing
+│   ├── transport/    # Streamable HTTP and stdio proxy
 │   ├── cli/          # serve, stdio, login, doctor, user, account, scope
-│   └── runtime.ts    # сборка ядра: хранилище, лимитер, пул, дверь в Telegram
+│   └── runtime.ts    # core assembly: storage, limiter, pool, Telegram entry point
 ├── docs/
-└── scripts/          # установщик для лабораторной машины, обновление снимка
+└── scripts/          # lab installer, snapshot updates
 ```
 
-Тесты лежат в `__tests__/` рядом с кодом; общий двойник Telegram и тестовый шлюз в `src/__tests__/helpers/`. `core` и `services` ничего не импортируют из `mcp` и `transport`.
+Tests are in adjacent `__tests__/` directories; shared Telegram doubles and the test gateway are in `src/__tests__/helpers/`. `core` and `services` do not import `mcp` or `transport`.
 
-Устройство по слоям: [architecture.md](architecture.md).
+Layered architecture: [architecture.md](architecture.md).
 
-## Идеи, которые не начаты
+## Ideas not started
 
-Все в рамках чистого MCP (решение 25). Делать только по просьбе владельца.
+All remain within pure MCP (decision 25). Implement only at the owner's request.
 
-- Статистика из кабинета админа канала (`stats.getBroadcastStats`): для своих каналов, чужим недоступна.
-- Чтение публичных каналов любым свободным аккаунтом пользователя, чтобы не упираться в лимиты одного.
-- Заранее сообщать о заморозке аккаунта в `tg_status` и `doctor` (сейчас шлюз узнаёт о ней только по ошибке Telegram).
+- Admin channel statistics (`stats.getBroadcastStats`): available for owned channels, not other people's channels.
+- Reading public channels through any available account belonging to the user, rather than exhausting one account's limits.
+- Reporting account freezes proactively in `tg_status` and `doctor` (currently the gateway discovers them only through Telegram errors).

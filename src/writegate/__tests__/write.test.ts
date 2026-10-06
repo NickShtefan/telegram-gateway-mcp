@@ -39,24 +39,24 @@ afterEach(async () => {
 });
 
 const approvals = () => gw.services.writeGate.approvals;
-/** Ошибка Telegram в том виде, в каком её отдаёт шлюз после teleproto. */
+/** Telegram error as the gateway receives it after teleproto. */
 const telegramError = (message: string, method: string): GatewayError =>
   classifyError(RPCMessageToError({ errorCode: 400, errorMessage: message } as never, { className: method } as never));
 const store = () => gw.services.writeGate.store;
 const approvalIdOf = (text: string): string => text.match(/approval_id (ap_[0-9a-f]+)/)![1]!;
-/** Агент владельца подтверждает запрос после его «да». */
+/** The owner's agent confirms only after the owner agrees. */
 const confirm = (approvalId: string, extra: Record<string, unknown> = {}) => nick.call('tg_confirm', { approval_id: approvalId, ...extra });
 
-describe('запись в два шага: предпросмотр и tg_confirm', () => {
-  it('tg_reply ничего не отправляет, пока агент владельца не подтвердил', async () => {
-    const reply = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'Согласен, рынок перегрет.' });
+describe('two-step writes: preview and tg_confirm', () => {
+  it('tg_reply sends nothing before confirmation by the owner agent', async () => {
+    const reply = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'Agreed, the market is overheated.' });
     expect(reply.isError).toBe(false);
     const approvalId = approvalIdOf(reply.text);
-    // предпросмотр: что, от кого и точный текст
+    // Preview: action, account, and exact outgoing text.
     expect(reply.text).toContain('Nothing has been done in Telegram yet');
     expect(reply.text).toContain('Reply in the comments of post https://t.me/stonksnws/10');
     expect(reply.text).toContain('Account: agent (@agent_acc)');
-    expect(reply.text).toContain('Text, exactly as it will be sent:\nСогласен, рынок перегрет.');
+    expect(reply.text).toContain('Text, exactly as it will be sent:\nAgreed, the market is overheated.');
     expect(reply.text).toContain(`Only after the owner clearly agrees, call tg_confirm with approval_id ${approvalId}`);
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
 
@@ -64,7 +64,7 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(done.isError).toBe(false);
     expect(done.text).toBe('Done: Sent: https://t.me/stonksnws/10?comment=7777');
     const sent = gw.tg.last('messages.SendMessage').request;
-    expect(sent.message).toBe('Согласен, рынок перегрет.');
+    expect(sent.message).toBe('Agreed, the market is overheated.');
     expect(sent.peer.className).toBe('InputPeerChannel');
     expect(String(sent.peer.channelId)).toBe(String(GROUP));
     expect(sent.replyTo.replyToMsgId).toBe(3010);
@@ -72,8 +72,8 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(store().getApproval(approvalId)).toMatchObject({ state: 'executed', result: { summary: 'Sent: https://t.me/stonksnws/10?comment=7777', message_id: 7777 } });
   });
 
-  it('чужой запрос подтвердить нельзя: для другого пользователя его не существует', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text);
+  it('another user cannot confirm an invisible request', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text);
     const partner = await gw.client('partner', ALL);
     const denied = await partner.call('tg_confirm', { approval_id: approvalId });
     expect(denied.isError).toBe(true);
@@ -84,8 +84,8 @@ describe('запись в два шага: предпросмотр и tg_confir
     await partner.close();
   });
 
-  it('повторное подтверждение отправляет один раз', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text);
+  it('repeated confirmation sends once', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text);
     await Promise.all([confirm(approvalId), confirm(approvalId)]);
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(1);
     const again = await confirm(approvalId);
@@ -95,45 +95,45 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(1);
   });
 
-  it('владелец меняет формулировку при подтверждении', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'черновик агента' })).text);
-    const done = await confirm(approvalId, { text: 'мой текст' });
+  it('the owner replaces wording at confirmation', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'agent draft' })).text);
+    const done = await confirm(approvalId, { text: 'my text' });
     expect(done.isError).toBe(false);
-    expect(gw.tg.last('messages.SendMessage').request.message).toBe('мой текст');
-    expect(store().getApproval(approvalId)!.payload).toMatchObject({ text: 'мой текст', editedByOwner: true });
+    expect(gw.tg.last('messages.SendMessage').request.message).toBe('my text');
+    expect(store().getApproval(approvalId)!.payload).toMatchObject({ text: 'my text', editedByOwner: true });
 
-    // у вступления в чат текста нет: заменить нечего
+    // Join actions have no message text to replace.
     gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: 900 }, chats: [channel({ left: true })] }));
     const joinId = approvalIdOf((await nick.call('tg_join', { ref: '@stonksnws' })).text);
-    const wrong = await confirm(joinId, { text: 'привет' });
+    const wrong = await confirm(joinId, { text: 'hello' });
     expect(wrong.isError).toBe(true);
     expect(wrong.text).toContain('no text to replace');
     expect(store().getApproval(joinId)!.state).toBe('pending');
   });
 
-  it('reject закрывает запрос без отправки, после него можно подготовить новый', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text);
+  it('reject cancels without sending and permits another draft', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text);
     const rejected = await confirm(approvalId, { action: 'reject' });
     expect(rejected.text).toContain(`Request ${approvalId} is rejected. Nothing was done in Telegram.`);
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
     expect(store().getApproval(approvalId)!.state).toBe('rejected');
-    expect((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'другой текст' })).isError).toBe(false);
+    expect((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'different text' })).isError).toBe(false);
   });
 
-  it('под одним постом можно ответить несколько раз; второй черновик не создаётся, пока первый ждёт решения', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'первый' })).text);
-    const again = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'второй' });
+  it('allows repeated post replies but prevents a second pending draft', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'first' })).text);
+    const again = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'second' });
     expect(again.isError).toBe(true);
     expect(again.text).toContain(`A reply to this post is already prepared (${approvalId})`);
 
     expect((await confirm(approvalId)).isError).toBe(false);
-    // первый ответ отправлен: теперь тот же пользователь может ответить ещё раз
-    const second = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'второй' });
+    // After sending the first reply, the same user may reply again.
+    const second = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'second' });
     expect(second.isError, second.text).toBe(false);
     expect((await confirm(approvalIdOf(second.text))).isError).toBe(false);
-    // и второй пользователь общего аккаунта тоже
+    // So may another user of the shared account.
     const partner = await gw.client('partner', ALL);
-    const third = await partner.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'я тоже', account: 'agent' });
+    const third = await partner.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'me too', account: 'agent' });
     expect(third.isError, third.text).toBe(false);
     await partner.close();
 
@@ -141,26 +141,26 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(store().writesSince('agent', 'reply', 0)).toBe(2);
   });
 
-  it('ссылка на комментарий: ответ уходит на этот комментарий и остаётся в ветке поста', async () => {
+  it('comment URLs target that comment and stay in the post thread', async () => {
     gw.tg.on('channels.GetMessages', (req: { id: Array<{ id: number }> }) => ({
       messages: req.id.map(({ id }) =>
         id === 45
-          ? rawMessage(GROUP, 45, { message: 'комментарий к посту 10', replyTo: { replyToMsgId: 3010 } })
-          : rawMessage(GROUP, id, { message: 'сообщение из другой ветки', replyTo: { replyToMsgId: 999, replyToTopId: 777 } }),
+          ? rawMessage(GROUP, 45, { message: 'comment on post 10', replyTo: { replyToMsgId: 3010 } })
+          : rawMessage(GROUP, id, { message: 'message from another thread', replyTo: { replyToMsgId: 999, replyToTopId: 777 } }),
       ),
       chats: [group()],
       users: [],
     }));
-    const drafted = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=45', text: 'согласен' });
+    const drafted = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=45', text: 'agreed' });
     expect(drafted.isError, drafted.text).toBe(false);
     expect(drafted.text).toContain('Reply to comment #45 under post #10 of @stonksnws is prepared.');
     expect(drafted.text).toContain('Reply to comment https://t.me/stonksnws/10?comment=45 under post https://t.me/stonksnws/10');
 
-    // ответ на сам пост в это же время готовится отдельно: это другое действие
-    const toPost = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'общий комментарий' });
+    // A post reply is a distinct action and can be prepared separately.
+    const toPost = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'general comment' });
     expect(toPost.isError, toPost.text).toBe(false);
-    // а второй черновик на тот же комментарий нет
-    const dup = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=45', text: 'ещё раз' });
+    // A second draft for the same comment remains forbidden.
+    const dup = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=45', text: 'again' });
     expect(dup.text).toContain('A reply to this comment is already prepared');
 
     expect((await confirm(approvalIdOf(drafted.text))).text).toBe('Done: Sent: https://t.me/stonksnws/10?comment=7777');
@@ -175,19 +175,19 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(root.replyTo.replyToMsgId).toBe(3010);
     expect(root.replyTo.topMsgId).toBeUndefined();
 
-    // комментарий из чужой ветки не принимается
-    const foreign = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=46', text: 'мимо' });
+    // Reject comments belonging to another thread.
+    const foreign = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10?comment=46', text: 'off topic' });
     expect(foreign.isError).toBe(true);
     expect(foreign.text).toContain('Comment 46 not found under post 10');
   });
 
-  it('превью ссылок выключено, пока его не попросили явно', async () => {
-    const plain = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'смотри https://example.com' });
+  it('disables link previews unless explicitly requested', async () => {
+    const plain = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'see https://example.com' });
     expect(plain.text).not.toContain('Link preview');
     await confirm(approvalIdOf(plain.text));
     expect(gw.tg.last('messages.SendMessage').request.noWebpage).toBe(true);
 
-    const withPreview = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'смотри https://example.com', link_preview: true });
+    const withPreview = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'see https://example.com', link_preview: true });
     expect(withPreview.text).toContain('Link preview: on');
     await confirm(approvalIdOf(withPreview.text));
     expect(gw.tg.last('messages.SendMessage').request.noWebpage).toBeUndefined();
@@ -199,73 +199,73 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(gw.tg.last('messages.SendMessage').request.noWebpage).toBeUndefined();
   });
 
-  it('tg_send reply_to: ответ на конкретное сообщение чата', async () => {
+  it('tg_send reply_to targets a specific chat message', async () => {
     gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerChannel', channelId: BigInt(GROUP) }, chats: [group()], users: [] }));
     gw.tg.on('channels.GetMessages', (req: { id: Array<{ id: number }> }) => ({
-      messages: req.id.filter(({ id }) => id === 120).map(({ id }) => rawMessage(GROUP, id, { message: 'кто продаёт велосипед?' })),
+      messages: req.id.filter(({ id }) => id === 120).map(({ id }) => rawMessage(GROUP, id, { message: 'who is selling a bicycle?' })),
       chats: [group()],
       users: [],
     }));
-    const drafted = await nick.call('tg_send', { chat: '@stonks_chat', text: 'я продаю', reply_to: 120 });
+    const drafted = await nick.call('tg_send', { chat: '@stonks_chat', text: 'I am selling one', reply_to: 120 });
     expect(drafted.isError, drafted.text).toBe(false);
     expect(drafted.text).toContain('in reply to message https://t.me/c/600/120');
-    // текст сообщения, на которое отвечаем, в предпросмотр не попадает: это чужой текст
-    expect(drafted.text).not.toContain('велосипед');
+    // The target message is untrusted and must not enter the action preview.
+    expect(drafted.text).not.toContain('bicycle');
     await confirm(approvalIdOf(drafted.text));
     const sent = gw.tg.last('messages.SendMessage').request;
     expect(sent.replyTo.replyToMsgId).toBe(120);
     expect(() => sent.getBytes()).not.toThrow();
 
-    const missing = await nick.call('tg_send', { chat: '@stonks_chat', text: 'ау', reply_to: 999 });
+    const missing = await nick.call('tg_send', { chat: '@stonks_chat', text: 'anyone there?', reply_to: 999 });
     expect(missing.isError).toBe(true);
     expect(missing.text).toContain('Error: MESSAGE_NOT_FOUND');
     expect(missing.text).toContain('Message 999 not found');
 
-    // без reply_to сообщение уходит как обычное
-    const plain = await nick.call('tg_send', { chat: '@stonks_chat', text: 'привет всем' });
+    // Without reply_to, send an ordinary message.
+    const plain = await nick.call('tg_send', { chat: '@stonks_chat', text: 'hello everyone' });
     await confirm(approvalIdOf(plain.text));
     expect(gw.tg.last('messages.SendMessage').request.replyTo).toBeUndefined();
   });
 
-  it('дневной предел ответов действует и под одним постом', async () => {
+  it('enforces daily reply limits even under the same post', async () => {
     for (let i = 1; i <= 20; i++) store().recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'reply', chatKey: '-1000000000500', postId: 10, sentMessageId: i });
-    const over = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'двадцать первый' });
+    const over = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'twenty-first' });
     expect(over.isError).toBe(true);
     expect(over.text).toContain('Daily limit of 20 replies');
   });
 
-  it('ошибка Telegram при отправке приходит агенту с кодом', async () => {
+  it('returns Telegram send errors with their codes', async () => {
     gw.tg.on('messages.SendMessage', () => {
       throw new GatewayError('WRITE_FORBIDDEN', 'The account is not allowed to write here.');
     });
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text);
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text);
     const failed = await confirm(approvalId);
     expect(failed.isError).toBe(true);
     expect(failed.text).toContain('Error: WRITE_FORBIDDEN');
     expect(failed.text).toContain('The action was confirmed but failed: The account is not allowed to write here.');
-    // неудачная отправка в журнал не попадает и дневной предел не тратит
+    // Failed sends do not enter the journal or consume daily limits.
     expect(store().writesSince('agent', 'reply', 0)).toBe(0);
   });
 
-  it('подтверждается ровно то, что уйдёт: длинный и «невидимый» текст', async () => {
-    const tooLong = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'я'.repeat(4097) });
+  it('confirms exactly the outgoing text, including length and invisible-character handling', async () => {
+    const tooLong = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'x'.repeat(4097) });
     expect(tooLong.isError).toBe(true);
     expect(tooLong.text).toContain('the Telegram limit is 4096');
 
-    const hidden = 'Хорошая новость' + String.fromCharCode(0x202e) + String.fromCharCode(0x200b) + ' спрятанный хвост';
+    const hidden = 'Good news' + String.fromCharCode(0x202e) + String.fromCharCode(0x200b) + ' hidden tail';
     const reply = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: hidden });
-    expect(reply.text).toContain('Text, exactly as it will be sent:\nХорошая новость спрятанный хвост');
+    expect(reply.text).toContain('Text, exactly as it will be sent:\nGood news hidden tail');
     await confirm(approvalIdOf(reply.text));
-    // в Telegram ушло то же, что было в предпросмотре
-    expect(gw.tg.last('messages.SendMessage').request.message).toBe('Хорошая новость спрятанный хвост');
-    // и замена текста чистится так же
-    const second = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'черновик' });
-    await confirm(approvalIdOf(second.text), { text: 'свой' + String.fromCharCode(0x200b) + ' текст' });
-    expect(gw.tg.last('messages.SendMessage').request.message).toBe('свой текст');
+    // Telegram receives the same text shown in the preview.
+    expect(gw.tg.last('messages.SendMessage').request.message).toBe('Good news hidden tail');
+    // Replacement text is sanitized too.
+    const second = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/11', text: 'draft' });
+    await confirm(approvalIdOf(second.text), { text: 'own' + String.fromCharCode(0x200b) + ' text' });
+    expect(gw.tg.last('messages.SendMessage').request.message).toBe('own text');
   });
 
-  it('подтверждение после срока не выполняет действие, даже если уборка ещё не прошла', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text);
+  it('rejects expired confirmation even before housekeeping runs', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text);
     clock += APPROVAL_TTL_MS + 1000;
     const late = await confirm(approvalId);
     expect(late.isError).toBe(true);
@@ -274,34 +274,34 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(store().getApproval(approvalId)!.state).toBe('expired');
   });
 
-  it('запрос истекает без решения', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text);
+  it('expires undecided requests', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text);
     clock += APPROVAL_TTL_MS + 1000;
     expect(approvals().sweep()).toBe(1);
     expect((await confirm(approvalId)).text).toContain('already expired');
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
   });
 
-  it('запрос живёт полчаса; истёкший не мешает подготовить действие заново; старые решённые удаляются', async () => {
-    const first = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'первый' });
+  it('expires after half an hour, permits new drafts, and removes old resolved requests', async () => {
+    const first = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'first' });
     expect(first.text).toContain('The request expires at 2026-10-01 12:30 UTC');
     clock += APPROVAL_TTL_MS + 1000;
-    // уборка ещё не прошла, но истёкший запрос уже не считается ожидающим
-    const second = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'второй' });
+    // Housekeeping has not run yet, but an expired request is no longer pending.
+    const second = await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'second' });
     expect(second.isError, second.text).toBe(false);
     expect((await confirm(approvalIdOf(second.text))).text).toContain('Done: Sent');
-    expect(gw.tg.last('messages.SendMessage').request.message).toBe('второй');
+    expect(gw.tg.last('messages.SendMessage').request.message).toBe('second');
 
     const count = () => Number((gw.storage.db.prepare('SELECT COUNT(*) AS n FROM approvals').get() as { n: number }).n);
     expect(count()).toBe(2);
     clock += 8 * 24 * 60 * 60 * 1000;
     approvals().sweep();
-    // тексты старых запросов в базе не копятся
+    // Old request texts do not accumulate in the database.
     expect(count()).toBe(0);
     expect((await nick.call('tg_confirm', {})).isError).toBe(true);
   });
 
-  it('tg_confirm есть только в наборе записи', async () => {
+  it('tg_confirm is available only in the write toolset', async () => {
     const names = async (toolsets: string[]) => {
       const client = await gw.client('nick', toolsets);
       const list = (await client.tools()).map(t => t.name);
@@ -314,7 +314,7 @@ describe('запись в два шага: предпросмотр и tg_confir
     expect(nick.instructions()).toContain('call tg_confirm only after the owner clearly agrees');
   });
 
-  it('tg_join готовит вступление и не трогает чат, где аккаунт уже состоит', async () => {
+  it('tg_join prepares a join and skips chats the account already belongs to', async () => {
     gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: 900 }, chats: [channel({ left: true })] }));
     gw.tg.on('channels.JoinChannel', () => ({ className: 'Updates', updates: [] }));
     const reply = await nick.call('tg_join', { ref: '@stonksnws' });
@@ -330,7 +330,7 @@ describe('запись в два шага: предпросмотр и tg_confir
   });
 });
 
-describe('реакции', () => {
+describe('reactions', () => {
   const HEART = String.fromCharCode(0x2764);
   const SELECTOR = String.fromCharCode(0xfe0f);
 
@@ -338,12 +338,12 @@ describe('реакции', () => {
     gw.tg.on('messages.SendReaction', () => ({ className: 'Updates', updates: [] }));
   });
 
-  it('реакция ставится только после подтверждения', async () => {
+  it('adds a reaction only after confirmation', async () => {
     const reply = await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', emoji: '👍' });
     expect(reply.isError, reply.text).toBe(false);
     expect(reply.text).toContain('Set the reaction 👍 on https://t.me/stonksnws/10');
     expect(reply.text).toContain('Account: agent (@agent_acc)');
-    // у реакции нет текста: замену формулировки предпросмотр не предлагает
+    // Reactions have no text: the preview does not offer wording changes.
     expect(reply.text).not.toContain('other wording');
     expect(reply.text).toContain('To cancel: tg_confirm with action=reject.');
     expect(gw.tg.callsOf('messages.SendReaction')).toHaveLength(0);
@@ -356,12 +356,12 @@ describe('реакции', () => {
     expect(call.request.msgId).toBe(10);
     expect(call.request.reaction.map((r: { emoticon: string }) => r.emoticon)).toEqual(['👍']);
     expect(call.options).toMatchObject({ write: true });
-    // запрос собран настоящими классами teleproto и сериализуется
+    // The request uses real teleproto classes and can be serialized.
     expect(() => call.request.getBytes()).not.toThrow();
     expect(store().writesSince('agent', 'react', 0)).toBe(1);
   });
 
-  it('сердце с клавиатуры приводится к виду, который принимает Telegram', async () => {
+  it('normalizes a keyboard heart to the form accepted by Telegram', async () => {
     const reply = await nick.call('tg_react', { chat: '@stonksnws', id: 10, emoji: HEART + SELECTOR });
     await confirm(approvalIdOf(reply.text));
     const sent = gw.tg.last('messages.SendReaction').request.reaction[0].emoticon as string;
@@ -369,8 +369,8 @@ describe('реакции', () => {
     expect(sent).toHaveLength(1);
   });
 
-  it('реакцией может быть только один эмодзи', async () => {
-    for (const emoji of ['ok', '', '👍 привет', '+1']) {
+  it('accepts only a single emoji as a reaction', async () => {
+    for (const emoji of ['ok', '', '👍 hello', '+1']) {
       const reply = await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', emoji });
       expect(reply.isError, emoji).toBe(true);
       expect(reply.text).toContain('A reaction is one emoji');
@@ -379,7 +379,7 @@ describe('реакции', () => {
     expect(store().listApprovals('nick', ['pending'])).toHaveLength(0);
   });
 
-  it('remove снимает реакцию и не тратит дневной лимит; второй запрос на то же сообщение не создаётся', async () => {
+  it('remove clears a reaction without using the daily cap and does not duplicate pending requests', async () => {
     const reply = await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', remove: true });
     expect(reply.text).toContain("Remove the account's reaction from https://t.me/stonksnws/10");
     expect((await nick.call('tg_react', { link: 'https://t.me/stonksnws/10', emoji: '🔥' })).text).toContain('already prepared');
@@ -388,7 +388,7 @@ describe('реакции', () => {
     expect(store().writesSince('agent', 'react', 0)).toBe(0);
   });
 
-  it('дневной лимит реакций и отказ Telegram по набору разрешённых эмодзи', async () => {
+  it('enforces the daily reaction cap and handles disallowed emoji', async () => {
     gw.tg.on('messages.SendReaction', () => {
       throw telegramError('REACTION_INVALID', 'messages.SendReaction');
     });
@@ -406,13 +406,13 @@ describe('реакции', () => {
 
 });
 
-describe('исходы записи, которые Telegram сообщает ошибкой', () => {
+describe('write outcomes reported by Telegram as errors', () => {
   const join = async () => {
     gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: 900 }, chats: [channel({ left: true })] }));
     return confirm(approvalIdOf((await nick.call('tg_join', { ref: '@stonksnws' })).text));
   };
 
-  it('заявка на вступление это исход, а не сбой: она идёт в дневной лимит', async () => {
+  it('counts a join request as an outcome toward the daily cap', async () => {
     gw.tg.on('channels.JoinChannel', () => {
       throw telegramError('INVITE_REQUEST_SENT', 'channels.JoinChannel');
     });
@@ -422,7 +422,7 @@ describe('исходы записи, которые Telegram сообщает о
     expect(store().writesSince('agent', 'join', 0)).toBe(1);
   });
 
-  it('аккаунт уже в чате: запрос закрывается успехом, лимит не тратится', async () => {
+  it('closes an already-joined request successfully without using the cap', async () => {
     gw.tg.on('channels.JoinChannel', () => {
       throw telegramError('USER_ALREADY_PARTICIPANT', 'channels.JoinChannel');
     });
@@ -430,7 +430,7 @@ describe('исходы записи, которые Telegram сообщает о
     expect(store().writesSince('agent', 'join', 0)).toBe(0);
   });
 
-  it('настоящая ошибка вступления остаётся ошибкой', async () => {
+  it('preserves actual join failures as errors', async () => {
     gw.tg.on('channels.JoinChannel', () => {
       throw telegramError('CHANNELS_TOO_MUCH', 'channels.JoinChannel');
     });
@@ -440,29 +440,29 @@ describe('исходы записи, которые Telegram сообщает о
     expect(store().writesSince('agent', 'join', 0)).toBe(0);
   });
 
-  it('RANDOM_ID_DUPLICATE значит, что сообщение уже доставлено: второй раз оно не уходит', async () => {
+  it('RANDOM_ID_DUPLICATE means already delivered and does not resend', async () => {
     gw.tg.on('messages.SendMessage', () => {
       throw telegramError('RANDOM_ID_DUPLICATE', 'messages.SendMessage');
     });
-    const done = await confirm(approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text));
+    const done = await confirm(approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text));
     expect(done.text).toBe('Done: Sent');
-    // доставленное сообщение записано в журнал один раз
+    // The delivered message is recorded once.
     expect(store().writesSince('agent', 'reply', 0)).toBe(1);
   });
 
-  it('сбой журнала после отправки не превращает отправленное в ошибку', async () => {
+  it('does not turn a delivered message into a failure when journaling fails', async () => {
     const record = vi.spyOn(store(), 'recordWrite').mockImplementationOnce(() => {
       throw new Error('database is locked');
     });
-    const done = await confirm(approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text));
+    const done = await confirm(approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text));
     expect(record).toHaveBeenCalledTimes(1);
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(1);
     expect(done.text).toBe('Done: Sent: https://t.me/stonksnws/10?comment=7777');
   });
 
-  it('действие, прерванное рестартом, не повторяется: исход неизвестен', async () => {
-    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'текст' })).text);
-    // шлюз упал между «подтверждено» и «Telegram ответил»
+  it('does not retry actions interrupted by a restart with unknown outcomes', async () => {
+    const approvalId = approvalIdOf((await nick.call('tg_reply', { link: 'https://t.me/stonksnws/10', text: 'text' })).text);
+    // The gateway crashed between confirmation and the Telegram response.
     expect(store().transitionApproval(approvalId, ['pending'], 'executing')).toBe(true);
 
     expect(approvals().recover()).toBe(1);
@@ -475,44 +475,44 @@ describe('исходы записи, которые Telegram сообщает о
   });
 });
 
-describe('мелочи', () => {
-  it('id отправленного сообщения достаётся из разных форм ответа', () => {
+describe('response details', () => {
+  it('extracts sent message IDs from different response shapes', () => {
     expect(sentMessageId({ className: 'UpdateShortSentMessage', id: 5 })).toBe(5);
     expect(sentMessageId({ updates: [{ className: 'UpdateNewChannelMessage', message: { id: 9 } }] })).toBe(9);
     expect(sentMessageId({ updates: [{ className: 'UpdateNewChannelMessage', message: { id: 9 } }, { className: 'UpdateMessageID', id: 8 }] })).toBe(8);
     expect(sentMessageId(null)).toBeNull();
   });
 
-  it('tg_send: сообщение в открытый чат в два шага, личка закрыта по умолчанию', async () => {
+  it('tg_send uses two steps for open chats and blocks private chats by default', async () => {
     gw.tg.on('contacts.ResolveUsername', (req: { username: string }) =>
       req.username === 'friend'
-        ? { peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Друг' })] }
+        ? { peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Friend' })] }
         : { peer: { className: 'PeerChannel', channelId: BigInt(GROUP) }, chats: [group()], users: [] },
     );
-    const closed = await nick.call('tg_send', { chat: '@friend', text: 'привет' });
+    const closed = await nick.call('tg_send', { chat: '@friend', text: 'hello' });
     expect(closed.isError).toBe(true);
     expect(closed.text).toContain('Private chats are closed by default');
 
     gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'friend', effect: 'allow' });
-    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'привет' });
+    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'hello' });
     expect(drafted.text).toContain('Message to @friend is prepared');
     expect(drafted.text).toContain('Nothing has been done in Telegram yet');
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
     expect((await confirm(approvalIdOf(drafted.text))).text).toBe('Done: Sent');
     const sent = gw.tg.last('messages.SendMessage').request;
-    expect(sent.message).toBe('привет');
+    expect(sent.message).toBe('hello');
     expect(sent.peer.className).toBe('InputPeerUser');
 
-    const toGroup = await nick.call('tg_send', { chat: '@stonks_chat', text: 'сообщение в группу' });
-    expect((await confirm(approvalIdOf(toGroup.text), { text: 'другой текст' })).isError).toBe(false);
-    expect(gw.tg.last('messages.SendMessage').request.message).toBe('другой текст');
+    const toGroup = await nick.call('tg_send', { chat: '@stonks_chat', text: 'group message' });
+    expect((await confirm(approvalIdOf(toGroup.text), { text: 'different text' })).isError).toBe(false);
+    expect(gw.tg.last('messages.SendMessage').request.message).toBe('different text');
   });
 
-  it('режим send: агент пишет любому человеку, но переписку не читает', async () => {
-    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Друг' })] }));
+  it('send mode allows messaging any person without reading conversations', async () => {
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Friend' })] }));
     writePrivateMode(gw.storage, 'nick', 'agent', 'send');
 
-    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'привет' });
+    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'hello' });
     expect(drafted.isError, drafted.text).toBe(false);
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
     expect((await confirm(approvalIdOf(drafted.text))).text).toBe('Done: Sent');
@@ -529,25 +529,25 @@ describe('мелочи', () => {
     expect(card.text).toContain('private chat is open for sending only');
     expect((await nick.call('tg_status')).text).toContain('private chats: send only');
 
-    // у второго пользователя того же аккаунта режим свой
+    // Another user of the same account has an independent mode.
     const partner = await gw.client('partner', ALL);
-    expect((await partner.call('tg_send', { chat: '@friend', text: 'привет', account: 'agent' })).text).toContain('Private chats are closed by default');
+    expect((await partner.call('tg_send', { chat: '@friend', text: 'hello', account: 'agent' })).text).toContain('Private chats are closed by default');
     await partner.close();
   });
 
-  it('режим open: переписку можно и читать', async () => {
-    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Друг' })] }));
+  it('open mode also allows reading conversations', async () => {
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Friend' })] }));
     gw.tg.on('messages.GetHistory', () => ({ messages: [], chats: [], users: [] }));
     writePrivateMode(gw.storage, 'nick', 'agent', 'open');
     expect((await nick.call('tg_read_history', { chat: '@friend' })).isError).toBe(false);
-    expect((await nick.call('tg_send', { chat: '@friend', text: 'привет' })).isError).toBe(false);
+    expect((await nick.call('tg_send', { chat: '@friend', text: 'hello' })).isError).toBe(false);
     expect((await nick.call('tg_status')).text).toContain('private chats: open (read and send)');
   });
 
-  it('режим закрыт после предпросмотра: подтверждение ничего не отправляет', async () => {
-    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Друг' })] }));
+  it('sends nothing if private chats are closed after the preview', async () => {
+    gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'friend', firstName: 'Friend' })] }));
     writePrivateMode(gw.storage, 'nick', 'agent', 'send');
-    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'привет' });
+    const drafted = await nick.call('tg_send', { chat: '@friend', text: 'hello' });
     writePrivateMode(gw.storage, 'nick', 'agent', 'closed');
     const failed = await confirm(approvalIdOf(drafted.text));
     expect(failed.isError).toBe(true);
@@ -555,7 +555,7 @@ describe('мелочи', () => {
     expect(gw.tg.callsOf('messages.SendMessage')).toHaveLength(0);
   });
 
-  it('дневные пределы берутся из настроек, 0 снимает предел', () => {
+  it('reads daily caps from configuration, with 0 meaning unlimited', () => {
     const person = (id: number) => ({ accountId: 'agent', peerKey: String(id), kind: 'user' as const, accessHash: '1', username: null, title: null, meta: {}, updatedAt: 0 });
     const record = (g: TestGateway, n: number): void => {
       for (let i = 1; i <= n; i++) g.services.writeGate.store.recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'send', chatKey: String(i), postId: null, sentMessageId: i });
@@ -564,7 +564,7 @@ describe('мелочи', () => {
     const tight = makeTestGateway({ now: () => clock, writeLimits: { newDialogsPerDay: 2 } });
     record(tight, 2);
     expect(() => tight.services.writeGate.write.assertCanMessage('agent', person(99))).toThrow(/Daily limit of 2 new dialogs.*TG_MCP_LIMIT_NEW_DIALOGS/);
-    // остальные пределы остались по умолчанию
+    // Other caps retain their defaults.
     expect(tight.services.writeGate.write.dailyLimits).toEqual({ repliesPerDay: 20, newDialogsPerDay: 2, joinsPerDay: 5, reactionsPerDay: 30 });
     tight.cleanup();
 
@@ -576,20 +576,20 @@ describe('мелочи', () => {
     free.cleanup();
   });
 
-  it('tg_status показывает дневные пределы записи', async () => {
+  it('tg_status reports daily write caps', async () => {
     const text = (await nick.call('tg_status')).text;
     expect(text).toContain('Write limits per account per day: replies 20, new dialogs 5, joins 5, reactions 30.');
     expect(text).toContain('private chats: closed, except the ones the owner opened');
   });
 
-  it('личные сообщения незнакомым: лимит новых диалогов в день', () => {
+  it('caps new private conversations per day', () => {
     const write = gw.services.writeGate.write;
     const person = (id: number) => ({ accountId: 'agent', peerKey: String(id), kind: 'user' as const, accessHash: '1', username: null, title: null, meta: {}, updatedAt: 0 });
     for (let i = 1; i <= 5; i++) store().recordWrite({ ts: clock, userId: 'nick', accountId: 'agent', kind: 'send', chatKey: String(i), postId: null, sentMessageId: i });
     expect(() => write.assertCanMessage('agent', person(99))).toThrow(/Daily limit of 5 new dialogs/);
-    // продолжить начатый диалог можно
+    // An existing conversation can continue.
     expect(() => write.assertCanMessage('agent', person(3))).not.toThrow();
-    // на другом аккаунте лимит свой
+    // Another account has an independent cap.
     expect(() => write.assertCanMessage('nick', person(99))).not.toThrow();
   });
 });

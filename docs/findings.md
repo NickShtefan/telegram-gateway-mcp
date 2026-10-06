@@ -1,52 +1,52 @@
-# Проверенные факты
+# Verified findings
 
-Что выяснено по ходу работы над шлюзом: про Telegram, библиотеку, клиентов и лабораторную машину. Каждое утверждение проверено кодом или запуском, если не сказано иначе.
+Historical findings from gateway development about Telegram, libraries, clients, and the lab machine. Unless qualified, each was checked through code or execution at the time of recording. This translation does not repeat those live checks.
 
-## Telegram и MTProto
+## Telegram and MTProto
 
-- **Глобальный поиск** (`messages.SearchGlobal`) ищет только по чатам, где состоит аккаунт, а не по всему Telegram. Признак «есть следующая страница» это поле `nextRate`, а не полнота страницы.
-- **Поиск по хэштегу** (`channels.SearchPosts`) работает по публичным постам каналов и принимает только хэштег.
-- **Чтение без вступления.** Лента, поиск внутри чата и комментарии публичных каналов и групп читаются без вступления.
-- **Комментарии** живут в связанной группе обсуждений. Корень ветки это копия поста (`fwdFrom.savedFromMsgId` равен id поста), её отдаёт `messages.GetDiscussionMessage`; ветка читается через `messages.GetReplies` страницами по 100. `MSG_ID_INVALID` значит, что комментарии выключены или пост удалён; `CHANNEL_PRIVATE`: аккаунт не состоит в закрытой группе обсуждений.
-- **Темы форумов:** `messages.GetForumTopics` (в слое 229 метод переехал из `channels`), тема читается через `messages.GetReplies` с id темы.
-- **accessHash привязан к сессии.** Кэш чатов нельзя делить между аккаунтами.
-- **`messages.GetMessages`** ищет по id во всех личных чатах и группах аккаунта сразу, поэтому шлюз отбрасывает сообщения не из запрошенного чата.
-- **Похожие каналы** (`channels.GetChannelRecommendations`) без Premium отдаются не все; ответ сообщает, сколько их всего.
-- **Долгий FLOOD_WAIT** относится к методу, а не к аккаунту. Типичный случай: `contacts.ResolveUsername` на сутки, остальные методы при этом работают.
-- **Исходы вступления приходят ошибками:** `INVITE_REQUEST_SENT` (заявка отправлена) и `USER_ALREADY_PARTICIPANT` это не сбои.
-- **`RANDOM_ID_DUPLICATE`** при отправке значит, что сообщение уже доставлено прошлой попыткой.
-- **Реакция с клавиатуры** приходит с селектором варианта (сердце), а Telegram принимает её без него.
-- **Скрытая ссылка под невидимым символом.** Сервисы отложенных постов (controller.bot) прячут адрес картинки под символом нулевой ширины в начале текста, чтобы Telegram показал превью. У такой ссылки нет видимых слов.
-- **Inline-кнопки** в слое 229: клавиатура `ReplyInlineMarkup`, ряды `KeyboardInlineButtonRow`, кнопка `KeyboardInlineButton` с подписью и видом в поле `type` (`InlineButtonTypeCallback`, `InlineButtonTypeUrl` и другие). Разбор клавиатуры проверен на живых постах каналов. Callback-кнопка нажимается вызовом `messages.GetBotCallbackAnswer` с байтами из кнопки; на живом Telegram нажатие не проверялось.
-- **`send_as`** у `messages.SendMessage` есть; ответ от имени канала в группе обсуждений вживую не проверялся.
-- **`PEER_FLOOD`:** порог для сообщений незнакомым людям Telegram не публикует (не проверено, какой он на практике).
+- **Global search:** messages.SearchGlobal searches account chats, not all Telegram. nextRate, rather than page fullness, indicates continuation.
+- **Hashtag search:** channels.SearchPosts searches public channel posts and accepts a hashtag.
+- **Reading without joining:** public channel/group history, chat search, and comments are readable without membership.
+- **Comments:** live in the linked discussion group. messages.GetDiscussionMessage returns a post copy whose fwdFrom.savedFromMsgId identifies the source post. GetReplies reads pages of 100. MSG_ID_INVALID indicates disabled comments/deleted posts; CHANNEL_PRIVATE indicates inaccessible private discussion groups.
+- **Forum topics:** messages.GetForumTopics moved from channels in layer 229; GetReplies reads topics by ID.
+- **accessHash:** session-specific; never share caches between accounts.
+- **messages.GetMessages:** searches IDs across private chats and basic groups; filter results to the requested chat.
+- **Recommendations:** non-Premium accounts receive only some channels, with a reported total count.
+- **Long FLOOD_WAIT:** method-specific, such as contacts.ResolveUsername for a day, while other methods work.
+- **Join outcomes reported as errors:** INVITE_REQUEST_SENT and USER_ALREADY_PARTICIPANT are successful outcomes.
+- **RANDOM_ID_DUPLICATE:** a previous send attempt already delivered the message.
+- **Keyboard reactions:** hearts include a variation selector that Telegram's reaction form omits.
+- **Invisible hidden links:** scheduled-post services such as controller.bot put image URLs under a zero-width character to produce previews, leaving no visible link label.
+- **Inline buttons, layer 229:** ReplyInlineMarkup contains KeyboardInlineButtonRow and KeyboardInlineButton; its type holds InlineButtonTypeCallback, InlineButtonTypeUrl, and other kinds. Parsing was verified on live channel posts. Pressing uses messages.GetBotCallbackAnswer with message-supplied bytes; a live press has not been verified.
+- **send_as:** messages.SendMessage supports it; live channel-identity discussion replies remain unverified.
+- **PEER_FLOOD:** Telegram does not publish stranger-message thresholds; their practical values were not tested.
 
-## Библиотека teleproto 1.229.1
+## teleproto 1.229.1
 
-- Это форк GramJS, слой протокола 229. Формат строки сессии совпадает с GramJS.
-- Ошибки несут код сервера в `errorMessage` (`FLOOD_WAIT_42`), число секунд в `seconds`, а в `message` пишут фразу без кода.
-- Логгер по умолчанию пишет через `console.log`, то есть в stdout. Шлюз подменяет его своим.
-- Клиент закрывается через `destroy()`, а не `disconnect()`: иначе остаётся работать цикл обновлений.
-- Цикл обновлений иногда бросает `TIMEOUT` мимо всех обработчиков: демон глушит именно эту ошибку.
-- `client.start()` для незарегистрированного номера молча создаёт аккаунт, если не перехватить запрос имени. Шлюз вход прерывает.
-- `thumb` у `downloadMedia` принимает букву типа размера (`m` это около 320 px).
-- При сбое сети вызов может не вернуться никогда (унаследовано от GramJS): нужен дедлайн снаружи.
+- GramJS fork using protocol layer 229 with a compatible session-string format.
+- Server error codes appear in errorMessage (such as FLOOD_WAIT_42), timing in seconds, and human-readable wording in message.
+- Default logging uses console.log/stdout; the gateway replaces it.
+- Close with destroy(), not disconnect(), to stop the update loop.
+- The update loop may emit TIMEOUT outside handlers; the daemon suppresses that specific error.
+- client.start() can register an unknown phone number automatically unless name requests are intercepted; the gateway aborts.
+- downloadMedia thumb accepts a size letter; m is around 320 px.
+- Network failures may hang indefinitely, inherited from GramJS; enforce an external deadline.
 
-## Node и SQLite
+## Node and SQLite
 
-- `node:sqlite` работает на Node 22.13 и новее, FTS5 с токенизатором `trigram` есть на обеих машинах. Удаление столбца (`ALTER TABLE ... DROP COLUMN`) поддерживается.
-- Путь unix-сокета ограничен 104 байтами на macOS. Блокировка демона это сокет `daemon.sock` в папке шлюза, поэтому слишком длинный `TG_MCP_HOME` даёт ошибку с подсказкой выбрать путь короче. Боевой путь `/var/tgmcp/.tg-mcp` короткий.
-- `setTimeout` с задержкой больше 2^31-1 мс срабатывает сразу: длинные паузы обрезаются.
+- node:sqlite works from Node 22.13. FTS5 trigram is available on both machines; ALTER TABLE DROP COLUMN is supported.
+- macOS Unix socket paths have a 104-byte limit. daemon.sock resides under the gateway directory; long TG_MCP_HOME paths fail with a shorter-path hint. `/var/tgmcp/.tg-mcp` is short enough.
+- setTimeout delays over 2^31-1 ms fire immediately; cap long waits.
 
-## Клиенты
+## Clients
 
-- **Claude Code:** `claude mcp add --scope user --transport http <имя> <url> --header "Authorization: Bearer ..."` записывает сервер в профиль. Запуск без интерфейса принимает `--mcp-config` с `"type": "http"` и `headers`. По SSH `claude -p` не авторизуется: OAuth-токен лежит в связке ключей, недоступной SSH-сессии.
-- **Codex:** `[mcp_servers.<имя>]` с `url`, `bearer_token_env_var`, `tool_timeout_sec`; то же через `codex exec -c ...`. Подключается по Streamable HTTP.
-- **OpenCode:** `"type": "remote"` с `url` и `headers` (подстановка `{env:...}`) подключается. `opencode run` на лабораторной машине не работает: провайдеров моделей нет.
-- **Hermes:** `hermes mcp add <имя> --url ... --auth header` кладёт токен в `~/.hermes/.env` под именем, построенным из имени сервера, и ссылку на него в `config.yaml`.
+- **Claude Code:** `claude mcp add --scope user --transport http <name> <url> --header "Authorization: Bearer ..."` saves the server in the user profile. Headless execution accepts --mcp-config with type http and headers. Lab SSH claude -p cannot authenticate because its OAuth token resides in an inaccessible keychain.
+- **Codex:** mcp_servers entries use url, bearer_token_env_var, and tool_timeout_sec; codex exec -c accepts the same settings. Streamable HTTP works.
+- **OpenCode:** remote servers use type remote, url, and headers with `{env:...}` substitutions. Lab opencode run has no model provider configured.
+- **Hermes:** `hermes mcp add <name> --url ... --auth header` stores the token in ~/.hermes/.env under a server-derived name and references it from config.yaml.
 
-## Лабораторная машина
+## Lab machine
 
-- `nick@macbook-pro-lab.local`: macOS 15.7, Intel x86_64, Node 22.22. Установлены `claude`, `codex`, `opencode`, `hermes`, `gh`.
-- Claude Code владельца общается с ним через официальный Telegram-плагин (Bot API). К шлюзу это не относится: плагин носит имя сервера `telegram`, поэтому шлюз подключён как `tg-gateway`.
-- Homebrew и `/usr/local/bin/node` принадлежат `nick`. Демон исполняет свою копию Node из `/opt/telegram-gateway-mcp/node`.
+- nick@macbook-pro-lab.local: macOS 15.7, Intel x86_64, Node 22.22. Installed clients: claude, codex, opencode, hermes, gh.
+- The owner's Claude Code talks through its official Telegram plugin (Bot API), separately from this gateway. That plugin uses server name telegram, so this gateway is connected as tg-gateway.
+- Homebrew and /usr/local/bin/node belong to nick. The daemon uses its own Node under /opt/telegram-gateway-mcp/node.

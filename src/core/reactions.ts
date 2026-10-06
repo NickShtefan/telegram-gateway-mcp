@@ -1,9 +1,9 @@
 /**
- * Нормализация реакций. Ключ реакции: обычный эмодзи это сам эмодзи,
- * кастомный `custom:<id>`, платная `paid`.
+ * Reaction normalization: standard emoji keys are the emoji itself,
+ * custom emoji use `custom:<id>`, paid reactions use `paid`.
  */
 
-/** Api.ReactionEmoji, Api.ReactionCustomEmoji или Api.ReactionPaid. */
+/** Api.ReactionEmoji, Api.ReactionCustomEmoji, or Api.ReactionPaid. */
 interface ReactionLike {
   className?: string;
   emoticon?: string;
@@ -30,7 +30,7 @@ interface MessageReactionsLike {
   results?: Array<{ reaction?: unknown; count?: unknown } | null | undefined>;
 }
 
-/** `message.reactions` из teleproto -> список счётчиков, по убыванию. */
+/** teleproto `message.reactions` -> counters in descending order. */
 export function normalizeReactions(messageReactions: unknown): ReactionCount[] {
   const mr = messageReactions as MessageReactionsLike | null | undefined;
   if (!mr || !Array.isArray(mr.results) || mr.results.length === 0) return [];

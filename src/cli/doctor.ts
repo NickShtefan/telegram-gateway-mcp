@@ -1,7 +1,7 @@
 /**
- * `tg-mcp doctor`: проверка установки. Без `--connect` ничего не открывает в
- * Telegram. С `--connect` подключает аккаунты, но только если демон не запущен:
- * второй процесс на тех же сессиях недопустим.
+ * `tg-mcp doctor`: installation checks. Without `--connect`, opens nothing
+ * in Telegram. With it, connects accounts only when the daemon is stopped:
+ * a second process on the same sessions is forbidden.
  */
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -125,10 +125,10 @@ export async function collectChecks(options: DoctorOptions): Promise<Check[]> {
         clientFactory: options.factory,
         sessionSecret: loadSessionSecret(config.home),
         log: createLogger('doctor'),
-        // Проверка не должна ронять процесс: зависание покажем как ошибку.
+        // Report hangs as errors without terminating the checking process.
         exit: () => undefined,
       });
-      // Пока идёт проверка, сессии заняты: демон не должен стартовать параллельно.
+      // Hold ownership while checking; the daemon must not start concurrently.
       const lock = await acquireLock(config.home);
       try {
         for (const a of accounts.filter(x => x.hasSession)) {

@@ -9,7 +9,7 @@ const username = (name: string, rest: Omit<ParsedRef, 'chat'> = {}): ParsedRef =
 const peer = (key: string, rest: Omit<ParsedRef, 'chat'> = {}): ParsedRef => ({ chat: { type: 'peer', peerKey: key }, ...rest });
 const invite = (hash: string): ParsedRef => ({ chat: { type: 'invite', hash } });
 
-/** Проверяет, что разбор падает именно с INVALID_ARGUMENT, и возвращает текст ошибки. */
+/** Verifies INVALID_ARGUMENT and returns the error message. */
 function rejectMessage(input: string): string {
   try {
     parseRef(input);
@@ -31,34 +31,34 @@ describe('isValidUsername', () => {
     ['a'.repeat(32)],
     ['some_bot'],
     ['x123'],
-  ])('принимает %s', value => {
+  ])('accepts %s', value => {
     expect(isValidUsername(value)).toBe(true);
   });
 
   it.each([
-    ['', 'пустая строка'],
-    ['abc', 'короче 4 символов'],
-    ['a'.repeat(33), 'длиннее 32 символов'],
-    ['1durov', 'начинается с цифры'],
-    ['_durov', 'начинается с подчёркивания'],
-    ['durov_', 'заканчивается подчёркиванием'],
-    ['@durov', 'с собакой'],
-    ['du-rov', 'дефис'],
-    ['du.rov', 'точка'],
-    ['du rov', 'пробел'],
-    ['дуров', 'не латиница'],
-    ['durov\n', 'перевод строки в конце'],
-  ])('отклоняет %j (%s)', value => {
+    ['', 'empty string'],
+    ['abc', 'shorter than 4 characters'],
+    ['a'.repeat(33), 'longer than 32 characters'],
+    ['1durov', 'starts with a digit'],
+    ['_durov', 'starts with an underscore'],
+    ['durov_', 'ends with an underscore'],
+    ['@durov', 'includes @'],
+    ['du-rov', 'hyphen'],
+    ['du.rov', 'dot'],
+    ['du rov', 'space'],
+    ['dúrov', 'non-ASCII letters'],
+    ['durov\n', 'trailing newline'],
+  ])('rejects %j (%s)', value => {
     expect(isValidUsername(value)).toBe(false);
   });
 
-  it('не падает на нестроковом значении', () => {
+  it('handles non-string values without crashing', () => {
     expect(isValidUsername(undefined as unknown as string)).toBe(false);
     expect(isValidUsername(12345 as unknown as string)).toBe(false);
   });
 });
 
-describe('parseRef: username и числовые id', () => {
+describe('parseRef: usernames and numeric IDs', () => {
   it.each<[string, ParsedRef]>([
     ['@durov', username('durov')],
     ['durov', username('durov')],
@@ -67,7 +67,7 @@ describe('parseRef: username и числовые id', () => {
     ['@Durov_Channel', username('Durov_Channel')],
     ['DuRoV', username('DuRoV')],
     ['@abcd', username('abcd')],
-    // Зарезервированные слова запрещены только как первый сегмент пути ссылки.
+    // Reserved words are forbidden only as the first link path segment.
     ['@share', username('share')],
   ])('username: %j', (input, expected) => {
     expect(parseRef(input)).toStrictEqual(expected);
@@ -81,23 +81,23 @@ describe('parseRef: username и числовые id', () => {
     ['1', peer('1')],
     ['0042', peer('42')],
     ['-9008199254740993', peer('-9008199254740993')],
-  ])('помеченный id: %j', (input, expected) => {
+  ])('marked ID: %j', (input, expected) => {
     expect(parseRef(input)).toStrictEqual(expected);
   });
 
-  it.each([['0'], ['-0'], ['000']])('ноль не является id: %j', input => {
+  it.each([['0'], ['-0'], ['000']])('zero is not an ID: %j', input => {
     expect(rejectMessage(input)).toMatch(/must not be zero/);
   });
 
   it.each([['@abc'], ['abc'], ['@durov_'], ['@1durov'], ['@'], ['@@durov'], ['@du-rov'], ['durov_'], ['_durov'], ['a'.repeat(33)]])(
-    'невалидный username: %j',
+    'invalid username: %j',
     input => {
       expect(rejectMessage(input)).toMatch(/username/);
     },
   );
 });
 
-describe('parseRef: публичные ссылки t.me', () => {
+describe('parseRef: public t.me links', () => {
   it.each<[string, ParsedRef]>([
     ['t.me/durov', username('durov')],
     ['https://t.me/durov', username('durov')],
@@ -113,7 +113,7 @@ describe('parseRef: публичные ссылки t.me', () => {
     ['https://t.me//durov//', username('durov')],
     ['https://t.me:443/durov', username('durov')],
     ['https://t.me/durov#fragment', username('durov')],
-  ])('чат: %j', (input, expected) => {
+  ])('chat: %j', (input, expected) => {
     expect(parseRef(input)).toStrictEqual(expected);
   });
 
@@ -133,7 +133,7 @@ describe('parseRef: публичные ссылки t.me', () => {
     ['https://t.me/durov/123?comment=45#anchor', username('durov', { messageId: 123, commentId: 45 })],
     ['https://t.me/durov/2147483647', username('durov', { messageId: 2147483647 })],
     ['https://t.me/durov/0123', username('durov', { messageId: 123 })],
-  ])('сообщение: %j', (input, expected) => {
+  ])('message: %j', (input, expected) => {
     expect(parseRef(input)).toStrictEqual(expected);
   });
 
@@ -142,10 +142,10 @@ describe('parseRef: публичные ссылки t.me', () => {
     ['https://t.me/forum_chat/7/123/', username('forum_chat', { topicId: 7, messageId: 123 })],
     ['https://t.me/forum_chat/7/123?single', username('forum_chat', { topicId: 7, messageId: 123 })],
     ['https://t.me/forum_chat/7/123?comment=45', username('forum_chat', { topicId: 7, messageId: 123, commentId: 45 })],
-    // Тема из пути важнее темы из запроса.
+    // A path topic takes precedence over a query topic.
     ['https://t.me/forum_chat/7/123?thread=9', username('forum_chat', { topicId: 7, messageId: 123 })],
     ['https://t.me/forum_chat?thread=7', username('forum_chat', { topicId: 7 })],
-  ])('тема форума: %j', (input, expected) => {
+  ])('forum topic: %j', (input, expected) => {
     expect(parseRef(input)).toStrictEqual(expected);
   });
 
@@ -156,7 +156,7 @@ describe('parseRef: публичные ссылки t.me', () => {
     ['https://t.me/s/durov/123?comment=45', username('durov', { messageId: 123, commentId: 45 })],
     ['https://t.me/s/durov?before=200', username('durov')],
     ['https://telegram.me/s/durov/123', username('durov', { messageId: 123 })],
-  ])('веб-превью /s/: %j', (input, expected) => {
+  ])('web preview /s/: %j', (input, expected) => {
     expect(parseRef(input)).toStrictEqual(expected);
   });
 
@@ -167,12 +167,12 @@ describe('parseRef: публичные ссылки t.me', () => {
     ['https://t.me/durov/123?foo=bar&single&baz', username('durov', { messageId: 123 })],
     ['https://t.me/durov?', username('durov')],
     ['https://t.me/durov?&&', username('durov')],
-  ])('посторонние параметры игнорируются: %j', (input, expected) => {
+  ])('ignores unrelated parameters: %j', (input, expected) => {
     expect(parseRef(input)).toStrictEqual(expected);
   });
 });
 
-describe('parseRef: приватные ссылки t.me/c', () => {
+describe('parseRef: private t.me/c links', () => {
   it.each<[string, ParsedRef]>([
     [`t.me/c/${CHANNEL_ID}/123`, peer(CHANNEL_KEY, { messageId: 123 })],
     [`https://t.me/c/${CHANNEL_ID}/123`, peer(CHANNEL_KEY, { messageId: 123 })],
@@ -198,7 +198,7 @@ describe('parseRef: приватные ссылки t.me/c', () => {
     ['https://t.me/c/durov/123'],
     [`https://t.me/c/-100${CHANNEL_ID}/123`],
     ['https://t.me/c/1.5/123'],
-  ])('неверный id канала: %j', input => {
+  ])('invalid channel ID: %j', input => {
     expect(rejectMessage(input)).toMatch(/bare channel id/);
   });
 
@@ -212,12 +212,12 @@ describe('parseRef: приватные ссылки t.me/c', () => {
     [`https://t.me/c/${CHANNEL_ID}/123?thread=0`],
     [`https://t.me/c/${CHANNEL_ID}/123?comment=x`],
     [`https://t.me/c/${CHANNEL_ID}?comment=45`],
-  ])('неверные id сообщения, темы или комментария: %j', input => {
+  ])('invalid message, topic, or comment IDs: %j', input => {
     rejectMessage(input);
   });
 });
 
-describe('parseRef: инвайты', () => {
+describe('parseRef: invites', () => {
   it.each<[string, ParsedRef]>([
     ['t.me/+AbCdEf123', invite('AbCdEf123')],
     ['https://t.me/+AbCdEf123', invite('AbCdEf123')],
@@ -251,7 +251,7 @@ describe('parseRef: инвайты', () => {
     ['https://t.me/+AbCdEf123/123', /after the invite hash/],
     ['https://t.me/joinchat/AbCdEf123/123', /after the invite hash/],
     ['https://t.me/+79991234567', /phone number/],
-  ])('отклоняет %j', (input, pattern) => {
+  ])('rejects %j', (input, pattern) => {
     expect(rejectMessage(input)).toMatch(pattern);
   });
 });
@@ -294,12 +294,12 @@ describe('parseRef: deep links tg://', () => {
     ['tg://msg?text=hello', /unsupported tg:\/\/ link/],
     ['tg://addstickers?set=abc', /unsupported tg:\/\/ link/],
     ['tg://', /unsupported tg:\/\/ link/],
-  ])('отклоняет %j', (input, pattern) => {
+  ])('rejects %j', (input, pattern) => {
     expect(rejectMessage(input)).toMatch(pattern);
   });
 });
 
-describe('parseRef: отказы', () => {
+describe('parseRef: rejected inputs', () => {
   it.each([
     ['joinchat'],
     ['addstickers'],
@@ -318,11 +318,11 @@ describe('parseRef: отказы', () => {
     ['giftcode'],
     ['m'],
     ['s'],
-  ])('зарезервированный сегмент t.me/%s', segment => {
+  ])('reserved t.me/%s segment', segment => {
     rejectMessage(`https://t.me/${segment}`);
     rejectMessage(`https://t.me/${segment}/`);
     rejectMessage(`https://t.me/s/${segment}`);
-    // t.me/joinchat/HASH и t.me/s/USERNAME: рабочие формы, они проверены выше.
+    // t.me/joinchat/HASH and t.me/s/USERNAME are valid forms tested above.
     if (segment !== 'joinchat' && segment !== 's') rejectMessage(`https://t.me/${segment}/durov`);
   });
 
@@ -334,7 +334,7 @@ describe('parseRef: отказы', () => {
     ['https://t.me/s/c/1782171896/123', /special Telegram link/],
     ['https://t.me/s', /no username/],
     ['https://t.me/s/', /no username/],
-  ])('служебная ссылка: %j', (input, pattern) => {
+  ])('service link: %j', (input, pattern) => {
     expect(rejectMessage(input)).toMatch(pattern);
   });
 
@@ -357,7 +357,7 @@ describe('parseRef: отказы', () => {
     ['https://t.me/durov/123?thread=-7', /thread \(topic id\) must be a positive integer/],
     ['https://t.me/durov?comment=45', /without a post id/],
     ['https://t.me/some_bot/appname', /message id must be a positive integer/],
-  ])('неверные id: %j', (input, pattern) => {
+  ])('invalid IDs: %j', (input, pattern) => {
     expect(rejectMessage(input)).toMatch(pattern);
   });
 
@@ -372,7 +372,7 @@ describe('parseRef: отказы', () => {
     ['https://t.me/', /no chat/],
     ['t.me', /no chat/],
     ['https://t.me/?start=1', /no chat/],
-  ])('неверный чат в ссылке: %j', (input, pattern) => {
+  ])('invalid chat in a link: %j', (input, pattern) => {
     expect(rejectMessage(input)).toMatch(pattern);
   });
 
@@ -389,7 +389,7 @@ describe('parseRef: отказы', () => {
     ['   ', /empty/],
     ['\n\t', /empty/],
     ['hello world', /not a username, a numeric chat id or a Telegram link/],
-    ['Дуров', /not a username, a numeric chat id or a Telegram link/],
+    ['Dúrov', /not a username, a numeric chat id or a Telegram link/],
     ['+79991234567', /not a username, a numeric chat id or a Telegram link/],
     ['12.5', /not a Telegram host|not a username/],
     ['1e5', /username/],
@@ -398,11 +398,11 @@ describe('parseRef: отказы', () => {
     ['/durov/123', /not a username, a numeric chat id or a Telegram link/],
     ['durov/123', /not a username, a numeric chat id or a Telegram link/],
     ['?comment=5', /not a username, a numeric chat id or a Telegram link/],
-  ])('мусор и чужие хосты: %j', (input, pattern) => {
+  ])('garbage and unrelated hosts: %j', (input, pattern) => {
     expect(rejectMessage(input)).toMatch(pattern);
   });
 
-  it('в тексте ошибки перечислены принимаемые формы', () => {
+  it('lists accepted forms in the error message', () => {
     const message = rejectMessage('hello world');
     expect(message).toContain('Accepted forms');
     expect(message).toContain('@username');
@@ -411,12 +411,12 @@ describe('parseRef: отказы', () => {
     expect(message).toContain('"hello world"');
   });
 
-  it('длинный ввод в тексте ошибки обрезается', () => {
+  it('truncates long input in error messages', () => {
     const message = rejectMessage(`https://example.com/${'x'.repeat(5000)}`);
     expect(message.length).toBeLessThan(1500);
   });
 
-  it('нестроковое значение даёт INVALID_ARGUMENT, а не TypeError', () => {
+  it('returns INVALID_ARGUMENT rather than TypeError for non-string values', () => {
     for (const value of [undefined, null, 123, {}]) {
       try {
         parseRef(value as unknown as string);
@@ -428,7 +428,7 @@ describe('parseRef: отказы', () => {
     }
   });
 
-  it('в сообщениях об ошибках нет длинного тире', () => {
+  it('uses no em dash in error messages', () => {
     const dash = String.fromCharCode(0x2014);
     for (const input of ['', 'hello world', 'https://t.me/durov/abc', 'https://example.com/x', 'tg://msg', 'https://t.me/share']) {
       expect(rejectMessage(input)).not.toContain(dash);
@@ -450,13 +450,13 @@ describe('messageLink', () => {
     [{ username: undefined, peerKey: CHANNEL_KEY, messageId: 123, topicId: 7 }, `https://t.me/c/${CHANNEL_ID}/7/123`],
     [{ peerKey: CHANNEL_KEY, messageId: 123, commentId: 45 }, `https://t.me/c/${CHANNEL_ID}/123?comment=45`],
     [{ peerKey: CHANNEL_KEY, messageId: 123, topicId: 7, commentId: 45 }, `https://t.me/c/${CHANNEL_ID}/7/123?comment=45`],
-    // id канала больше 2^53: -(10^12 + 9007199254740993).
+    // Channel ID exceeds 2^53: -(10^12 + 9007199254740993).
     [{ peerKey: '-9008199254740993', messageId: 5 }, 'https://t.me/c/9007199254740993/5'],
-    // Невалидный username не попадает в ссылку: берётся форма /c/.
+    // Invalid usernames are not used in links; fall back to /c/.
     [{ username: 'ab', peerKey: CHANNEL_KEY, messageId: 123 }, `https://t.me/c/${CHANNEL_ID}/123`],
-    // Невалидные необязательные id просто опускаются.
+    // Omit invalid optional IDs.
     [{ username: 'durov', peerKey: CHANNEL_KEY, messageId: 123, topicId: 0, commentId: -1 }, 'https://t.me/durov/123'],
-  ])('ссылка для канала или супергруппы: %j', (target, expected) => {
+  ])('channel or supergroup link: %j', (target, expected) => {
     expect(messageLink(target)).toBe(expected);
   });
 
@@ -464,7 +464,7 @@ describe('messageLink', () => {
     [{ peerKey: '777000', messageId: 123 }],
     [{ peerKey: '-4321', messageId: 123 }],
     [{ username: null, peerKey: '777000', messageId: 123 }],
-    // У личных чатов и обычных групп ссылок на сообщения нет даже при username.
+    // Private chats and basic groups have no message links, even with usernames.
     [{ username: 'some_bot', peerKey: '777000', messageId: 123 }],
     [{ username: 'durov', peerKey: '-4321', messageId: 123 }],
     [{ username: 'durov', peerKey: 'garbage', messageId: 123 }],
@@ -474,12 +474,12 @@ describe('messageLink', () => {
     [{ username: 'durov', peerKey: CHANNEL_KEY, messageId: 1.5 }],
     [{ username: 'durov', peerKey: CHANNEL_KEY, messageId: Number.NaN }],
     [{ peerKey: CHANNEL_KEY, messageId: 2147483648 }],
-  ])('null, когда ссылки нет: %j', target => {
+  ])('null when no link exists: %j', target => {
     expect(messageLink(target)).toBeNull();
   });
 });
 
-describe('круговой обход parseRef(messageLink(...))', () => {
+describe('parseRef(messageLink(...)) round trip', () => {
   it.each<[Parameters<typeof messageLink>[0], ParsedRef]>([
     [{ username: 'durov', peerKey: CHANNEL_KEY, messageId: 123 }, username('durov', { messageId: 123 })],
     [{ username: 'Durov_Channel', peerKey: CHANNEL_KEY, messageId: 2147483647 }, username('Durov_Channel', { messageId: 2147483647 })],
@@ -509,12 +509,12 @@ describe('круговой обход parseRef(messageLink(...))', () => {
     [`https://t.me/c/${CHANNEL_ID}/123`],
     [`https://t.me/c/${CHANNEL_ID}/7/123`],
     [`https://t.me/c/${CHANNEL_ID}/123?comment=45`],
-  ])('обратный обход: ссылка %s собирается заново без изменений', link => {
+  ])('round trip rebuilds link %s unchanged', link => {
     const ref = parseRef(link);
     expect(ref.messageId).toBeDefined();
     const rebuilt = messageLink({
       username: ref.chat.type === 'username' ? ref.chat.username : null,
-      // Для username настоящий id неизвестен без резолва: подставляем любой канал.
+      // Username references need resolution for actual IDs; use any channel here.
       peerKey: ref.chat.type === 'peer' ? ref.chat.peerKey : CHANNEL_KEY,
       messageId: ref.messageId!,
       topicId: ref.topicId,

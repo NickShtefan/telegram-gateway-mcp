@@ -1,110 +1,98 @@
-# Установка и обновление
+# Installation and updates
 
-Как поставить шлюз на лабораторную машину (решения 12 и 17) и как запускать его при разработке.
+Lab installation under decisions 12/17 and local development startup. This is the existing private macOS deployment procedure, not a cross-platform public installer.
 
-## Что где лежит на лабораторной машине
+## Lab layout
 
-| Путь | Что там | Кому принадлежит |
+| Path | Contents | Owner |
 |---|---|---|
-| `/opt/telegram-gateway-mcp/app` | собранный код и зависимости | root |
-| `/opt/telegram-gateway-mcp/node` | своя копия Node 22 с nodejs.org | root |
-| `/opt/telegram-gateway-mcp/install.sh` | копия установщика, запускается только отсюда | root |
-| `/opt/telegram-gateway-mcp/bin/tg-mcp` | команда для агентов: `stdio` | root |
-| `/opt/telegram-gateway-mcp/bin/tg-mcp-admin` | команда для владельца: `login`, `user`, `account`, `scope`, `doctor` | root |
-| `/var/tgmcp/.tg-mcp` | база, ключ шифрования сессий, `.env` | `tgmcp`, права 700 |
-| `/opt/telegram-gateway-mcp/files` | выгрузки и картинки, которые читают агенты | `tgmcp`, права 755 |
-| `/var/log/tg-mcp/daemon.log` | лог демона | `tgmcp` |
-| `/Library/LaunchDaemons/com.tg-mcp.gateway.plist` | запуск под launchd | root |
+| `/opt/telegram-gateway-mcp/app` | Built code and dependencies | root |
+| `/opt/telegram-gateway-mcp/node` | Separate Node 22 from nodejs.org | root |
+| `/opt/telegram-gateway-mcp/install.sh` | Installer, run only from this location | root |
+| `/opt/telegram-gateway-mcp/bin/tg-mcp` | Agent stdio command | root |
+| `/opt/telegram-gateway-mcp/bin/tg-mcp-admin` | Owner login, user, account, scope, doctor commands | root |
+| `/var/tgmcp/.tg-mcp` | Database, session encryption key, .env | tgmcp, mode 700 |
+| `/opt/telegram-gateway-mcp/files` | Agent-readable exports and images | tgmcp, mode 755 |
+| `/var/log/tg-mcp/daemon.log` | Daemon log | tgmcp |
+| `/Library/LaunchDaemons/com.tg-mcp.gateway.plist` | launchd service | root |
 
-Почему код и Node принадлежат root. Агенты работают под `nick` с доступом к shell. Homebrew на этой машине тоже принадлежит `nick`, включая `/usr/local/bin/node`. Если бы демон исполнял код или Node, которые `nick` может переписать, агент, которого увели через prompt injection, мог бы подменить их и добраться до сессий в обход решения 17. Поэтому всё, что исполняет демон, лежит в `/opt/telegram-gateway-mcp` и принадлежит root, а Node скачивается с nodejs.org с проверкой контрольной суммы.
+Agents have shell access as nick, who also owns Homebrew and `/usr/local/bin/node`. Root-owned code and a separately downloaded, checksum-verified Node prevent an agent from replacing daemon executables and bypassing session isolation.
 
-По той же причине установщик ничего не берёт из папок, куда может писать `nick`: ни клон репозитория, ни собранный там `dist`, ни `node_modules`. Root сам забирает с GitHub указанный коммит, собирает его во временной папке под `/var/root` и раскладывает результат. Что именно ставится, определяет sha коммита, который ты видишь на GitHub, а не то, что лежит на диске лабораторной машины.
+For the same reason, the installer never builds from agent-writable clones, dist, or node_modules. Root fetches the specified GitHub SHA, builds under `/var/root`, and installs the result. Select the SHA from GitHub or the main Mac, not the lab clone. The shared directory also lives under `/opt` to prevent planted symlinks in `/Users/Shared`.
 
-Общая папка для выгрузок тоже лежит внутри `/opt/telegram-gateway-mcp`: в `/Users/Shared` агент мог бы заранее положить ссылку, и демон записал бы файл не туда.
+Tradeoff: updates require sudo and owner execution.
 
-Цена этого решения: обновление требует sudo, агент сам обновить шлюз не может.
+## First installation
 
-## Первая установка
+The owner performs every sudo step. Review [lab-install.sh](../scripts/lab-install.sh) before running it as root.
 
-Всё, что требует sudo, делает владелец. Сначала прочитай [scripts/lab-install.sh](../scripts/lab-install.sh): он выполняется под root.
-
-1. Копия установщика под root. Это единственный раз, когда файл берётся из клона, поэтому перед этим шагом его и нужно прочитать:
+1. Create the root-owned directory and installer copy. This is the only step importing a file from the clone, so review it first:
 
 ```bash
 sudo install -d -o root -g wheel /opt/telegram-gateway-mcp
-```
-
-```bash
 sudo install -o root -g wheel -m 755 ~/tg-mcp-dev/scripts/lab-install.sh /opt/telegram-gateway-mcp/install.sh
 ```
 
-2. Sha коммита, который ставим. Возьми его со страницы репозитория на GitHub (или с основного Mac: `git rev-parse origin/main`), а не из клона на лабораторной машине.
+2. Select a full commit SHA from GitHub or `git rev-parse origin/main` on the main Mac.
 
-3. Установка. `API_ID` и `API_HASH` приложения Telegram установщик может взять из готового `.env` другого проекта, чтобы не переписывать их руками:
-
-```bash
-sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=<путь к .env с API_ID и API_HASH> /opt/telegram-gateway-mcp/install.sh <полный sha коммита>
-```
-
-Из файла читаются только `API_ID`, `API_HASH` и `PHONE_NUMBER`. Сам файл не исполняется, значения проверяются по формату и на экран не выводятся. Номер нужен только для подсказки: установщик напечатает готовую команду входа с ним. Без `TG_MCP_API_ENV` установщик создаст шаблон, и учётные данные нужно будет вписать руками: `sudo -u tgmcp nano /var/tgmcp/.tg-mcp/.env`, затем `sudo launchctl kickstart -k system/com.tg-mcp.gateway`.
-
-Токен GitHub нужен, пока репозиторий приватный. Он передаётся git через окружение и никуда не записывается.
-
-Скрипт создаёт пользователя `tgmcp`, ставит свою копию Node, собирает код, ставит LaunchDaemon, ждёт ответа демона и печатает дальнейшие шаги. Их три.
-
-1. Войти в аккаунт Telegram. Код и пароль 2FA вводит хозяин аккаунта; команду с номером печатает установщик:
+3. Install. Optionally import Telegram application credentials from an existing .env to avoid manual entry:
 
 ```bash
-sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin login --account agent --phone <номер>
+sudo GH_TOKEN="$(gh auth token)" TG_MCP_API_ENV=<credential-file-path> /opt/telegram-gateway-mcp/install.sh <full-commit-sha>
 ```
 
-Это новый вход, то есть отдельная сессия. Сессии этого же аккаунта в других проектах не затрагиваются, но лимиты Telegram у аккаунта общие на все сессии.
+Only API_ID, API_HASH, and PHONE_NUMBER are read. The file is not executed; formats are validated and credential values are not printed. The phone number is used for the login-command hint. Without TG_MCP_API_ENV, edit the created template with `sudo -u tgmcp nano /var/tgmcp/.tg-mcp/.env`, then run `sudo launchctl kickstart -k system/com.tg-mcp.gateway`.
 
-2. Завести пользователей шлюза и выдать им аккаунты. Токен печатается один раз, шлюз хранит только его хэш:
+GH_TOKEN is needed while the repository is private. It is passed through Git's environment and never persisted.
+
+The installer creates tgmcp, installs Node, builds code, installs the LaunchDaemon, waits for a health response, and prints these next steps:
+
+1. Log into Telegram. The account holder enters their own code and 2FA password:
+
+```bash
+sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin login --account agent --phone <phone-number>
+```
+
+This creates a new gateway session. Other projects' sessions remain separate, but Telegram account limits apply across sessions.
+
+2. Create gateway users and grant accounts. Tokens are printed once; only their hashes are stored:
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add nick --account agent
 ```
 
-3. Проверить установку:
+3. Verify:
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin doctor
 ```
 
-Перезапуск демона после входа не нужен: сессию он берёт из базы при первом вызове. Перезапускать нужно после правки `.env`.
+No restart is needed after login: the daemon loads the session on first use. Restart after .env changes. Create sessions independently on each machine; never copy them (decision 12).
 
-Сессия создаётся входом на этой машине и никуда не копируется (решение 12).
+## Writes
 
-## Запись
-
-Сразу после установки шлюз только читает (`TG_MCP_TOOLSETS=core`). Остальные наборы включаются строкой в `/var/tgmcp/.tg-mcp/.env`. Чтение без записи, со всеми возможностями:
+Initial installation enables only `TG_MCP_TOOLSETS=core`. Configure other toolsets in `/var/tgmcp/.tg-mcp/.env`. All read capabilities:
 
 ```
 TG_MCP_TOOLSETS=core,discover,analytics,index
 ```
 
-Чтобы агент мог отвечать, писать, ставить реакции и вступать в чаты, добавь `write`:
+Add write for confirmed replies, messages, reactions, joins, and button presses:
 
 ```
 TG_MCP_TOOLSETS=core,discover,analytics,index,write
 ```
 
-Одной командой, без редактора:
+To enable the read toolsets without an editor:
 
 ```bash
 sudo -u tgmcp sed -i '' 's/^TG_MCP_TOOLSETS=.*/TG_MCP_TOOLSETS=core,discover,analytics,index/' /var/tgmcp/.tg-mcp/.env
-```
-
-и перезапусти демон:
-
-```bash
 sudo launchctl kickstart -k system/com.tg-mcp.gateway
 ```
 
-### Дневные пределы записи
+### Daily write caps
 
-Шлюз считает действия каждого аккаунта за сутки (UTC) и после предела отказывает агенту с `LIMIT_REACHED`. Значения по умолчанию: 20 ответов под постами, 5 новых диалогов (сообщений людям, которым аккаунт ещё не писал), 5 вступлений, 30 реакций. Это осторожные числа шлюза, а не правила Telegram (решение 27). Поменять их можно в `/var/tgmcp/.tg-mcp/.env`, 0 снимает предел:
+Count actions per account per UTC day; exceeding a cap returns LIMIT_REACHED. Defaults: 20 post replies, 5 new conversations, 5 joins, 30 reactions. These are gateway choices, not Telegram thresholds (decision 27). Configure overrides in .env; 0 means unlimited. This example raises the new-conversation cap:
 
 ```
 TG_MCP_LIMIT_NEW_DIALOGS=20
@@ -113,80 +101,73 @@ TG_MCP_LIMIT_JOINS=5
 TG_MCP_LIMIT_REACTIONS=30
 ```
 
-Добавить или заменить одну строку без редактора:
+Replace one setting without an editor:
 
 ```bash
 sudo -u tgmcp sh -c 'f=/var/tgmcp/.tg-mcp/.env; grep -v "^TG_MCP_LIMIT_NEW_DIALOGS=" "$f" > "$f.new"; echo "TG_MCP_LIMIT_NEW_DIALOGS=20" >> "$f.new"; chmod 600 "$f.new"; mv "$f.new" "$f"'
 ```
 
-После правки перезапусти демон той же командой `kickstart`. Действующие пределы показывает `tg-mcp-admin doctor`. Число с опечаткой демон не примет и не запустится: `doctor` назовёт переменную.
+Restart with kickstart. doctor reports effective values and identifies invalid variables; malformed numbers prevent startup.
 
-Как идёт запись: агент показывает тебе предпросмотр, ты соглашаешься, он вызывает `tg_confirm` (решение 23). Если в `.env` остался снятый набор `automate`, шлюз его пропустит, а `doctor` напомнит убрать.
+The agent shows a preview, the owner consents, and the agent calls tg_confirm (decision 23). If the removed automate toolset remains configured, the gateway ignores it and doctor requests its removal.
 
-## Обновление
+## Updates
 
 ```bash
-sudo GH_TOKEN="$(gh auth token)" /opt/telegram-gateway-mcp/install.sh <полный sha нового коммита>
+sudo GH_TOKEN="$(gh auth token)" /opt/telegram-gateway-mcp/install.sh <full-new-commit-sha>
 ```
 
-Повторный запуск обновляет код и перезапускает демон. Пользователь, `.env` и сессии не трогаются. Что стоит сейчас, записано в `/opt/telegram-gateway-mcp/app/COMMIT`.
+Repeated installation updates code and restarts the daemon while preserving the user, .env, and sessions. The installed SHA is in `/opt/telegram-gateway-mcp/app/COMMIT`.
 
-- Схему базы новая версия обновляет сама при первом старте. Обратного пути нет: после обновления схемы старый коммит с этой базой работать не будет.
+- Startup applies schema migrations. There is no downgrade path: older commits cannot use a newer schema.
+- Interrupted export jobs return to the queue; a job interrupted for the third consecutive restart closes with an error.
+- Interrupted confirmed actions are never retried. Their unknown outcome is visible through tg_confirm with the same approval_id; inspect Telegram yourself.
+- If the installer changed, review its diff and refresh the root-owned copy with the first-installation command.
+- During updates, logs over 10 MB rotate to daemon.log.1 with three old files retained. Between updates, launchd keeps the file open and no rotation occurs.
 
-- Задачи выгрузки, которые выполнялись в момент перезапуска, возвращаются в очередь. Задача, которую рестарт прерывает третий раз подряд, закрывается с ошибкой.
-- Действие, которое выполнялось в момент перезапуска (подтверждение уже пришло, Telegram ещё не ответил), не повторяется: запрос закрывается с пометкой «исход неизвестен». Агент увидит это, если вызовет `tg_confirm` с тем же `approval_id`. Проверь в Telegram.
-- Если поменялся сам установщик, сначала обнови его копию командой `sudo install ...` из первой установки, перед этим прочитав изменения.
-- Лог `/var/log/tg-mcp/daemon.log` больше 10 МБ при обновлении переносится в `daemon.log.1` (хранятся три старых). Между обновлениями лог не ротируется: launchd держит файл открытым.
-
-## Второй пользователь и общий аккаунт
+## Second user and shared accounts
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add partner --account partner
-```
-
-```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin account grant agent partner
 ```
 
-Второй пользователь входит в свой личный аккаунт сам: `tg-mcp-admin login --account partner`, код придёт на его телефон.
+The second person logs into their account independently with `tg-mcp-admin login --account partner`, receiving their own code.
 
-Открыть пользователю личный чат (по умолчанию личные переписки закрыты):
+Open a specific private conversation, which is closed by default:
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin scope allow nick agent @username
 ```
 
-Разрешить писать любому человеку без чтения переписки (режим `send`), открыть личные чаты целиком (`open`) или вернуть как было (`closed`):
+Set send mode to allow messaging without reading. Alternatives: open for reading/writing all private chats, closed to restore defaults:
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin scope private nick agent send
 ```
 
-Режим задаётся отдельно для каждой пары «пользователь и аккаунт» и действует сразу, без перезапуска демона. Посмотреть текущий: та же команда без последнего слова или `scope list nick agent`.
+Modes are per user/account pair and apply immediately. Omit the final mode or use scope list nick agent to inspect the current setting.
 
-## Подключение агентов
+## Agent connections
 
-Адрес `http://127.0.0.1:7777/mcp`, токен пользователя в заголовке `Authorization: Bearer`. Конфиги клиентов: [connect.md](connect.md).
+Use `http://127.0.0.1:7777/mcp` with `Authorization: Bearer <user-token>`. See [connect.md](connect.md) for client configurations.
 
-## Запуск при разработке
+## Development startup
 
-На основном Mac шлюз запускается из клона, без отдельного пользователя. Состояние лежит в `~/.tg-mcp` (или в `TG_MCP_HOME`).
+On the main Mac, run from the clone without a separate service user. State lives in `~/.tg-mcp` or TG_MCP_HOME:
 
 ```bash
 npm run build && node dist/cli/index.js doctor
-```
-
-```bash
 node dist/cli/index.js serve --port 7777
 ```
 
-Сессия для разработки создаётся отдельным входом на этой машине. Копировать сессию с лабораторной машины нельзя.
+Create an independent development session on this machine; never copy the lab session.
 
-## Диагностика
+## Diagnostics
 
-- `tg-mcp-admin doctor` показывает версию Node, права на папку, наличие учётных данных, пользователей, аккаунты и работает ли демон. С `--connect` подключает аккаунты, но только когда демон остановлен: второй процесс на тех же сессиях недопустим.
-- `curl http://127.0.0.1:7777/healthz` отвечает `{"ok":true}`, если демон жив.
-- `tg_status` показывает паузы Telegram: общую паузу аккаунта и отдельные методы, закрытые долгим FLOOD_WAIT (например, `contacts.ResolveUsername` на сутки). Остальные запросы при этом работают.
-- Аудит вызовов хранится 90 дней, решённые запросы на запись 7 дней. Запросы на запись убираются раз в минуту, аудит раз в 6 часов. Других фоновых действий у демона нет: в Telegram без вызова он не ходит.
-- Демон вышел с кодом 1 и поднялся заново: в логе строка `fatal MTProto failure`. Это штатная реакция на зависший вызов MTProto (страж зависаний).
-- `Another tg-mcp process already owns the Telegram sessions`: демон уже запущен. Блокировка это сокет `daemon.sock` в папке шлюза.
+- doctor reports Node, directory permissions, credentials, users, accounts, and daemon health. --connect opens accounts only while the daemon is stopped; never start a second process on its sessions.
+- `curl http://127.0.0.1:7777/healthz` returns `{"ok":true}` for a live daemon.
+- tg_status reports account pauses and methods paused by long FLOOD_WAIT; other methods remain usable.
+- Audit retention is 90 days, resolved approvals 7 days. Approval cleanup runs every minute, audit cleanup every six hours. No autonomous Telegram requests occur.
+- Exit code 1 and `fatal MTProto failure` followed by restart are the intended response to a hanging MTProto call.
+- `Another tg-mcp process already owns the Telegram sessions` indicates an existing daemon. Its lock is daemon.sock in the gateway directory.

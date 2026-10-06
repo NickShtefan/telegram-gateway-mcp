@@ -1,10 +1,10 @@
 /**
- * Streamable HTTP: основной вход демона. Слушает localhost, пользователя
- * определяет по bearer-токену (решение 16).
+ * Streamable HTTP: main daemon entry point. Listen on localhost and identify
+ * users by bearer token (decision 16).
  *
- * Режим без состояния: на каждый запрос свой MCP-сервер и транспорт. Демон
- * может выйти и подняться супервизором (страж зависаний), а клиенту достаточно
- * повторить вызов, восстанавливать сессию не нужно.
+ * Stateless: each request gets its own MCP server and transport. After
+ * watchdog exit and supervisor restart, the client can simply retry
+ * without restoring a transport session.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -21,7 +21,7 @@ export interface HttpServerOptions {
   toolsets: string[];
   version: string;
   log: Logger;
-  /** Разрешённые значения заголовка Origin. По умолчанию запросы из браузера отклоняются. */
+  /** Allowed Origin headers; browser requests are rejected by default. */
   allowedOrigins?: string[];
   maxBodyBytes?: number;
 }
@@ -51,7 +51,7 @@ export function bearerToken(req: IncomingMessage): string | null {
   return m ? m[1]! : null;
 }
 
-/** Хосты, с которыми к демону можно обращаться: защита от DNS rebinding. */
+/** Allowed daemon Host headers: DNS rebinding protection. */
 export function allowedHosts(host: string, port: number): Set<string> {
   const names = new Set(['127.0.0.1', 'localhost', '[::1]']);
   if (host && host !== '0.0.0.0' && host !== '::') names.add(host.includes(':') && !host.startsWith('[') ? `[${host}]` : host);
@@ -70,7 +70,7 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
-        // Соединение закрывает обработчик после ответа 413: иначе клиент увидит обрыв вместо причины.
+        // Close after the 413 response; otherwise the client sees a disconnect, not the reason.
         req.pause();
         reject(new Error('body too large'));
         return;
@@ -92,7 +92,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     const path = (req.url ?? '/').split('?')[0];
 
     if (path === '/healthz') {
-      // Только признак жизни: никаких сведений об аккаунтах без токена.
+      // Liveness only: no account information without authentication.
       return sendJson(res, 200, { ok: true });
     }
     if (path !== '/mcp') return rpcError(res, 404, 'Not found. The MCP endpoint is /mcp.');
@@ -112,7 +112,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     }
 
     if (req.method !== 'POST') {
-      // Сервер без состояния не держит поток событий: GET и DELETE не поддерживаются.
+      // Stateless transport holds no event stream; GET and DELETE are unsupported.
       return rpcError(res, 405, 'Method not allowed. Use POST.', { Allow: 'POST' });
     }
 
@@ -152,7 +152,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       else res.end();
     });
   });
-  // Клиенты держат соединение открытым: не даём им мешать остановке демона.
+  // Open client connections must not prevent daemon shutdown.
   server.keepAliveTimeout = 5_000;
 
   await new Promise<void>((resolve, reject) => {

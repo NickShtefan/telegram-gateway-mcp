@@ -1,7 +1,7 @@
 /**
- * Форматтер ответов. Компактный текст вместо JSON: одна строка заголовка на
- * сообщение (id, дата, автор, счётчики, ссылка) и текст в границах чужого
- * контента. JSON с отступами не отдаётся: он съедает контекст агента.
+ * Response formatter. Compact text instead of JSON: one message header
+ * (ID, date, author, counters, link), followed by bounded untrusted
+ * content. Avoid pretty-printed JSON to conserve agent context.
  */
 import type { ReactionCount } from '../core/reactions.js';
 import { safeLabel, type Envelope } from '../policy/envelope.js';
@@ -13,15 +13,15 @@ export type FormatMode = 'brief' | 'full';
 export interface FormatOptions {
   mode: FormatMode;
   envelope: Envelope;
-  /** Предел длины текста одного сообщения в полном режиме. */
+  /** Maximum message text length in full mode. */
   maxTextChars?: number;
-  /** Предел длины строки текста в кратком режиме. */
+  /** Maximum single-line text length in brief mode. */
   briefChars?: number;
-  /** Ссылка t.me на сообщение, если её можно построить. */
+  /** t.me message link, when one can be constructed. */
   linkFor?: (message: MessageDto) => string | null;
-  /** Показывать ли автора: в ленте канала он у всех постов один. */
+  /** Whether to show the author; channel feeds share the same author. */
   showAuthor?: boolean;
-  /** Подпись чата для выдачи из нескольких чатов (глобальный поиск). */
+  /** Chat label for results from multiple chats (global search). */
   chatLabel?: (message: MessageDto) => string | null;
 }
 
@@ -48,7 +48,7 @@ export function compactNumber(n: number): string {
   return String(n);
 }
 
-/** Дата в UTC без секунд: `2026-09-30 14:05`. */
+/** UTC date without seconds: `2026-09-30 14:05`. */
 export function formatDate(unixSeconds: number): string {
   if (!unixSeconds) return 'unknown date';
   return new Date(unixSeconds * 1000).toISOString().slice(0, 16).replace('T', ' ');
@@ -71,8 +71,8 @@ function authorLabel(author: AuthorDto): string {
 }
 
 /**
- * Подпись автора. `own`: сообщение отправлено с самого аккаунта (флаг out).
- * Помечается словами «this account», а не «you»: с аккаунта пишет и владелец руками.
+ * Author label. `own` means the account sent the message (out flag).
+ * Use 'this account' rather than 'you': the owner also writes manually.
  */
 export function formatAuthor(author: AuthorDto, own = false): string {
   const label = authorLabel(author);
@@ -117,7 +117,7 @@ export function formatMediaTag(media: MediaDto | null, grouped: boolean): string
   }
 }
 
-/** Подписи видов кнопок для агента. Нажимается только callback (tg_press_button). */
+/** Button kind labels for agents. Only callback buttons can be pressed (tg_press_button). */
 const BUTTON_KIND: Record<ButtonDto['kind'], string> = {
   callback: 'callback',
   url: 'link',
@@ -136,7 +136,7 @@ function buttonCount(m: MessageDto): number {
   return m.buttons.reduce((sum, row) => sum + row.length, 0);
 }
 
-/** Подпись или слова ссылки в кавычках: чужой текст в одну строку. */
+/** Quoted button or link label: untrusted text flattened to one line. */
 function quoted(text: string, maxChars: number): string {
   return `"${safeLabel(text, maxChars).replace(/"/g, "'")}"`;
 }
@@ -144,8 +144,8 @@ function quoted(text: string, maxChars: number): string {
 const URL_MAX_CHARS = 300;
 
 /**
- * Inline-кнопки сообщения одной строкой: место (ряд.позиция), подпись, вид и
- * адрес у кнопок-ссылок. Байтов callback здесь нет.
+ * Inline buttons on one line: position (row.column), label, kind, and
+ * destination for URL buttons. Callback bytes are never included.
  */
 export function formatButtons(m: MessageDto): string {
   const items: string[] = [];
@@ -158,10 +158,10 @@ export function formatButtons(m: MessageDto): string {
   return items.length > 0 ? `buttons: ${items.join(' | ')}` : '';
 }
 
-/** Сколько скрытых ссылок показывать у одного сообщения. */
+/** Maximum hidden links shown per message. */
 const HIDDEN_LINKS_MAX = 20;
 
-/** Скрытые гиперссылки сообщения одной строкой: слова из текста и адрес под ними. */
+/** Hidden links on one line: linked words and their destinations. */
 export function formatHiddenLinks(m: MessageDto): string {
   if (m.hiddenLinks.length === 0) return '';
   const shown = m.hiddenLinks.slice(0, HIDDEN_LINKS_MAX).map(link => `${quoted(link.text, 48)} ${safeLabel(link.url, URL_MAX_CHARS)}`);
@@ -169,7 +169,7 @@ export function formatHiddenLinks(m: MessageDto): string {
   return `hidden links: ${shown.join(' | ')}${rest > 0 ? ` | +${rest} more` : ''}`;
 }
 
-/** Строка заголовка сообщения: всё, кроме текста. */
+/** Message header line containing everything except the text. */
 export function formatHeader(m: MessageDto, options: FormatOptions): string {
   const parts: string[] = [`#${m.id}`, formatDate(m.date)];
   const chat = options.chatLabel?.(m);
@@ -187,7 +187,7 @@ export function formatHeader(m: MessageDto, options: FormatOptions): string {
   if (reactions) parts.push(reactions);
   const media = formatMediaTag(m.media, m.groupedId !== null);
   if (media) parts.push(media);
-  // В кратком режиме кнопки только считаются: сами они видны в полном режиме и в tg_get_message.
+  // Brief mode only counts buttons; full mode and tg_get_message display them.
   if (options.mode === 'brief' && buttonCount(m) > 0) parts.push(`buttons ${buttonCount(m)}`);
   if (m.pinned) parts.push('pinned');
   if (m.editDate !== null) parts.push('edited');
@@ -202,7 +202,7 @@ export function formatMessage(m: MessageDto, options: FormatOptions): string {
   if (options.mode === 'brief') {
     return m.text ? `${header}\n${options.envelope.inline(m.text, options.briefChars ?? DEFAULT_BRIEF_CHARS)}` : header;
   }
-  // Скрытые ссылки и кнопки видны только в полном режиме: краткий остаётся в две строки.
+  // Hidden links and buttons appear only in full mode; brief mode keeps two lines.
   const tail = [formatHiddenLinks(m), formatButtons(m)].filter(Boolean).map(line => `\n${line}`).join('');
   if (!m.text) return header + tail;
   const max = options.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
@@ -211,11 +211,11 @@ export function formatMessage(m: MessageDto, options: FormatOptions): string {
 }
 
 export interface ListOptions extends FormatOptions {
-  /** Первая строка ответа: что это за выборка. */
+  /** First response line describing the result set. */
   title: string;
-  /** Курсор следующей страницы; null, если страниц больше нет. */
+  /** Next-page cursor, or null when there are no more pages. */
   nextCursor?: string | null;
-  /** Строки после списка: подсказки агенту. */
+  /** Lines following the list with hints for the agent. */
   hints?: string[];
 }
 
@@ -235,7 +235,7 @@ export function formatMessageList(messages: MessageDto[], options: ListOptions):
   return lines.join('\n');
 }
 
-/** Пары «ключ: значение» одной карточкой, для tg_resolve. */
+/** Key-value pairs formatted as a card for tg_resolve. */
 export function formatCard(title: string, rows: Array<[string, string | number | null | undefined]>): string {
   const lines = [title];
   for (const [key, value] of rows) {

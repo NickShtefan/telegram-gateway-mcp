@@ -1,124 +1,124 @@
-# Архитектура
+# Architecture
 
-Как шлюз устроен сейчас. Почему так: [decisions.md](decisions.md). Что агент видит снаружи: [tools.md](tools.md).
+The gateway's current implementation. Rationale: [decisions.md](decisions.md). Agent-facing interface: [tools.md](tools.md).
 
-## Что это
+## Purpose
 
-Один процесс (демон `tg-mcp serve`) держит MTProto-сессии подключённых аккаунтов Telegram и отвечает на вызовы MCP-инструментов. Это инструмент для агента, а не агент (решение 25): внутри нет модели, расписаний и слежения за чатами. Всё, что происходит в Telegram, происходит в ответ на вызов инструмента.
+One process (`tg-mcp serve`) owns the MTProto sessions of connected Telegram accounts and handles MCP tool calls. It is a tool for an agent, not an agent (decision 25): no model, schedules, or chat monitoring inside. Every Telegram operation responds to a tool call.
 
-## Путь вызова
+## Request flow
 
-1. Агент (Claude Code, Hermes, Codex, OpenCode) шлёт JSON-RPC на `http://127.0.0.1:7777/mcp` с bearer-токеном. Клиенты, которые умеют только stdio, запускают `tg-mcp stdio`: прокладка пересылает те же сообщения в демон.
-2. Демон по токену находит пользователя шлюза и создаёт для запроса MCP-сервер с его инструментами (сервер без состояния: один запрос, один сервер).
-3. Инструмент выбирает аккаунт (параметр `account` или аккаунт по умолчанию), находит чат и спрашивает политику скоупов, можно ли его читать или писать в него.
-4. Сервис собирает запрос MTProto и отдаёт его в `Tg`: единственную дверь в Telegram.
-5. `Tg` ставит вызов в полосу аккаунта (лимитер), клиент аккаунта из пула выполняет его. Чаты и люди из ответа попадают в кэш сущностей аккаунта.
-6. Ответ превращается в компактный текст, чужой текст оборачивается в метки, вызов пишется в аудит.
+1. The agent (Claude Code, Hermes, Codex, OpenCode) sends JSON-RPC to `http://127.0.0.1:7777/mcp` with a bearer token. Stdio-only clients launch `tg-mcp stdio`, which proxies the same messages to the daemon.
+2. The daemon resolves the gateway user from the token and creates a request-scoped MCP server with that user's tools (stateless: one request, one server).
+3. The tool selects an account (`account` or the default), resolves the chat, and asks scope policy whether reading or writing is allowed.
+4. The service constructs an MTProto request and submits it to `Tg`, the only Telegram entry point.
+5. `Tg` queues the call in the account's limiter lane; the pooled client executes it. Response chats and users enter that account's entity cache.
+6. The response becomes compact text; untrusted text is labeled; the call is audited.
 
-Запись идёт тем же путём дважды: первый вызов сохраняет запрос и возвращает предпросмотр, второй (`tg_confirm`) выполняет его.
+Writes follow the same path twice: preparation stores the request and returns a preview; `tg_confirm` executes it.
 
-## Слои и код
+## Layers and code
 
-| Слой | Папка | Что делает |
+| Layer | Directory | Responsibility |
 |---|---|---|
-| Транспорт | `src/transport` | HTTP-сервер демона и stdio-прокладка |
-| MCP | `src/mcp` | реестр инструментов, схемы, форматтер ответов, курсоры, ошибки для агента |
-| Политики | `src/policy` | пользователи и доступ к аккаунтам, скоупы чатов, пометка чужого текста, аудит |
-| Запись | `src/writegate` | запросы на запись, подтверждение, журнал выполненного |
-| Сервисы | `src/services` | чтение, поиск, комментарии, темы, диалоги, поиск каналов, статистика, индекс, выгрузка, медиа, действия, задачи |
-| Ядро | `src/core` | пул клиентов, лимитер, страж зависаний, вход, шифрование сессий, кэш сущностей, конфигурация, блокировка демона |
-| Хранилище | `src/storage` | порт хранилища и реализация на SQLite с миграциями |
-| CLI | `src/cli` | `serve`, `stdio`, `login`, `doctor`, управление пользователями, аккаунтами и скоупами |
+| Transport | `src/transport` | Daemon HTTP server and stdio proxy |
+| MCP | `src/mcp` | Tool registry, schemas, response formatter, cursors, agent errors |
+| Policy | `src/policy` | Users/account access, chat scopes, untrusted-text labeling, audit |
+| Write gate | `src/writegate` | Write requests, confirmation, execution journal |
+| Services | `src/services` | Reads, search, comments, topics, dialogs, discovery, statistics, index, export, media, actions, jobs |
+| Core | `src/core` | Client pool, limiter, watchdog, login, session encryption, entity cache, configuration, daemon lock |
+| Storage | `src/storage` | Storage port and SQLite implementation with migrations |
+| CLI | `src/cli` | `serve`, `stdio`, `login`, `doctor`, users, accounts, scopes |
 
-`core` и `services` ничего не импортируют из `mcp` и `transport`. Зависимости передаются явно (`src/runtime.ts`, `src/services/index.ts`), поэтому в тестах Telegram заменён двойником, а база живёт в памяти.
+`core` and `services` do not import `mcp` or `transport`. Dependencies are explicitly injected (`src/runtime.ts`, `src/services/index.ts`), allowing a Telegram double and in-memory database in tests.
 
-## Транспорт
+## Transport
 
-- **HTTP** (`transport/http.ts`). Streamable HTTP без состояния на `127.0.0.1`. Проверяются заголовок `Host` (защита от DNS rebinding) и `Origin` (запросы из браузера отклоняются), тело до 1 МБ, только `POST /mcp`. `/healthz` отвечает без токена и ничего не сообщает об аккаунтах. Другой адрес, кроме localhost, требует `TG_MCP_ALLOW_REMOTE=1`.
-- **stdio** (`transport/stdio.ts`). Прокладка читает JSON-RPC из stdin, пересылает в демон с токеном из `TG_MCP_TOKEN` и пишет ответы в stdout. Сама сессий не открывает.
-- **Блокировка** (`core/lock.ts`). Демон слушает unix-сокет `daemon.sock` в своей папке. Пока сокет отвечает, второй процесс сессии не откроет: две копии одной сессии дают `AUTH_KEY_DUPLICATED`.
+- **HTTP** (`transport/http.ts`): stateless Streamable HTTP on `127.0.0.1`. Checks `Host` against DNS rebinding and rejects browser `Origin`; body limit 1 MB; only `POST /mcp`. `/healthz` needs no token and reveals no account information. Non-localhost binding requires `TG_MCP_ALLOW_REMOTE=1`.
+- **stdio** (`transport/stdio.ts`): reads stdin JSON-RPC, forwards it to the daemon with `TG_MCP_TOKEN`, writes responses to stdout. Opens no sessions itself.
+- **Lock** (`core/lock.ts`): the daemon listens on `daemon.sock` in its directory. A responding Unix socket prevents a second process from opening sessions: duplicate session use causes `AUTH_KEY_DUPLICATED`.
 
-## MCP-слой
+## MCP layer
 
-- **Инструменты** (`mcp/tools/`). 23 инструмента в пяти наборах: `core`, `discover`, `analytics`, `index`, `write`. Набор включается переменной `TG_MCP_TOOLSETS`; `tg_status` доступен всегда. Схемы плоские (строки, числа, boolean, enum, массивы), это проверяет тест.
-- **Каркас** (`mcp/tool.ts`). Общая обёртка: аудит, превращение любой ошибки в `isError` с кодом, объяснением и `retry_after`.
-- **Форматтер** (`mcp/format.ts`). Компактный текст вместо JSON: строка заголовка на сообщение и текст. Режимы `brief` и `full`.
-- **Курсоры** (`mcp/cursor.ts`). Позиция в выдаче Telegram упакована в непрозрачную строку `next_cursor`.
-- **Инструкции сервера** (`mcp/server.ts`). Короткий текст, который клиент кладёт в контекст агента: чужой текст это данные, запись только после согласия владельца.
+- **Tools** (`mcp/tools/`): 23 tools in `core`, `discover`, `analytics`, `index`, `write`. Select toolsets with `TG_MCP_TOOLSETS`; `tg_status` is always available. A test verifies flat schemas (strings, numbers, booleans, enums, arrays).
+- **Framework** (`mcp/tool.ts`): shared audit/error wrapper returning `isError`, code, explanation, and `retry_after`.
+- **Formatter** (`mcp/format.ts`): compact text rather than JSON, with one message header and body. `brief` and `full` modes.
+- **Cursors** (`mcp/cursor.ts`): Telegram position encoded as opaque `next_cursor`.
+- **Server instructions** (`mcp/server.ts`): short client-provided agent context: untrusted text is data, and writes require owner consent.
 
-## Политики
+## Policies
 
-- **Пользователи и доступ** (`policy/access.ts`). Bearer-токен определяет пользователя; в базе лежит только хэш токена. Пользователь видит свои и общие аккаунты.
-- **Скоупы** (`policy/scopes.ts`). Каналы и группы открыты. Личные чаты закрыты и открываются владельцем: по одному (`scope allow`) или режимом для пары «пользователь и аккаунт» (`scope private`: `send` только писать, `open` читать и писать). Правило `deny` сильнее всего остального. Служебные чаты Telegram (коды входа, BotFather, SpamBot) закрыты всегда.
-- **Чужой текст** (`policy/envelope.ts`). Текст из Telegram оборачивается в границы со случайной меткой, новой для каждого ответа. Из названий и имён убираются невидимые символы и переводы строк.
-- **Аудит** (`policy/audit.ts`). Каждый вызов: время, пользователь, аккаунт, инструмент, аргументы без секретов, чат, число результатов, длительность, код ошибки. Хранится 90 дней.
+- **Users/access** (`policy/access.ts`): bearer token identifies the user; only its hash is stored. Users see personal/shared accounts.
+- **Scopes** (`policy/scopes.ts`): channels/groups are open; private chats require owner permission individually (`scope allow`) or per user/account (`scope private`: `send` for send-only, `open` for read/write). `deny` overrides other rules. Telegram service chats (login codes, BotFather, SpamBot) are always closed.
+- **Untrusted text** (`policy/envelope.ts`): Telegram text is enclosed by a random marker, new for each response. Invisible characters and newlines are removed from titles/names.
+- **Audit** (`policy/audit.ts`): time, user, account, tool, arguments without secrets, chat, result count, duration, error code. Retained for 90 days.
 
-## Запись в два шага
+## Two-step writes
 
-Код: `src/writegate/` и `services/write.ts`.
+Code: `src/writegate/` and `services/write.ts`.
 
-1. Инструмент записи (`tg_reply`, `tg_send`, `tg_react`, `tg_join`, `tg_press_button`) проверяет скоупы и пределы, сохраняет запрос и возвращает предпросмотр с `approval_id`.
-2. Агент показывает предпросмотр владельцу.
-3. `tg_confirm` выполняет запрос: скоупы и пределы проверяются ещё раз, действие уходит в Telegram, исход пишется в журнал.
+1. `tg_reply`, `tg_send`, `tg_react`, `tg_join`, or `tg_press_button` checks scopes/limits, stores the request, and returns a preview with `approval_id`.
+2. The agent shows the preview to the owner.
+3. `tg_confirm` rechecks scopes/limits, sends the action to Telegram, and journals its outcome.
 
-Запрос живёт 30 минут. Двойное подтверждение не выполняет действие дважды, чужой запрос подтвердить нельзя, действие, прерванное перезапуском, не повторяется (исход «неизвестен»). По журналу считаются дневные пределы: числа ответов, новых диалогов, вступлений и реакций (значения настраиваются, решение 27).
+Requests expire after 30 minutes. Repeated confirmation never executes twice; another user's request cannot be confirmed; a write interrupted by restart is not replayed (outcome unknown). The journal supplies daily limits for replies, new dialogs, joins, and reactions (configurable under decision 27).
 
-## Сервисы
+## Services
 
-| Файл | Что делает |
+| File | Responsibility |
 |---|---|
-| `links.ts` | разбор всего, что агент может передать как чат или сообщение: `@username`, id, ссылки `t.me`, `t.me/c/`, инвайты, `tg://` |
-| `resolve.ts` | чат по ссылке через кэш сущностей и `contacts.ResolveUsername`; карточка чата |
-| `history.ts` | лента с курсором и окном дат, сообщения по id, контекст вокруг сообщения, альбом целиком |
-| `messages.ts` | единый вид сообщения: автор, счётчики, медиа, пересылка, тема форума, скрытые ссылки, inline-кнопки. В личном чате Telegram не присылает автора: своё сообщение узнаётся по флагу `out`, остальные написал собеседник |
-| `search.ts` | поиск по каналам, группам или личным чатам аккаунта, по хэштегу в публичных постах, внутри одного чата |
-| `comments.ts` | комментарии поста из группы обсуждений: страницы, топ по реакциям, поиск |
-| `topics.ts` | темы форума |
-| `dialogs.ts` | список чатов аккаунта вместе с архивом |
-| `discover.ts` | каналы по названию, похожие каналы, источники репостов |
-| `stats.ts` | числа по открытым счётчикам канала и снимки числа участников по дням |
-| `localIndex.ts` | индекс сообщений в SQLite (FTS5 на триграммах) и поиск по нему |
-| `export.ts` | выгрузка в JSONL или CSV: авторы хэшируются, телефоны маскируются (`phones.ts`) |
-| `media.ts` | фото, альбомы, превью видео в общую папку; предел размера файла и квота папки |
-| `write.ts` | ответ в комментариях, сообщение, реакция, вступление и их пределы; нажатие inline-кнопки с повторной проверкой сообщения |
-| `buttons.ts` | inline-клавиатура сообщения: вид, подпись и адрес каждой кнопки, поиск кнопки по ряду и позиции, отпечаток для сверки перед нажатием |
-| `jobs.ts` | задачи для долгих операций (выгрузка, индексация): состояние в базе, продолжение после рестарта |
+| `links.ts` | Chat/message references: `@username`, ID, `t.me`, `t.me/c/`, invites, `tg://` |
+| `resolve.ts` | Entity-cache/`contacts.ResolveUsername` resolution; chat details |
+| `history.ts` | Cursor/date-window history, message IDs, surrounding context, complete albums |
+| `messages.ts` | Canonical message: author, counters, media, forwarding, forum topic, hidden links, inline buttons. Private-chat messages lack a sender: `out` identifies the account; otherwise the peer authored it |
+| `search.ts` | Account channels/groups/private chats, public-post hashtags, one-chat search |
+| `comments.ts` | Discussion-group post comments: pages, top reactions, search |
+| `topics.ts` | Forum topics |
+| `dialogs.ts` | Account dialogs including archived chats |
+| `discover.ts` | Channel name search, similar channels, forwarding sources |
+| `stats.ts` | Public channel counters and daily participant-count snapshots |
+| `localIndex.ts` | SQLite trigram FTS5 message index and search |
+| `export.ts` | JSONL/CSV export: authors hashed, phone numbers masked (`phones.ts`) |
+| `media.ts` | Photos, albums, video thumbnails in the shared directory; file-size and directory quotas |
+| `write.ts` | Replies, sends, reactions, joins and limits; inline-button press with message revalidation |
+| `buttons.ts` | Keyboard button type/label/URL, row/position lookup, verification fingerprint |
+| `jobs.ts` | Long-running export/index jobs, database state, restart continuation |
 
-## Ядро
+## Core
 
-- **Пул клиентов** (`clientPool.ts`). Один клиент teleproto на аккаунт, подключение при первом вызове, параллельные попытки склеиваются, `connect` ограничен 30 секундами. Логгер библиотеки пишет в stderr.
-- **Лимитер** (`limiter.ts`). Полоса на аккаунт: вызовы по одному, 500 мс между ними, 60 в минуту. Дедлайн на каждый вызов (20 секунд, скачивание 60). FLOOD_WAIT до пяти минут ставит аккаунт на паузу и пережидается в пределах бюджета ожидания (15 секунд для вызова агента); дольше пяти минут закрывается только метод, получивший паузу, а агент сразу получает ошибку с `retry_after`. Медленный режим чата паузой аккаунта не считается. Вызовы агента идут раньше фоновых задач.
-- **Страж зависаний** (`recovery.ts`). Вызов MTProto, который не вернулся к дедлайну, нельзя безопасно отменить. Ждущие вызовы получают ошибку, процесс выходит с кодом 1, launchd поднимает его заново. Клиенту достаточно повторить вызов: сервер без состояния.
-- **Вход** (`auth.ts`). Телефон, код, пароль 2FA в `tg-mcp login`. Агент кода не видит. Новый аккаунт для незарегистрированного номера не создаётся.
-- **Сессии** (`crypto.ts`). Строка сессии шифруется AES-256-GCM ключом из `session.key` (или `TG_MCP_SESSION_KEY`) и лежит в базе.
-- **Кэш сущностей** (`entities.ts`, таблица `entities`). accessHash привязан к сессии, поэтому кэш свой у каждого аккаунта. Экономит `contacts.ResolveUsername`, у которого жёсткие лимиты.
-- **Ошибки** (`errors.ts`). Любая ошибка Telegram превращается в `GatewayError` с кодом и текстом для агента: что случилось и что делать.
-- **Общая папка** (`safeFs.ts`). Файлы для агентов пишутся без перехода по ссылкам и только в папку, куда не может писать никто, кроме демона.
+- **Client pool** (`clientPool.ts`): one teleproto client per account, lazy connection, coalesced concurrent attempts, 30-second connect limit. Library logging goes to stderr.
+- **Limiter** (`limiter.ts`): one sequential lane per account, 500 ms spacing, 60 calls/minute. Per-call deadlines: 20 seconds, 60 for downloads. FLOOD_WAIT up to five minutes pauses the account and is waited within the wait budget (15 seconds for agent calls); above five minutes, only the affected method is closed and the agent immediately receives `retry_after`. Chat slow mode is not an account pause. Agent calls take priority over background jobs.
+- **Watchdog** (`recovery.ts`): a timed-out MTProto call cannot be safely canceled. Waiting calls fail, the process exits with code 1, and launchd restarts it. The stateless client can retry.
+- **Login** (`auth.ts`): phone, code, and 2FA password in `tg-mcp login`. The agent cannot see the code. Unregistered numbers are not signed up.
+- **Sessions** (`crypto.ts`): session strings are AES-256-GCM encrypted with `session.key` (or `TG_MCP_SESSION_KEY`) and stored in SQLite.
+- **Entities** (`entities.ts`, `entities` table): accessHash is session-bound, so each account has its own cache. Reduces tightly limited `contacts.ResolveUsername` calls.
+- **Errors** (`errors.ts`): Telegram errors become `GatewayError` codes and actionable explanations.
+- **Shared files** (`safeFs.ts`): agent files are written without following symlinks, only in directories writable exclusively by the daemon.
 
-## Хранилище
+## Storage
 
-Один файл SQLite (`gateway.sqlite`), встроенный драйвер `node:sqlite`, схема версионируется миграциями (`storage/migrations.ts`).
+One SQLite file (`gateway.sqlite`), built-in `node:sqlite`, schema versioned in `storage/migrations.ts`.
 
-| Таблица | Что хранит |
+| Tables | Data |
 |---|---|
-| `users`, `accounts`, `account_access` | пользователи шлюза (хэш токена), аккаунты Telegram, кто каким аккаунтом пользуется |
-| `sessions` | зашифрованные сессии аккаунтов |
-| `entities` | кэш чатов и людей по аккаунтам |
-| `scope_rules` | правила доступа к чатам и режим личных чатов |
-| `approvals` | запросы на запись и их исходы (решённые хранятся 7 дней) |
-| `writes` | журнал выполненной записи: по нему считаются пределы |
-| `jobs` | задачи выгрузки и индексации |
-| `chat_snapshots` | число участников чата по дням |
-| `indexed_chats`, `indexed_messages`, `indexed_fts` | локальный индекс: состояние по чатам, сообщения, полнотекстовый поиск |
-| `audit` | журнал вызовов инструментов |
-| `kv` | мелкое состояние (соль для хэшей авторов в выгрузке) |
+| `users`, `accounts`, `account_access` | Gateway users/token hashes, Telegram accounts, account grants |
+| `sessions` | Encrypted account sessions |
+| `entities` | Per-account chats/users cache |
+| `scope_rules` | Chat access rules/private-chat mode |
+| `approvals` | Write requests/outcomes; resolved requests retained 7 days |
+| `writes` | Executed-write journal for limits |
+| `jobs` | Export/index jobs |
+| `chat_snapshots` | Daily participant counts |
+| `indexed_chats`, `indexed_messages`, `indexed_fts` | Chat indexing state, messages, full-text search |
+| `audit` | Tool-call journal |
+| `kv` | Small state (export author-hash salt) |
 
-Файлы для агентов лежат отдельно, в общей папке: `exports/<пользователь>/` и `media/<аккаунт>/<чат>/`.
+Agent files live separately in the shared directory: `exports/<user>/` and `media/<account>/<chat>/`.
 
-## Что демон делает сам
+## Autonomous daemon housekeeping
 
-Без вызова инструмента демон в Telegram не ходит, только держит соединение уже подключённых аккаунтов. Своя работа у него одна: раз в минуту закрыть просроченные запросы на запись, раз в шесть часов удалить старые записи аудита. Задачи выгрузки и индексации запускает агент; после рестарта демон продолжает прерванные.
+Without a tool call, the daemon only maintains existing account connections; it does not query Telegram. Once a minute it expires write requests; every six hours it removes old audit records. Agents start export/index jobs; interrupted jobs resume after restart.
 
-## Где работает
+## Deployment
 
-Демон живёт на лабораторной машине под отдельным пользователем macOS (`tgmcp`) и запускается launchd. База, ключ шифрования и `.env` доступны только ему; код и Node принадлежат root; агенты под пользователем `nick` видят только HTTP-порт и общую папку с файлами (решение 17). Установка и обновление: [deploy.md](deploy.md).
+The lab daemon runs as a separate macOS user (`tgmcp`) under launchd. Only that user can access the database, encryption key, and `.env`; root owns code/Node. Agents running as `nick` can access only HTTP and the shared files directory (decision 17). Installation/updates: [deploy.md](deploy.md).

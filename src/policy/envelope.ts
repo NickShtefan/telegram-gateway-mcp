@@ -1,16 +1,16 @@
 /**
- * Недоверенный контент (решение 6). Любой текст из Telegram это чужие данные:
- * в нём могут быть инструкции для агента. Каждый фрагмент в выдаче обёрнут в
- * явные границы, а в инструкциях сервера сказано не выполнять команды из выдачи.
+ * Untrusted content (decision 6). Telegram text is external data and may
+ * contain agent instructions. Wrap each fragment in explicit boundaries
+ * and instruct agents not to execute commands from tool output.
  *
- * Границы содержат случайную метку, новую для каждого ответа: автор сообщения
- * не может угадать её и «закрыть» блок раньше времени.
+ * Boundaries contain a random marker, new per response, so message authors
+ * cannot predict it and close the block early.
  */
 import { randomBytes } from 'node:crypto';
 
 /**
- * Невидимые и управляющие символы: нулевой ширины, смена направления письма,
- * теги Unicode. Ими прячут текст от человека и подделывают разметку.
+ * Invisible/control characters: zero-width, directional overrides,
+ * and Unicode tags, used to hide text or forge formatting.
  */
 const INVISIBLE =
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\u2800\u3164\uFE00-\uFE0E\uFEFF\uFFA0\uFFF9-\uFFFB]|\uDB40[\uDC00-\uDDEF]/g;
@@ -20,11 +20,11 @@ export function sanitizeText(text: string): string {
 }
 
 /**
- * Очистка текста, который уйдёт в Telegram. Убирает то, чем можно спрятать
- * часть сообщения от человека в предпросмотре (управляющие символы,
- * смену направления письма, пробелы нулевой ширины), но не трогает соединители
- * эмодзи: составные эмодзи должны дойти целыми. Человек одобряет ровно то,
- * что будет отправлено.
+ * Sanitize outgoing text. Remove characters that can hide parts of the
+ * message in the owner's preview (controls,
+ * directional overrides, zero-width spaces), while preserving emoji
+ * joiners so compound emoji remain intact. The human approves exactly
+ * the text that will be sent.
  */
 const HIDING = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\uDB40[\uDC00-\uDC7F]/g;
 
@@ -32,7 +32,7 @@ export function sanitizeOutgoing(text: string): string {
   return text.replace(HIDING, '').replace(/\r\n?/g, '\n');
 }
 
-/** Текст в одну строку: для имён, заголовков и краткого режима. */
+/** Single-line text for names, titles, and brief mode. */
 export function oneLine(text: string, maxChars: number): string {
   const flat = sanitizeText(text).replace(/\s+/g, ' ').trim();
   return truncate(flat, maxChars);
@@ -40,7 +40,7 @@ export function oneLine(text: string, maxChars: number): string {
 
 export function truncate(text: string, maxChars: number): string {
   if (maxChars <= 0 || text.length <= maxChars) return text;
-  // Не режем суррогатную пару пополам.
+  // Never split a surrogate pair.
   let end = maxChars;
   const code = text.charCodeAt(end - 1);
   if (code >= 0xd800 && code <= 0xdbff) end -= 1;
@@ -48,20 +48,20 @@ export function truncate(text: string, maxChars: number): string {
 }
 
 export interface Envelope {
-  /** Метка этого ответа. */
+  /** Marker for this response. */
   readonly nonce: string;
-  /** Строка-предупреждение, один раз в начале ответа. */
+  /** Warning line, once at the start of a response. */
   notice(): string;
-  /** Многострочный блок чужого текста. */
+  /** Multiline untrusted-text block. */
   block(text: string, maxChars?: number): string;
-  /** Чужой текст в одну строку. */
+  /** Single-line untrusted text. */
   inline(text: string, maxChars: number): string;
 }
 
 export function createEnvelope(nonce: string = randomBytes(4).toString('hex')): Envelope {
   const open = `<<<TG:${nonce}`;
   const close = `TG:${nonce}>>>`;
-  // Метка вырезается из самого текста: даже угаданная, она не закроет блок.
+  // Strip the marker from text; even a guessed marker cannot close the block.
   const scrub = (text: string): string => sanitizeText(text).split(nonce).join('');
 
   return {
@@ -78,7 +78,7 @@ export function createEnvelope(nonce: string = randomBytes(4).toString('hex')): 
   };
 }
 
-/** Имя автора или название чата: тоже чужой текст, но короткий и в одну строку. */
+/** Author name or chat title: short, single-line untrusted text. */
 export function safeLabel(text: string | null | undefined, maxChars = 64): string {
   if (!text) return '';
   return oneLine(text, maxChars).replace(/[<>`]/g, '');

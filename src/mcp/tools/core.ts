@@ -1,7 +1,7 @@
 /**
- * Основной набор инструментов (`core`): чтение и поиск. Включён по умолчанию.
- * Одиннадцать инструментов: описания всех попадают в контекст агента при
- * каждом запуске, поэтому набор держится небольшим, а описания короткими.
+ * Core toolset (`core`): reading and search, enabled by default.
+ * Eleven tool descriptions enter agent context on each startup,
+ * so keep the toolset small and descriptions short.
  */
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';
@@ -31,9 +31,9 @@ import {
   untilArg,
 } from './shared.js';
 
-/** Сколько ждать выгрузку в самом вызове, прежде чем вернуть job_id. */
+/** Time to wait for an export before returning job_id. */
 const EXPORT_WAIT_MS = 20_000;
-/** Картинки прямо в ответе: только небольшие превью и немного. */
+/** Inline images: a small number of small previews only. */
 const INLINE_MAX_BYTES = 300 * 1024;
 const INLINE_MAX_IMAGES = 4;
 
@@ -125,11 +125,11 @@ const tgResolve = defineTool({
 
     const { chat } = await services.resolver.resolve(accountId, args.ref);
     const decision = services.scopes.decide(principal.userId, accountId, chat);
-    // Карточку человека показать можно, его переписку нет. Запрет владельца и служебные чаты действуют целиком.
+    // Profiles are allowed, conversations are not. Owner blocks and service-chat restrictions still apply.
     if (!decision.allowed && (chat.kind !== 'user' || decision.code !== 'private')) throw new GatewayError('ACCESS_DENIED', decision.reason);
 
     const card = await services.resolver.card(accountId, chat);
-    // Снимок числа участников: из них tg_channel_stats потом покажет рост.
+    // Store a participant snapshot for later growth reporting by tg_channel_stats.
     if (chat.kind !== 'user') services.snapshots.record(chat.peerKey, card.members);
     const linked = card.linkedChatKey ? services.runtime.storage.entities.get(accountId, card.linkedChatKey) : null;
     const text = formatCard(`${chatLabel(chat)}`, [
@@ -160,7 +160,7 @@ const tgResolve = defineTool({
   },
 });
 
-/** Сколько страниц диалогов читать за один вызов: каждая страница это запрос к Telegram. */
+/** Maximum dialog pages per call; each page is a Telegram request. */
 const DIALOG_PAGES_PER_CALL = 5;
 
 function dialogLine(d: DialogDto): string {
@@ -213,7 +213,7 @@ const tgListDialogs = defineTool({
     }
 
     const wanted = (d: DialogDto): boolean => {
-      // Люди показываются только по прямой просьбе и только те, чью переписку владелец открыл на чтение.
+      // Show people only on explicit request and only when the owner granted conversation read access.
       if ((d.chat.kind === 'user') !== (type === 'private')) return false;
       if (d.chat.meta.forbidden === true || d.chat.meta.member === false) return false;
       if (!scopes.isAllowed(userId, accountId, d.chat)) return false;
@@ -236,7 +236,7 @@ const tgListDialogs = defineTool({
         scanned++;
         if (!wanted(d)) continue;
         found.push(d);
-        // Обрезать список можно только на обычном диалоге: с него Telegram умеет продолжить.
+        // Stop only at an ordinary dialog from which Telegram can resume pagination.
         if (found.length >= limit && d.position && !d.pinned) {
           const more = i < page.dialogs.length - 1 || page.next !== null;
           if (more) next = { f: folder, position: d.position };
@@ -245,7 +245,7 @@ const tgListDialogs = defineTool({
         }
       }
       if (page.next === null) {
-        // Основной список закончился: дальше архив.
+        // The main list has ended; continue with the archive.
         if (folder === 1) break;
         folder = 1;
         position = null;
@@ -428,8 +428,8 @@ const tgSearchMessages = defineTool({
       return chats.get(m.chatKey) ?? null;
     };
 
-    // Чаты, закрытые для чтения (в том числе личные переписки, которые владелец не открывал, и
-    // служебные чаты Telegram), молча отбрасываются: ни текст, ни число совпадений из них не видны.
+    // Silently discard chats blocked for reading, including unopened private
+    // conversations and Telegram service chats; expose neither texts nor match counts.
     const visible = page.messages.filter(m => {
       const chat = chatOf(m);
       return chat !== null && services.scopes.isAllowed(principal.userId, accountId, chat);
@@ -601,7 +601,7 @@ const tgGetComments = defineTool({
       ({ messages, total, nextOffsetId } = page);
     }
 
-    // Комментарии лежат в группе обсуждений: если владелец закрыл её, они не отдаются.
+    // Comments belong to the discussion group; an owner block also hides comments.
     const discussionKey = messages[0]?.chatKey;
     const discussion = discussionKey ? services.runtime.storage.entities.get(where.accountId, discussionKey) : null;
     if (discussion) services.scopes.assertAllowed(ctx.principal.userId, where.accountId, discussion);

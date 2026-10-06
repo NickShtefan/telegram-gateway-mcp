@@ -3,7 +3,7 @@ dist/
 coverage/
 .DS_Store
 
-# секреты и состояние: никогда не коммитим
+# Secrets and runtime state: never commit.
 .env
 .env.*
 !.env.example
@@ -16,6 +16,6 @@ data/
 media/
 exports/
 
-# локальные настройки инструментов
+# Local tool configuration.
 .claude/settings.local.json
 .codeboard/

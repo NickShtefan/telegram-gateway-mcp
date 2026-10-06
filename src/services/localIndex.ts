@@ -1,14 +1,14 @@
 /**
- * Локальный индекс: сообщения выбранных чатов лежат в базе шлюза, поиск по ним
- * идёт без обращения к Telegram и не тратит его лимиты.
+ * Local index: selected chat messages are stored in the gateway database;
+ * searches require no Telegram requests or rate-limit budget.
  *
- * Чат индексируется задачей (первая выгрузка может быть долгой), повторный
- * запуск дочитывает только новое. Проход по ленте идёт с отсечкой по дате,
- * вставка пакетами; у каждого чата своё состояние в SQLite.
+ * Indexing runs as a job because initial imports can be slow. Repeated
+ * runs fetch updates using date-bounded history and batch inserts;
+ * each chat has independent SQLite state.
  *
- * Поиск на триграммах FTS5: «велосипед» находит и «велосипеды», и
- * «велосипедом», регистр не важен. Слова короче трёх символов триграммы не
- * ловят, поэтому они проверяются отдельно по найденным строкам.
+ * FTS5 trigram search matches substrings such as 'bicycle' in 'bicycles'
+ * regardless of case. Trigrams cannot match words shorter than three
+ * characters, so verify those separately against candidate rows.
  */
 import { GatewayError } from '../core/errors.js';
 import type { TgCallOptions } from '../core/tg.js';
@@ -20,9 +20,9 @@ import type { MessageDto } from './messages.js';
 
 export const INDEX_DEFAULT_DAYS = 90;
 export const INDEX_MAX_DAYS = 3 * 365;
-/** Сколько сообщений читает одна задача: 100 сообщений это один запрос к Telegram. */
+/** Message cap per job; 100 messages require one Telegram request. */
 export const INDEX_MAX_PER_RUN = 20_000;
-/** Счётчики свежих сообщений ещё меняются: при дочитке они перечитываются. */
+/** Refresh recent messages whose counters may still change. */
 const REFRESH_WINDOW_SEC = 3 * 86_400;
 const MIN_TERM = 3;
 
@@ -31,11 +31,11 @@ type Row = Record<string, unknown>;
 export interface IndexedChat {
   accountId: string;
   chatKey: string;
-  /** Индекс полон для сообщений не старше этой даты, unix-секунды. */
+  /** Index completeness boundary in Unix seconds. */
   sinceTs: number;
   newestId: number;
   oldestId: number;
-  /** Когда индекс последний раз дочитывали, мс. */
+  /** Last incremental indexing time, milliseconds. */
   syncedAt: number | null;
   createdBy: string;
   messages: number;
@@ -73,7 +73,7 @@ export class IndexStore {
     return (this.storage.db.prepare(`${IndexStore.SELECT} WHERE c.account_id IN (${marks}) ORDER BY c.account_id, c.chat_key`).all(...accountIds) as Row[]).map(r => this.map(r));
   }
 
-  /** Записывает состояние чата после законченного прохода. */
+  /** Stores chat state after a completed pass. */
   saveState(state: { accountId: string; chatKey: string; sinceTs: number; newestId: number; oldestId: number; createdBy: string }): void {
     this.storage.db
       .prepare(
@@ -85,7 +85,7 @@ export class IndexStore {
       .run(state.accountId, state.chatKey, state.sinceTs, state.newestId, state.oldestId, this.now(), state.createdBy, this.now());
   }
 
-  /** Вставляет или обновляет сообщения одной пачкой. Возвращает число новых. */
+  /** Inserts or updates one message batch and returns the number of new rows. */
   upsert(accountId: string, chatKey: string, messages: MessageDto[]): number {
     if (messages.length === 0) return 0;
     const db = this.storage.db;
@@ -120,7 +120,7 @@ export class IndexStore {
 
   remove(accountId: string, chatKey: string): number {
     return this.storage.transaction(() => {
-      // Текст из поиска убирает триггер на удаление сообщения.
+      // A message-deletion trigger removes its search text.
       const removed = Number(this.storage.db.prepare('DELETE FROM indexed_messages WHERE account_id = ? AND chat_key = ?').run(accountId, chatKey).changes);
       this.storage.db.prepare('DELETE FROM indexed_chats WHERE account_id = ? AND chat_key = ?').run(accountId, chatKey);
       return removed;
@@ -153,7 +153,7 @@ export class IndexStore {
   }
 }
 
-/** Слова запроса: длинные идут в полнотекстовый поиск, короткие проверяются по найденному. */
+/** Long query words use FTS; short words are checked against candidates. */
 export function buildMatch(query: string): { match: string; short: string[] } {
   const terms = query
     .split(/\s+/)
@@ -164,7 +164,7 @@ export function buildMatch(query: string): { match: string; short: string[] } {
     throw new GatewayError('INVALID_ARGUMENT', `The local index needs at least one query word of ${MIN_TERM} or more characters.`);
   }
   return {
-    // Каждое слово в кавычках: для FTS5 это точная подстрока, операторы внутри неё не работают.
+    // Quote every word as a literal FTS5 substring to disable query operators.
     match: long.map(t => `"${t.split('"').join('""')}"`).join(' '),
     short: terms.filter(t => [...t].length < MIN_TERM).map(t => t.toLowerCase()),
   };
@@ -173,7 +173,7 @@ export function buildMatch(query: string): { match: string; short: string[] } {
 export interface IndexJobParams {
   accountId: string;
   chatKey: string;
-  /** Индексировать сообщения не старше этой даты, unix-секунды. */
+  /** Index messages newer than this Unix timestamp. */
   sinceTs: number;
 }
 
@@ -182,7 +182,7 @@ export interface IndexJobResult extends Record<string, unknown> {
   scanned: number;
   messages: number;
   sinceTs: number;
-  /** Задача упёрлась в предел за один запуск: остаток дочитает следующий запуск. */
+  /** A per-run cap stopped this job; the next run reads the remainder. */
   partial: boolean;
 }
 
@@ -191,7 +191,7 @@ export interface LocalIndexDeps {
   store: IndexStore;
   history: HistoryService;
   now?: () => number;
-  /** Предел сообщений за один запуск задачи. */
+  /** Maximum messages per job run. */
   maxPerRun?: number;
 }
 
@@ -205,13 +205,13 @@ export class LocalIndexService {
   }
 
   /**
-   * Задача индексации. Сначала голова ленты (новое с прошлого раза и свежие
-   * сообщения, у которых меняются счётчики), затем хвост, если попросили период
-   * длиннее уже покрытого.
+   * Indexing job: refresh the history head (new messages and recent counters),
+   * then extend the tail if the requested period exceeds
+   * the currently covered range.
    *
-   * Состояние чата всегда описывает сплошной кусок ленты: от самого нового
-   * сообщения до даты `sinceTs`. Если проход оборван (предел за запуск, остановка шлюза),
-   * сохраняется то, что успели покрыть, и следующий запуск продолжает оттуда.
+   * Chat state always describes continuous coverage from the newest message
+   * to `sinceTs`. If interrupted by a cap or shutdown,
+   * save completed coverage so the next run can resume.
    */
   async run(context: JobContext): Promise<IndexJobResult> {
     const params = context.job.params as unknown as IndexJobParams;
@@ -228,7 +228,7 @@ export class LocalIndexService {
     let partial = false;
 
     interface Walk {
-      /** Проход дошёл до своей границы (даты или уже известных сообщений). */
+      /** Pass reached its boundary: a date or previously indexed messages. */
       complete: boolean;
       highId: number;
       lowId: number;
@@ -270,19 +270,19 @@ export class LocalIndexService {
     };
 
     if (!state) {
-      // Первый раз: вся лента до начала периода.
+      // First run: all history back to the period start.
       const first = await walk(0, params.sinceTs);
       if (first.complete) save(params.sinceTs, first.highId, first.lowId);
       else if (first.lowDate !== null) save(first.lowDate, first.highId, first.lowId);
     } else {
-      // Голова: до уже известных сообщений, но не раньше, чем кончатся свежие.
+      // Head: read through known messages until all recent messages are refreshed.
       const head = await walk(0, state.sinceTs, m => m.id <= state.newestId && m.date < refreshFrom);
       if (head.complete) {
         let since = state.sinceTs;
         let oldest = state.oldestId === 0 ? head.lowId : head.lowId === 0 ? state.oldestId : Math.min(state.oldestId, head.lowId);
         const newest = Math.max(state.newestId, head.highId);
         save(since, newest, oldest);
-        // Хвост: период стал длиннее.
+        // Tail: the requested period was extended.
         if (params.sinceTs < since && !context.stopping()) {
           const tail = await walk(oldest, params.sinceTs);
           if (tail.lowId !== 0) oldest = Math.min(oldest === 0 ? tail.lowId : oldest, tail.lowId);
@@ -291,7 +291,7 @@ export class LocalIndexService {
           save(since, newest, oldest);
         }
       } else if (head.lowDate !== null) {
-        // Нового оказалось больше, чем читается за запуск: сплошной кусок теперь только свежий.
+        // New messages exceeded the cap; only the recent range remains continuously covered.
         save(head.lowDate, head.highId, head.lowId);
       }
     }
@@ -300,7 +300,7 @@ export class LocalIndexService {
     return { added, scanned, messages: after?.messages ?? 0, sinceTs: after?.sinceTs ?? params.sinceTs, partial };
   }
 
-  /** Поиск по индексу. `chats` уже проверены на доступ вызывающим. */
+  /** Index search; callers have already checked access to `chats`. */
   search(
     chats: Array<{ accountId: string; chat: EntityRecord }>,
     params: { query: string; minDate?: number; maxDate?: number; limit: number; offset: number },
@@ -310,7 +310,7 @@ export class LocalIndexService {
     if (short.length === 0) {
       return { ...this.deps.store.search({ targets, match, minDate: params.minDate, maxDate: params.maxDate, limit: params.limit, offset: params.offset }), approximate: false };
     }
-    // Короткие слова: берём страницу с запасом и оставляем сообщения, где они тоже есть.
+    // Overfetch candidates and keep messages containing all short query words.
     const wide = this.deps.store.search({ targets, match, minDate: params.minDate, maxDate: params.maxDate, limit: params.limit * 5, offset: params.offset });
     const kept = wide.messages.filter(({ message }) => short.every(t => message.text.toLowerCase().includes(t))).slice(0, params.limit);
     return { messages: kept, total: wide.total, approximate: true };

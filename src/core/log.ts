@@ -1,12 +1,12 @@
 /**
- * Логгер шлюза. Пишет ТОЛЬКО в stderr: в stdio-режиме любая строка в stdout
- * ломает JSON-RPC. `console.log` в коде шлюза не используется вообще.
+ * Gateway logger: stderr ONLY. Any stdout line in stdio mode
+ * breaks JSON-RPC. Gateway code never uses `console.log`.
  */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
 
 const ORDER: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
 
-/** Ключи, значения которых никогда не попадают в лог. */
+/** Fields whose values must never be logged. */
 const SECRET_KEY = /token|hash|session|password|secret|authorization|api_?key|^key$/i;
 
 export interface Logger {
@@ -73,8 +73,8 @@ export function createLogger(tag: string, options: LoggerOptions = {}): Logger {
 }
 
 /**
- * Переводит `console.log/info/debug` в stderr. Вызывается первой строкой
- * точки входа, до импорта teleproto: чужой код не должен попасть в stdout.
+ * Redirect `console.log/info/debug` to stderr. Invoke as the first entry-point
+ * statement before importing teleproto, so third-party code cannot pollute stdout.
  */
 export function redirectConsoleToStderr(): void {
   const toStderr = (...args: unknown[]): void => {

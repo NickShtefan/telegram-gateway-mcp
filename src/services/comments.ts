@@ -1,9 +1,9 @@
 /**
- * Комментарии к посту канала. Они живут в связанной группе обсуждений.
+ * Channel-post comments live in the linked discussion group.
  *
- * Корень треда находит `GetDiscussionMessage` (копия поста с `savedFromMsgId`),
- * ветка читается страницами по 100 через `GetReplies`. Тред читается у любого
- * канала, в базу ничего не пишется.
+ * `GetDiscussionMessage` finds the thread root (post copy with savedFromMsgId).
+ * Read threads in pages of 100 through `GetReplies` for any channel,
+ * without writing to the database.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
@@ -22,9 +22,9 @@ export interface CommentsPage {
 }
 
 export interface DiscussionRoot {
-  /** Группа обсуждений. */
+  /** Discussion group. */
   discussion: EntityRecord;
-  /** id копии поста в группе: на неё отвечают, чтобы оставить комментарий. */
+  /** ID of the post copy in the group, used as the comment reply target. */
   rootId: number;
 }
 
@@ -48,7 +48,7 @@ export class CommentsService {
     private readonly entities: EntitiesRepo,
   ) {}
 
-  /** Страница комментариев: от новых к старым. */
+  /** Comment page, newest first. */
   async page(
     accountId: string,
     chat: EntityRecord,
@@ -87,8 +87,8 @@ export class CommentsService {
   }
 
   /**
-   * Комментарии с наибольшим числом реакций. Telegram так сортировать не умеет,
-   * поэтому просматриваются последние `scan` комментариев и сортируются здесь.
+   * Comments with the most reactions. Telegram cannot sort them this way,
+   * so scan the latest `scan` comments and sort locally.
    */
   async top(
     accountId: string,
@@ -112,7 +112,7 @@ export class CommentsService {
     return { messages: ranked.slice(0, params.limit), total, nextOffsetId: null, scanned: collected.length };
   }
 
-  /** Корень треда в группе обсуждений: нужен для поиска по комментариям и для ответа. */
+  /** Discussion-thread root needed for comment search and replies. */
   async root(accountId: string, chat: EntityRecord, postId: number, options?: TgCallOptions): Promise<DiscussionRoot> {
     let result: unknown;
     try {
@@ -135,7 +135,7 @@ export class CommentsService {
     return { discussion, rootId: root.id };
   }
 
-  /** Поиск по слову внутри обсуждения одного поста. */
+  /** Word search within one post's discussion. */
   async search(
     accountId: string,
     chat: EntityRecord,

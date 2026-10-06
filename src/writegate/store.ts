@@ -1,7 +1,7 @@
 /**
- * Хранилище шлюза записи: запросы на подтверждение и журнал выполненных
- * действий. По журналу считаются дневные пределы: ответы, реакции, вступления,
- * новые диалоги.
+ * Write gateway storage: confirmation requests and a journal of executed
+ * actions. The journal tracks daily caps for replies, reactions, joins,
+ * and new conversations.
  */
 import type { SqliteStorage } from '../storage/sqlite.js';
 
@@ -23,7 +23,7 @@ export type ApprovalState = 'pending' | 'executing' | 'executed' | 'rejected' | 
 
 export interface ApprovalRecord {
   id: string;
-  /** Кто решает: пользователь, чьё это действие (решение 18). */
+  /** Decision owner: the user who requested the action (decision 18). */
   userId: string;
   accountId: string | null;
   kind: string;
@@ -52,7 +52,7 @@ export class WriteStore {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  // ---------- запросы на подтверждение ----------
+  // ---------- confirmation requests ----------
 
   private mapApproval(r: Row): ApprovalRecord {
     return {
@@ -99,8 +99,8 @@ export class WriteStore {
   }
 
   /**
-   * Атомарный переход состояния: возвращает true, только если запись была в
-   * одном из ожидаемых состояний. Защищает от двойного подтверждения.
+   * Atomic state transition: returns true only when the record was in
+   * an expected state. Prevents duplicate confirmation.
    */
   transitionApproval(id: string, from: ApprovalState[], to: ApprovalState): boolean {
     const marks = from.map(() => '?').join(', ');
@@ -108,7 +108,7 @@ export class WriteStore {
     return num(result.changes) > 0;
   }
 
-  /** Запросы пользователя в заданных состояниях, новые сверху. */
+  /** Lists a user's requests in selected states, newest first. */
   listApprovals(userId: string, states: ApprovalState[], limit = 100): ApprovalRecord[] {
     const marks = states.map(() => '?').join(', ');
     return (this.db.prepare(`SELECT * FROM approvals WHERE user_id = ? AND state IN (${marks}) ORDER BY created_at DESC LIMIT ?`).all(userId, ...states, limit) as Row[]).map(r =>
@@ -120,17 +120,17 @@ export class WriteStore {
     return (this.db.prepare('SELECT * FROM approvals WHERE state = ? ORDER BY created_at').all(state) as Row[]).map(r => this.mapApproval(r));
   }
 
-  /** Просроченные запросы переводятся в `expired`. Возвращает их число. */
+  /** Marks overdue requests as `expired` and returns their count. */
   expireApprovals(): number {
     return num(this.db.prepare("UPDATE approvals SET state = 'expired', decided_at = ? WHERE state = 'pending' AND expires_at <= ?").run(this.now(), this.now()).changes);
   }
 
-  /** Решённые запросы старше срока удаляются: в них лежат тексты сообщений. */
+  /** Deletes old resolved requests because they contain message texts. */
   pruneApprovals(olderThanTs: number): number {
     return num(this.db.prepare("DELETE FROM approvals WHERE state != 'pending' AND state != 'executing' AND created_at < ?").run(olderThanTs).changes);
   }
 
-  // ---------- журнал записи ----------
+  // ---------- write journal ----------
 
   recordWrite(write: WriteRecord): number {
     const result = this.db
@@ -143,7 +143,7 @@ export class WriteStore {
     return num((this.db.prepare('SELECT COUNT(*) AS n FROM writes WHERE account_id = ? AND kind = ? AND ts >= ?').get(accountId, kind, sinceTs) as Row).n);
   }
 
-  /** Был ли уже диалог с этим человеком с этого аккаунта: для лимита новых диалогов. */
+  /** Checks prior contact with this person from this account for the new-conversation cap. */
   hasWrittenTo(accountId: string, chatKey: string): boolean {
     return this.db.prepare("SELECT 1 AS ok FROM writes WHERE account_id = ? AND chat_key = ? AND kind = 'send' LIMIT 1").get(accountId, chatKey) !== undefined;
   }

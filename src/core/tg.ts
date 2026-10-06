@@ -1,6 +1,6 @@
 /**
- * Единственная дверь в Telegram для сервисов. Любой MTProto-вызов идёт через
- * лимитер аккаунта и имеет дедлайн; прямых `client.invoke` мимо очереди нет.
+ * The sole Telegram entry point for services. Every MTProto call passes
+ * through the account limiter with a deadline; no direct queue bypasses.
  */
 import type { Api, TelegramClient } from 'teleproto';
 import type { ClientPool, AccountIdentity } from './clientPool.js';
@@ -13,11 +13,11 @@ import type { EntitiesRepo } from '../storage/port.js';
 export type TgCallOptions = Partial<CallOptions>;
 
 export interface Tg {
-  /** MTProto-запрос в полосе аккаунта. Сущности из ответа попадают в кэш аккаунта. */
+  /** MTProto request in the account lane; cache response entities per account. */
   invoke<R extends Api.AnyRequest>(accountId: string, request: R, options?: TgCallOptions): Promise<R['__response']>;
-  /** Операция, которой нужен сам клиент (скачивание файла), в той же полосе. */
+  /** Operation needing the client (file download), in the same lane. */
   withClient<T>(accountId: string, label: string, fn: (client: TelegramClient) => Promise<T>, options?: TgCallOptions): Promise<T>;
-  /** Кто подключён под аккаунтом; подключает его, если ещё не подключён. */
+  /** Account identity; connect lazily if necessary. */
   whoami(accountId: string): Promise<AccountIdentity>;
   laneStatus(accountId: string): LaneStatus;
 }
@@ -57,7 +57,7 @@ export class TgGateway implements Tg {
   }
 
   private async run<T>(accountId: string, label: string, fn: (client: TelegramClient) => Promise<T>, options: TgCallOptions): Promise<T> {
-    // Подключение вне полосы: у него свой дедлайн и своя склейка параллельных попыток.
+    // Connect outside the lane: it has its own deadline and concurrent-attempt coalescing.
     const client = await this.options.pool.getClient(accountId);
     try {
       return await this.options.limiter.run(accountId, () => fn(client), { ...options, label });
@@ -77,7 +77,7 @@ export class TgGateway implements Tg {
         this.options.entities.putMany(entities.map(e => ({ accountId, ...e })));
       }
     } catch (err) {
-      // Кэш это оптимизация: его сбой не должен ломать вызов.
+      // Caching is an optimization; a cache failure must not fail the call.
       this.log.warn('entity cache write failed', { account: accountId, error: err as Error });
     }
   }

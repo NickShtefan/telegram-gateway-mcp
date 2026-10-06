@@ -1,9 +1,9 @@
 /**
- * Изображения и медиа: фото, альбом, превью видео. Файлы кладутся в общую
- * папку, которую читают агенты; в ответе пути.
+ * Images and media: photos, albums, and video previews. Files go into a
+ * shared directory readable by agents; responses contain file paths.
  *
- * Повтор при ошибке «файл в другом дата-центре», кэш по наличию файла на диске,
- * выбор размера, предел размера файла и квота папки.
+ * Includes data-center migration retries, on-disk caching, size selection,
+ * individual file limits, and directory quotas.
  */
 import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
@@ -23,7 +23,7 @@ export interface MediaFile {
   path: string;
   bytes: number;
   mime: string;
-  /** Файл уже лежал на диске: Telegram не тревожили. */
+  /** File already existed on disk; no Telegram call was made. */
   cached: boolean;
 }
 
@@ -39,11 +39,11 @@ export interface MediaResult {
 
 export interface MediaServiceOptions {
   tg: Tg;
-  /** Общая папка шлюза; медиа лежат в `<filesDir>/media`. */
+  /** Shared gateway directory; media are stored in `<filesDir>/media`. */
   filesDir: string;
-  /** Предел размера файла в полном размере. */
+  /** Maximum full-size file size. */
   maxFullBytes?: number;
-  /** Предел суммарного размера папки с медиа. */
+  /** Maximum total media directory size. */
   quotaBytes?: number;
   log?: Logger;
   now?: () => number;
@@ -53,10 +53,10 @@ const DEFAULT_MAX_FULL_BYTES = 20 * 1024 * 1024;
 const DEFAULT_QUOTA_BYTES = 2 * 1024 * 1024 * 1024;
 const QUOTA_CHECK_EVERY = 50;
 
-/** Файл лежит в другом дата-центре: teleproto иногда бросает это вместо того, чтобы перейти сам. */
+/** teleproto may throw a file data-center migration error instead of switching automatically. */
 export function isDcRedirectError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  // Текст настоящей FileMigrateError: «The file currently being accessed is stored in DC N».
+  // Actual FileMigrateError text: 'The file currently being accessed is stored in DC N'.
   return /stored in DC/i.test(msg) || /file.*(another|different)\s*dc/i.test(msg) || /dc.*redirect/i.test(msg) || /FILE_MIGRATE/i.test(msg) || /NETWORK_MIGRATE/i.test(msg);
 }
 
@@ -68,8 +68,8 @@ interface RawSize {
 }
 
 /**
- * Тип размера для превью: около 320 px по длинной стороне. Возвращает букву
- * типа (`m`, `x`, ...), которую понимает параметр `thumb` в teleproto, или null.
+ * Preview size type around 320 px on the longer side. Returns the size
+ * type letter (`m`, `x`, ...) accepted by teleproto's `thumb`, or null.
  */
 export function pickThumbType(sizes: unknown): string | null {
   if (!Array.isArray(sizes)) return null;
@@ -105,7 +105,7 @@ interface RawMessage {
   } | null;
 }
 
-/** Имя папки чата на диске: ключ чата без минуса в начале. */
+/** On-disk chat directory name: chat key without its leading minus. */
 export function chatDirName(chatKey: string): string {
   return chatKey.startsWith('-') ? `n${chatKey.slice(1)}` : `u${chatKey}`;
 }
@@ -131,8 +131,8 @@ export class MediaService {
   }
 
   /**
-   * Скачивает медиа сырых сообщений teleproto. По умолчанию превью: картинки
-   * дорогие для модели, полный размер только по явному запросу.
+   * Downloads media from raw teleproto messages. Previews are the default;
+   * full images consume model context and require an explicit request.
    */
   async download(accountId: string, chatKey: string, rawMessages: unknown[], size: MediaSize, options?: TgCallOptions): Promise<MediaResult> {
     const result: MediaResult = { files: [], skipped: [] };
@@ -168,14 +168,14 @@ export class MediaService {
           continue;
         }
         mime = media.mime ?? 'application/octet-stream';
-        // Имя файла приходит из Telegram: расширение берётся только простое, иначе по типу.
+        // Accept only simple Telegram-supplied extensions; otherwise infer from media type.
         const named = media.fileName ? extname(media.fileName).toLowerCase() : '';
         ext = /^\.[a-z0-9]{1,8}$/.test(named) ? named : (MIME_EXT[mime] ?? '.bin');
       }
 
-      // id сообщений в личных чатах свои у каждого аккаунта: кэш раздельный.
+      // Private message IDs are account-specific, so their caches must be separate.
       const path = join(this.root, accountId, chatDirName(chatKey), `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
-      // Кэшем считается только свой обычный файл: по подложенной ссылке шлюз не пойдёт.
+      // Only owned regular files count as cache hits; never follow planted symlinks.
       if (isOwnRegularFile(path) && lstatSync(path).size > 0) {
         result.files.push({ messageId, kind: media.kind, size: thumb ? 'thumb' : 'full', path, bytes: lstatSync(path).size, mime, cached: true });
         continue;
@@ -207,7 +207,7 @@ export class MediaService {
           if (!data) return null;
           return Buffer.isBuffer(data) ? data : Buffer.from(data as string, 'binary');
         },
-        // Скачивание дольше обычного вызова, а его таймаут не повод ронять процесс.
+        // Downloads take longer than ordinary calls; their timeouts must not kill the process.
         { deadlineMs: 60_000, onHang: 'error', ...options },
       );
 
@@ -221,7 +221,7 @@ export class MediaService {
     }
   }
 
-  /** Пишет файл так, чтобы его могли прочитать агенты под другим пользователем macOS. */
+  /** Writes files readable by agents running as another macOS user. */
   private write(path: string, buffer: Buffer): void {
     ensureTrustedDir(dirname(path), this.filesDir);
     writeNewFile(path, buffer, 0o644);
@@ -232,14 +232,14 @@ export class MediaService {
     }
   }
 
-  /** Удаляет самые старые файлы, пока папка не уложится в 80% квоты. */
+  /** Removes oldest files until the directory is below 80% of its quota. */
   enforceQuota(): { removed: number; bytes: number } {
     const files: Array<{ path: string; size: number; mtime: number }> = [];
     const walk = (dir: string): void => {
       if (!existsSync(dir)) return;
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name);
-        // Ссылки не учитываются и не обходятся: чужое шлюз не удаляет.
+        // Ignore and never follow symlinks; do not delete unrelated files.
         if (entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) walk(full);
         else if (entry.isFile()) {
@@ -262,7 +262,7 @@ export class MediaService {
         total -= file.size;
         removed++;
       } catch {
-        // файл мог исчезнуть сам
+        // The file may already have disappeared.
       }
     }
     this.log.info('media quota enforced', { removed, bytes: total, at: this.now() });

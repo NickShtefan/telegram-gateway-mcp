@@ -1,18 +1,18 @@
 /**
- * Порт хранилища. Ядро и сервисы знают только эти интерфейсы; реализация
- * по умолчанию на SQLite (`sqlite.ts`). Методы синхронные: SQLite в одном
- * процессе отвечает сразу, а запись получается атомарной без блокировок.
+ * Storage port. Core and services depend only on these interfaces; the default
+ * implementation uses SQLite (`sqlite.ts`). Methods are synchronous: SQLite
+ * responds in-process, allowing atomic writes without asynchronous locks.
  *
- * Все id чатов здесь это ключи из `core/chatId.ts` (помеченный id строкой).
+ * All chat IDs here are keys from `core/chatId.ts` (marked IDs as strings).
  */
 import type { Sealed } from '../core/crypto.js';
 import type { PeerKind } from '../core/chatId.js';
 
-// ---------- пользователи и аккаунты (решение 16) ----------
+// ---------- users and accounts (decision 16) ----------
 
 export interface UserRecord {
   id: string;
-  /** SHA-256 от bearer-токена. Сам токен шлюз не хранит. */
+  /** SHA-256 of the bearer token. The gateway does not store the token itself. */
   tokenSha256: string;
   defaultAccount: string | null;
   createdAt: number;
@@ -22,7 +22,7 @@ export type AccountStatus = 'needs_login' | 'active' | 'unauthorized';
 
 export interface AccountRecord {
   id: string;
-  /** Telegram id самого аккаунта, известен после входа. */
+  /** The account's own Telegram ID, known after login. */
   tgUserId: string | null;
   username: string | null;
   displayName: string | null;
@@ -58,17 +58,17 @@ export interface SessionsRepo {
   get(accountId: string): Sealed | null;
 }
 
-// ---------- кэш сущностей: accessHash привязан к аккаунту ----------
+// ---------- entity cache: accessHash belongs to an account ----------
 
 export interface EntityRecord {
   accountId: string;
   peerKey: string;
   kind: PeerKind;
-  /** accessHash строкой; у обычных групп его нет. */
+  /** accessHash as a string; basic groups have none. */
   accessHash: string | null;
   username: string | null;
   title: string | null;
-  /** Форум, канал или супергруппа, группа обсуждений и прочее. */
+  /** Forum, channel or supergroup, discussion group, and other metadata. */
   meta: Record<string, unknown>;
   updatedAt: number;
 }
@@ -81,7 +81,7 @@ export interface EntitiesRepo {
   remove(accountId: string, peerKey: string): void;
 }
 
-// ---------- аудит ----------
+// ---------- audit ----------
 
 export interface AuditEntry {
   id: number;
@@ -89,12 +89,12 @@ export interface AuditEntry {
   userId: string | null;
   accountId: string | null;
   tool: string;
-  /** Аргументы вызова без секретов. */
+  /** Call arguments without secrets. */
   args: Record<string, unknown>;
   peerKey: string | null;
   resultCount: number | null;
   durationMs: number;
-  /** Код GatewayError или null при успехе. */
+  /** GatewayError code, or null on success. */
   errorCode: string | null;
   floodWaitSeconds: number | null;
 }
@@ -105,7 +105,7 @@ export interface AuditRepo {
   prune(olderThanTs: number): number;
 }
 
-// ---------- задачи (долгие операции) ----------
+// ---------- tasks (long-running operations) ----------
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed';
 
@@ -127,33 +127,33 @@ export interface JobsRepo {
   create(job: { id: string; userId: string; accountId?: string | null; kind: string; params: Record<string, unknown> }): JobRecord;
   get(id: string): JobRecord | null;
   update(id: string, patch: { state?: JobState; progress?: Record<string, unknown>; result?: Record<string, unknown> | null; error?: string | null }): void;
-  /** По умолчанию новые сверху; oldestFirst нужен очереди. */
+  /** Newest first by default; the queue uses oldestFirst. */
   list(filter?: { userId?: string; state?: JobState; limit?: number; oldestFirst?: boolean }): JobRecord[];
-  /** После рестарта: всё, что «выполнялось», возвращается в очередь. */
+  /** Requeues all running tasks after a restart. */
   requeueRunning(): number;
 }
 
-// ---------- скоупы доступа ----------
+// ---------- access scopes ----------
 
 export type ScopeEffect = 'allow' | 'deny';
 
 export interface ScopeRule {
   userId: string;
   accountId: string;
-  /** Ключ чата, username в нижнем регистре без @ или служебная цель режима личных чатов. */
+  /** Chat key, lowercase username without @, or internal private-chat mode target. */
   target: string;
   effect: ScopeEffect;
   createdAt: number;
 }
 
-/** Правила ставит только владелец через CLI; на одну цель одно правило. */
+/** Only the owner CLI sets rules; one rule per target. */
 export interface ScopesRepo {
   put(rule: Omit<ScopeRule, 'createdAt'>): void;
   list(userId: string, accountId: string): ScopeRule[];
   remove(userId: string, accountId: string, target: string): number;
 }
 
-// ---------- ключ-значение для мелкого состояния ----------
+// ---------- key-value store for small state ----------
 
 export interface KvRepo {
   get(key: string): string | null;
@@ -169,7 +169,7 @@ export interface Storage {
   jobs: JobsRepo;
   scopes: ScopesRepo;
   kv: KvRepo;
-  /** Выполняет fn в одной транзакции; при ошибке откатывает. */
+  /** Runs fn in one transaction and rolls back on failure. */
   transaction<T>(fn: () => T): T;
   close(): void;
 }

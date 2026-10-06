@@ -1,7 +1,7 @@
 /**
- * Шлюз записи: всё, что меняет что-то в Telegram. Действие сначала
- * оформляется запросом с предпросмотром, выполняется после `tg_confirm`.
- * Сам по себе шлюз ничего не пишет и никого не запускает.
+ * Write gateway for actions that change Telegram state. Each action starts
+ * as a request with a preview and executes after `tg_confirm`.
+ * The gateway does not write or launch anything autonomously.
  */
 import { GatewayError } from '../core/errors.js';
 import { ScopePolicy, type ScopeAction } from '../policy/scopes.js';
@@ -38,8 +38,8 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
   const approvals = new Approvals({ store, log: log.child('approvals'), now });
   const write = new WriteService({ tg: runtime.tg, store, comments: deps.comments, history: deps.history, limits: runtime.config.writeLimits, now, log: log.child('write') });
 
-  // Скоупы проверяются ещё раз в момент выполнения: между предпросмотром и
-  // подтверждением владелец мог закрыть чат или сменить режим личных чатов.
+  // Recheck scopes at execution: between preview and confirmation,
+  // the owner may have closed the chat or changed private-chat access.
   const scopes = new ScopePolicy(storage);
   const chatOf = (approval: { userId: string }, accountId: string, chatKey: string, action: ScopeAction): EntityRecord => {
     const chat = storage.entities.get(accountId, chatKey);
@@ -104,7 +104,7 @@ export function buildWriteGate(deps: WriteGateDeps): WriteGate {
     if (pressed.botSilent) {
       return { summary: `${what}, but the bot did not answer in time. Read the chat to see whether anything changed; do not press it again blindly.`, data: { bot_silent: true } };
     }
-    // Ответ бота это чужой текст: инструмент отдаёт его агенту в границах недоверенного контента.
+    // Bot responses are untrusted text returned inside the untrusted-content boundary.
     return { summary: `${what}.`, data: { bot_answer: pressed.answer, bot_alert: pressed.alert, bot_url: pressed.url } };
   });
 

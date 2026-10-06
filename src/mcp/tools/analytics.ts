@@ -1,6 +1,6 @@
 /**
- * Набор `analytics`: статистика канала по открытым счётчикам. Шлюз считает
- * числа, выводы делает агент (решение 7).
+ * `analytics` toolset: channel statistics from public counters. The gateway
+ * calculates numbers; the agent interprets them (decision 7).
  */
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';

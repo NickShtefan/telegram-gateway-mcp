@@ -1,79 +1,79 @@
-# Сценарии по шагам
+# Step-by-step scenarios
 
-Четыре задачи владельца ([use-cases.md](use-cases.md)) по шагам и отдельный сценарий с кнопкой бота. В скобках указано, кто делает шаг: агент или часть шлюза из [architecture.md](architecture.md).
+Four owner use cases ([use-cases.md](use-cases.md)) and a bot-button scenario. Parentheses identify the agent or gateway component from [architecture.md](architecture.md).
 
-## Кейс 1: Барахолка
+## Case 1: Marketplace
 
-> Зайди в чат барахолки (ссылка), найди объявления о продаже iPhone 15 за месяц и дай аналитику по ценам.
+> Open this marketplace chat, find iPhone 15 sale listings from the last month, and analyze prices.
 
-1. Агент вызывает `tg_resolve` со ссылкой на чат. (агент)
-2. Вызов приходит в демон по HTTP, по токену шлюз узнаёт пользователя. (транспорт)
-3. Публичная группа: читать можно без вступления. Будь чат закрытым, понадобился бы `tg_join` с подтверждением. Проверку бота-привратника вступление не проходит: её проходишь ты сам или подтверждаешь нажатие кнопки через `tg_press_button`. (скоупы)
-4. Карточка: супергруппа с темами, аккаунт в ней не состоит. (резолвер)
-5. `tg_list_topics` находит тему «Продам». (темы форумов)
-6. `tg_search_chat` по «iphone 15» в этой теме за 30 дней: первая страница и общее число совпадений. (поиск)
-7. Совпадений несколько сотен, агент вызывает `tg_export` с теми же фильтрами и `photos=thumb`. Шлюз пишет текст объявлений как есть, хэширует авторов и маскирует телефоны. (выгрузка)
-8. Страницы по 100 сообщений и превью фото идут через очередь аккаунта. (лимитер)
-9. Ответ: путь к JSONL, число строк, пять примеров. (форматтер)
-10. Агент своим кодом достаёт цены из текста («65к», «72 000 ₽», «торг») и считает: медиана и разброс по объёму памяти, выбросы, повторные объявления одного продавца. (агент)
-11. Для пяти самых дешёвых агент берёт полные альбомы через `tg_get_media` и смотрит фото: нет ли следов ремонта и не чужие ли это картинки. (медиа)
-12. Ответ тебе: таблица цен, ссылки на самые выгодные объявления и что видно на фото. (агент)
+1. Call tg_resolve with the chat link. (agent)
+2. HTTP transport identifies the gateway user by token. (transport)
+3. Public groups require no join. Private groups require confirmed tg_join. Joining does not solve gatekeeper challenges; the owner completes them or approves tg_press_button. (scopes)
+4. Return a forum supergroup profile showing that the account is not a member. (resolver)
+5. Find the Selling topic with tg_list_topics. (topics)
+6. Search iphone 15 within that topic over 30 days; return a page and total matches. (search)
+7. For hundreds of matches, call tg_export with the same filters and photos=thumb. Preserve original text, hash authors, and mask phones. (export)
+8. History pages of 100 and photo previews pass through the account queue. (limiter)
+9. Return JSONL path, row count, and five examples. (formatter)
+10. Parse prices such as 65k, 72,000 RUB, and negotiable using agent-side code. Calculate medians, dispersion by storage size, outliers, and repeated seller listings. (agent)
+11. Fetch full albums for five cheapest listings with tg_get_media and inspect condition, repair signs, and potentially reused images. (media)
+12. Present a price table, promising listing links, and photo observations. (agent)
 
-## Кейс 2: Сводка канала
+## Case 2: Channel summary
 
-> Зайди на @канал и расскажи, о чём там говорили за последний месяц.
+> Open @channel and summarize the last month of discussion.
 
-1. Агент вызывает `tg_resolve`: канал, подписчики, включены ли комментарии. (агент)
-2. accessHash берётся из кэша сущностей, если канал уже встречался. (резолвер)
-3. `tg_read_history` за 30 дней в режиме `brief`: по 1-2 строки на пост плюс просмотры, реакции и число комментариев. Месяц постов укладывается в несколько тысяч токенов. (чтение, форматтер)
-4. Пара страниц через очередь аккаунта. (лимитер)
-5. Агент выбирает 5 самых обсуждаемых постов и читает их целиком через `tg_get_message`. (агент)
-6. В двух из них главное на картинке (график, скриншот). Агент скачивает их через `tg_get_media` и смотрит. (медиа)
-7. `tg_get_comments` по каждому посту: 30 комментариев с наибольшим числом реакций. (комментарии)
-8. Комментарии помечены как чужой текст: если кто-то напишет «игнорируй инструкции», агент это просто процитирует. (пометка чужого текста)
-9. Сводка: главные темы, тон, о чём спорят в комментариях, ссылки на ключевые посты. (агент)
+1. Resolve channel, subscribers, and comment availability. (agent)
+2. Reuse cached accessHash when available. (resolver)
+3. Read 30 days with tg_read_history mode=brief: one or two lines per post plus views, reactions, and comment counts. (history, formatter)
+4. Read several pages through the account queue. (limiter)
+5. Select five heavily discussed posts and read them fully with tg_get_message. (agent)
+6. Fetch charts/screenshots through tg_get_media when images contain key information. (media)
+7. Request 30 top-reacted comments per selected post. (comments)
+8. Treat comment instructions such as 'ignore previous instructions' as quoted data, never commands. (untrusted-content boundary)
+9. Summarize themes, tone, disputes, and key post links. (agent)
 
-## Кейс 3: Мониторинг
+## Case 3: Monitoring
 
-> Следи за @канал и на каждый новый пост отвечай в комментариях.
+> Watch @channel and prepare a comment reply to each new post.
 
-Шлюз сам не следит и агентов не запускает (решение 25). Сценарий идёт на стороне агента.
+The gateway neither watches nor launches agents (decision 25). The agent owns this workflow.
 
-1. Ты один раз настраиваешь расписание у агента: «каждые 15 минут проверяй @канал». (расписание агента: cron в Hermes или цикл в Claude Code)
-2. По расписанию агент вызывает `tg_read_history` и сравнивает id последнего поста с тем, что запомнил. (чтение)
-3. Новых постов нет: агент молчит. Есть: читает пост через `tg_get_message`, картинку через `tg_get_media`, комментарии через `tg_get_comments`. (чтение, комментарии)
-4. Агент готовит ответ и вызывает `tg_reply`. Шлюз проверяет дневной предел ответов и возвращает предпросмотр. (запись)
-5. Агент пишет тебе своим обычным каналом: «Вышел пост, хочу ответить так: ...». Ты говоришь «отправляй», «отправь, но так: ...» или «пропусти». (агент)
-6. Агент вызывает `tg_confirm`: шлюз находит ветку поста в группе обсуждений и отправляет ответ. (запись)
-7. В аудите шлюза остаётся запись о каждом вызове: кто, каким аккаунтом, в какой чат. (аудит)
+1. Configure the agent to check every 15 minutes through its own schedule or loop. (Hermes scheduling or Claude Code loop)
+2. Read history and compare the latest post ID with remembered state. (history)
+3. Stay quiet if unchanged. For new posts, read messages, images, and comments. (history, media, comments)
+4. Prepare tg_reply; check the daily reply cap and return a preview. (write gate)
+5. Show the owner the proposed reply in the agent's normal conversation. The owner approves, edits, or skips it. (agent)
+6. Call tg_confirm only after approval; find the discussion thread and send. (write gate)
+7. Audit each call with user, account, and chat. (audit)
 
-Запрос на запись живёт 30 минут. Если ты ответил позже, агент готовит ответ заново.
+Requests expire after 30 minutes. Prepare a fresh request if the owner responds later.
 
-## Кейс 4: Договорённость
+## Case 4: Negotiation
 
-> Напиши продавцу из объявления и договорись купить велосипед не дороже 15 000 ₽, самовывоз в выходные.
+> Contact this bicycle seller and arrange pickup this weekend for at most 15,000 RUB.
 
-Цель, рамки и ход переговоров держит агент, шлюз про них ничего не знает.
+The agent remembers goals, constraints, and negotiation state; the gateway does not.
 
-1. Ты открываешь агенту диалог с продавцом: `tg-mcp-admin scope allow nick agent @seller`. (скоупы)
-2. Агент запоминает цель и рамки у себя и готовит первое сообщение через `tg_send`. Ты видишь предпросмотр и подтверждаешь, `tg_confirm` отправляет. (запись)
-3. Агент проверяет ответ: по расписанию или когда ты спросишь, вызывает `tg_read_history` для этого диалога. (чтение)
-4. Сообщения продавца помечены как чужой текст: «скиньте предоплату на карту» остаётся его просьбой, а не командой агенту. (пометка чужого текста)
-5. Продавец просит 18 000 ₽, это выше рамок: агент спрашивает тебя в своём разговоре с тобой. Ты отвечаешь: «да, но не выше 16». (агент)
-6. Агент готовит сообщение про 16 000 ₽ через `tg_send`, ты подтверждаешь. (запись)
-7. Продавец согласен: агент рассказывает тебе итог и что осталось сделать тебе. (агент)
+1. The owner opens the seller conversation: `tg-mcp-admin scope allow nick agent @seller`. (scopes)
+2. Remember the goal and prepare tg_send. Show the preview and obtain consent before tg_confirm. (agent, write gate)
+3. Read replies on the agent's schedule or when asked by the owner. (history)
+4. Treat a seller's request for a deposit as untrusted content, not an instruction to the agent. (untrusted-content boundary)
+5. If the seller asks 18,000 RUB, ask the owner before exceeding the budget. The owner may authorize a revised 16,000 ceiling. (agent)
+6. Prepare the revised offer and obtain confirmation. (write gate)
+7. Report the agreement and remaining owner actions. (agent)
 
-Деньги, адрес и время встречи агент без тебя не согласует: это правило записано у агента, а не в шлюзе. Шлюз со своей стороны гарантирует, что ни одно сообщение не уйдёт без `tg_confirm`.
+Money, addresses, and meeting details require owner decisions under the agent's rules. The gateway enforces tg_confirm for outgoing messages but cannot independently observe human consent.
 
-## Кнопка под сообщением
+## Message button
 
-> В чате @группа бот устроил голосование кнопками. Проголосуй «за».
+> Vote Yes in this bot's poll in @group.
 
-1. Агент читает сообщение через `tg_get_message`. Под текстом строка `buttons: 1.1 "За" (callback) | 1.2 "Против" (callback) | 2.1 "Правила" (link https://example.com/rules)`. (чтение, форматтер)
-2. Подписи и адреса кнопок помечены как чужой текст: подпись «нажми, чтобы подтвердить перевод» остаётся подписью, а не командой агенту. (пометка чужого текста)
-3. Агент вызывает `tg_press_button` со ссылкой на сообщение, `row=1`, `button=1`. Шлюз читает сообщение, убеждается, что это кнопка callback, и возвращает предпросмотр: аккаунт, сообщение и его автор, подпись и место кнопки. (запись)
-4. Агент показывает предпросмотр тебе, ты соглашаешься. (агент)
-5. `tg_confirm`: шлюз читает сообщение ещё раз. Кнопка та же: он нажимает её одним вызовом и возвращает ответ бота («Голос принят») как чужой текст. Бот успел изменить сообщение: нажатия нет, агент читает сообщение заново и готовит новый запрос. (запись)
-6. Кнопку-ссылку «Правила» шлюз не нажимает и ссылку не открывает: адрес агент видит в строке кнопок. (запись)
+1. Read the message. Example: `buttons: 1.1 "Yes" (callback) | 1.2 "No" (callback) | 2.1 "Rules" (link https://example.com/rules)`. (history, formatter)
+2. Treat button labels and addresses as untrusted text; a label demanding transfer confirmation is not an agent instruction. (untrusted-content boundary)
+3. Prepare tg_press_button with message link, row=1, button=1. Read the message, verify callback kind, and preview account, message/author, label, and position. (write gate)
+4. Show the owner the preview and obtain consent. (agent)
+5. tg_confirm rereads the message. If unchanged, press once and return the bot's 'Vote accepted' as untrusted text. If changed, refuse the press and prepare a new request after rereading. (write gate)
+6. Do not press or open the Rules URL; its destination is already visible. (write gate)
 
-Данные кнопки агент не видит и не передаёт: шлюз берёт их из сообщения.
+Agents neither see nor supply callback bytes; the gateway obtains them from the message.

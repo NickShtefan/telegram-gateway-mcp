@@ -1,13 +1,13 @@
 /**
- * Ввод и вывод команд CLI. Обычный вывод идёт в stdout только здесь: всё
- * остальное в шлюзе пишет в stderr.
+ * CLI input/output. Ordinary stdout output is allowed only here;
+ * other gateway components log to stderr.
  */
 import { createInterface } from 'node:readline';
 
 export interface CliIo {
   out(line: string): void;
   err(line: string): void;
-  /** Спрашивает строку у человека. hidden прячет ввод (пароль, код). */
+  /** Ask a human for text; hidden suppresses password/code echo. */
   prompt(question: string, options?: { hidden?: boolean }): Promise<string>;
 }
 
@@ -20,13 +20,13 @@ export const terminalIo: CliIo = {
         reject(new Error('This command needs an interactive terminal.'));
         return;
       }
-      // Вопросы идут в stderr, чтобы stdout оставался чистым для результата.
+      // Prompts go to stderr, leaving stdout clean for command results.
       const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
       if (options.hidden) {
         const masked = rl as unknown as { _writeToOutput: (text: string) => void };
         masked._writeToOutput = (text: string) => {
-          // Показывается только сам вопрос. При Backspace readline перерисовывает строку
-          // целиком (вопрос и набранное): набранное на экран попасть не должно.
+          // Display only the prompt. Backspace makes readline redraw the entire
+          // prompt and input; typed secret characters must never be displayed.
           if (text.includes(question)) process.stderr.write(question);
         };
       }

@@ -1,24 +1,24 @@
 /**
- * stdio-прокладка для клиентов, которые умеют только запускать процесс.
- * Сама сессий Telegram не открывает: читает JSON-RPC из stdin, пересылает в
- * демон по HTTP и пишет ответы в stdout. Так сессией по-прежнему владеет один
- * процесс (решения 1 и 17).
+ * stdio proxy for clients that can only launch a process.
+ * Never open Telegram sessions: read JSON-RPC from stdin, forward it
+ * to the HTTP daemon, and write responses to stdout. One process
+ * continues owning the session (decisions 1 and 17).
  *
- * В stdout попадают только сообщения JSON-RPC. Всё остальное идёт в stderr.
+ * stdout contains JSON-RPC only; everything else goes to stderr.
  */
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import type { Logger } from '../core/log.js';
 
 export interface StdioProxyOptions {
-  /** Адрес демона, например http://127.0.0.1:7777/mcp. */
+  /** Daemon URL, e.g. http://127.0.0.1:7777/mcp. */
   url: string;
   token: string;
   input: Readable;
   output: Writable;
   log: Logger;
   fetch?: typeof fetch;
-  /** Сколько ждать ответ демона на один запрос. */
+  /** Timeout for one daemon response. */
   timeoutMs?: number;
 }
 
@@ -34,7 +34,7 @@ function hasId(message: unknown): message is RpcMessage & { id: string | number 
   return typeof id === 'string' || typeof id === 'number';
 }
 
-/** Сообщения из тела ответа: обычный JSON или поток событий. */
+/** Messages from response bodies: plain JSON or event streams. */
 export function parseResponseBody(contentType: string, text: string): unknown[] {
   if (contentType.includes('text/event-stream')) {
     const out: unknown[] = [];
@@ -48,7 +48,7 @@ export function parseResponseBody(contentType: string, text: string): unknown[] 
       try {
         out.push(JSON.parse(data));
       } catch {
-        // не JSON: служебное событие потока
+        // Non-JSON stream housekeeping event.
       }
     }
     return out;
@@ -58,7 +58,7 @@ export function parseResponseBody(contentType: string, text: string): unknown[] 
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
-/** Пересылает сообщения, пока не закроется stdin. */
+/** Forward messages until stdin closes. */
 export async function runStdioProxy(options: StdioProxyOptions): Promise<void> {
   const doFetch = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? 120_000;
@@ -130,7 +130,7 @@ export async function runStdioProxy(options: StdioProxyOptions): Promise<void> {
     for (const reply of replies) {
       const version = (reply as RpcMessage | null)?.result?.protocolVersion;
       if (typeof version === 'string' && (message as RpcMessage).method === 'initialize') protocolVersion = version;
-      // Ошибка HTTP без id в ответе относится к исходному запросу.
+      // HTTP errors without a response ID belong to the originating request.
       if (!response.ok && (reply as RpcMessage | null)?.id === null && hasId(message)) {
         write({ ...(reply as object), id: message.id });
       } else {
@@ -148,7 +148,7 @@ export async function runStdioProxy(options: StdioProxyOptions): Promise<void> {
     });
     pending.add(task);
     void task.finally(() => pending.delete(task));
-    // initialize должен завершиться до следующих сообщений: от него зависит версия протокола.
+    // initialize must finish first; subsequent messages depend on its protocol version.
     if (protocolVersion === null) await task;
   }
   await Promise.all(pending);

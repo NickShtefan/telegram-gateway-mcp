@@ -1,266 +1,266 @@
-# Решения
+# Decisions
 
-Действующие решения по шлюзу. Статусы: **принято** (подтвердил владелец), **предложено** (принято агентом по ходу работы, владелец не возражал и может отменить).
+Current gateway decisions. Statuses: **accepted** (confirmed by the owner), **proposed** (chosen by the agent during implementation; the owner has not objected and may revoke it).
 
-Номера не меняются: на них ссылаются код и остальные документы. Отменённые решения сведены к одной строке. Как текст выглядел раньше и что именно убиралось, видно в истории git этого файла.
+Numbers remain stable because code and other documents reference them. Superseded decisions are reduced to one line. Previous wording and removals remain in this private repository's Git history.
 
-Менять решение можно, но явно: запиши новое и почему старое больше не подходит.
+Changes must be explicit: record a new decision and explain why the previous one no longer applies.
 
-## 1. Сессией владеет один процесс (предложено)
+## 1. One process owns sessions (proposed)
 
-Демон `tg-mcp serve` держит MTProto-соединения, очередь вызовов и кэш. Агенты подключаются к нему по Streamable HTTP. Для клиентов, которые умеют только stdio, есть прокладка `tg-mcp stdio`: она пересылает JSON-RPC в демон и сама сессий не открывает. Блокировка «один процесс на сессии» сделана unix-сокетом в папке шлюза.
+The `tg-mcp serve` daemon owns MTProto connections, the request queue, and caches. Agents connect over Streamable HTTP. For stdio-only clients, `tg-mcp stdio` forwards JSON-RPC to the daemon without opening sessions. A Unix socket in the gateway directory enforces single-process ownership.
 
-Почему: два процесса на одной сессии дают `AUTH_KEY_DUPLICATED`, и Telegram сбрасывает сессию.
+Reason: two processes using the same session cause `AUTH_KEY_DUPLICATED`, and Telegram invalidates the session.
 
-## 2. Контракт состоит только из tools (предложено)
+## 2. Tools-only contract (proposed)
 
-Resources, prompts и elicitation поддерживаются не во всех клиентах, tools понимают все. Схемы плоские: строки, числа, boolean, enum и массивы из них, без union и вложенных объектов. Имена `tg_*` в snake_case, в основном наборе не больше 10-12 инструментов.
+Resources, prompts, and elicitation are not supported by every client; tools are. Schemas are flat: strings, numbers, booleans, enums, and arrays of these, without unions or nested objects. Names use `tg_*` snake_case; the core toolset contains at most 10-12 tools.
 
-Почему: описания всех инструментов попадают в контекст агента при каждом запуске; лишние инструменты стоят токенов и внимания модели.
+Reason: all tool descriptions enter agent context at startup; extra tools consume tokens and model attention.
 
-## 3. Ядро отдельно от MCP (предложено)
+## 3. Core is independent of MCP (proposed)
 
-Ядро и сервисы не знают про MCP и транспорт. Хранилище подключается через порт, реализация на SQLite.
+Core and services have no MCP or transport dependencies. Storage uses a port with a SQLite implementation.
 
-Почему: шлюз ставится без внешних сервисов, а ядро без MCP проще тестировать.
+Reason: installation requires no external services, and independent core logic is easier to test.
 
-## 4. Запись выключена по умолчанию и идёт в два шага (предложено)
+## 4. Writes are disabled by default and use two steps (proposed)
 
-Инструменты записи живут в наборе `write`, который нужно включить явно. Каждый из них только готовит действие; выполняет его второй вызов, `tg_confirm`. Подробно в решении 23.
+Write tools belong to the explicitly enabled `write` toolset. They only prepare actions; `tg_confirm` executes them. See decision 23.
 
-Почему: двухшаговое подтверждение работает в любом клиенте, в отличие от elicitation.
+Reason: two-step confirmation works in every client, unlike elicitation.
 
-## 5. Долгое оформляется задачей (предложено)
+## 5. Long operations become jobs (proposed)
 
-Вызов укладывается примерно в 30 секунд. Выгрузка и индексация ждут до 20 секунд и, если не успели, возвращают `job_id`; статус читается тем же инструментом с этим `job_id`. Если FLOOD_WAIT длиннее бюджета ожидания, шлюз сразу отвечает ошибкой с `retry_after`.
+Ordinary calls finish in about 30 seconds. Export and indexing wait up to 20 seconds, then return `job_id`; the same tool reads status using that ID. FLOOD_WAIT exceeding the waiting budget returns an error immediately with `retry_after`.
 
-Почему: у клиентов есть таймауты на вызов инструмента, и они разные.
+Reason: clients have different tool-call timeouts.
 
-## 6. Текст из Telegram считается чужим (предложено)
+## 6. Telegram text is untrusted (proposed)
 
-Каждое сообщение в выдаче обёрнуто в явные границы, названия чатов и имена очищаются, инструкции сервера говорят агенту не выполнять команды из этого текста. Личные переписки закрыты, пока владелец их не открыл (решение 27).
+Every returned message has explicit content boundaries. Chat titles and names are sanitized; server instructions prohibit obeying commands from this content. Private conversations stay closed until the owner opens them (decision 27).
 
-Почему: публичные чаты и собеседники это открытый канал для prompt injection, а с включённой записью это уже не теория.
+Reason: public chats and contacts provide a prompt-injection channel, especially when writes are enabled.
 
-## 7. Шлюз отдаёт данные, думает агент (предложено)
+## 7. The gateway provides data; the agent interprets it (proposed)
 
-Внутри шлюза нет модели и API-ключей. Сводки, разбор цен, оценки каналов, тексты ответов и ход переговоров делает агент. Шлюз отдаёт текст как есть и числа без «вердиктов».
+The gateway contains no model or model API keys. Agents produce summaries, parse prices, assess channels, write replies, and conduct negotiations. The gateway returns original text and numbers without verdicts.
 
-Почему: шлюз не привязан к провайдеру и не принимает решений за агента.
+Reason: the gateway stays provider-independent and does not decide for the agent.
 
-## 8. Большие объёмы уходят в файл (предложено)
+## 8. Large results go into files (proposed)
 
-`tg_export` пишет JSONL или CSV и возвращает путь, число строк и пять примеров; картинки тоже ложатся файлами. Для сводок наоборот: краткий режим ленты.
+`tg_export` writes JSONL or CSV and returns a path, row count, and five examples. Images also become files. Summaries use brief history mode.
 
-Почему: все клиенты умеют запускать код. Тысяча объявлений в контексте стоит дорого, и модель считает по ним хуже, чем код.
+Reason: every client can run code. Thousands of listings consume context, and code aggregates them more reliably than a model.
 
-## 9. Пишет тот, кто подключён (принято 2026-10-01)
+## 9. Writes use the connected account (accepted 2026-10-01)
 
-Шлюз не выбирает личность сам. Подключён отдельный аккаунт агента: пишет он. Подключён личный аккаунт владельца: это осознанное решение владельца. В канале, где аккаунт админ, можно ответить от имени канала (`send_as`).
+The gateway never chooses an identity. An agent account writes as that account; connecting the owner's personal account is an explicit owner choice. Channel administrators may reply as the channel with `send_as`.
 
-Почему: так сказал владелец.
+Reason: owner instruction.
 
-## 10. Правило и поручение (снято решением 25)
+## 10. Rules and assignments (superseded by decision 25)
 
-## 11. Проект живёт в отдельной папке (принято 2026-10-01)
+## 11. Dedicated project directory (accepted 2026-10-01)
 
-Работа ведётся в `~/Projects/CODE/Chanel/tg-mcp`. Общего кода с другими проектами нет: шлюз самодостаточен.
+Development uses `~/Projects/CODE/Chanel/tg-mcp`. No code is shared with other projects; the gateway is self-contained.
 
-Почему: так попросил владелец.
+Reason: owner request.
 
-## 12. Демон работает на лабораторной машине (принято 2026-10-01)
+## 12. Daemon runs on the lab machine (accepted 2026-10-01)
 
-Демон живёт на `macbook-pro-lab.local` (macOS, Intel, Node 22), там же, где агенты. Агенты подключаются к `127.0.0.1`, файлы выгрузки и картинки лежат на том же диске. Супервизор: launchd с `KeepAlive`. Разработка идёт на основном Mac.
+The daemon runs on `macbook-pro-lab.local` (macOS, Intel, Node 22), alongside agents. Agents connect to `127.0.0.1`; exports and images use the same disk. launchd supervises the daemon with `KeepAlive`. Development uses the main Mac.
 
-Сессия создаётся входом отдельно на каждой машине и между машинами не копируется: копия файла сессии даёт один ключ в двух местах и `AUTH_KEY_DUPLICATED`.
+Each machine creates its own session through login. Never copy sessions between machines: duplicated keys cause `AUTH_KEY_DUPLICATED`.
 
-Почему: так сказал владелец; агенты уже работают на этой машине.
+Reason: owner instruction; agents already run there.
 
-## 13. Два способа переписки, через аккаунт и через Business-бота (снято решениями 23 и 25)
+## 13. Account and Business-bot conversations (superseded by decisions 23 and 25)
 
-## 14. Имя и установка (принято 2026-10-01)
+## 14. Name and installation (accepted 2026-10-01)
 
-Приватный репозиторий `telegram-gateway-mcp`, локальная папка `tg-mcp`, команда CLI `tg-mcp`. В npm не публикуется, в `package.json` стоит `"private": true`. На лабораторную машину ставится установщиком под root по sha коммита (решение 22).
+Current private repository: `telegram-gateway-mcp`; local directory and CLI: `tg-mcp`. The package is unpublished with `"private": true`. A root-owned installer deploys a specified commit SHA to the lab machine (decision 22).
 
-`npx tg-mcp` не использовать нигде: в npm под этим именем чужой пакет, и `npx` скачает и запустит его.
+Never run `npx tg-mcp`: that npm name belongs to another package, which npx would download and execute.
 
-Почему: так сказал владелец.
+Reason: owner instruction.
 
-Переход к публичному репозиторию определён решением 33, название открытого проекта решением 35, npm-публикация первого публичного выпуска решением 36. До переноса действуют текущие имя, установка и приватный режим.
+Decision 33 defines the move to a public repository, decision 35 its name, and decision 36 npm publication. Current naming, installation, and private mode apply until migration.
 
-## 15. Читать можно любой канал (принято 2026-10-01, изменено решением 25)
+## 15. Read any channel (accepted 2026-10-01, amended by decision 25)
 
-Публичные каналы и группы читаются без вступления. Для закрытых нужен аккаунт-участник; вступление идёт через `tg_join` с подтверждением. Списка наблюдаемых чатов в шлюзе нет: агент сам перечитывает ленту, когда ему нужно.
+Public channels and groups can be read without joining. Private chats require membership; `tg_join` uses confirmation. There is no watched-chat registry; the agent reads history when needed.
 
-## 16. Несколько пользователей и аккаунтов (принято 2026-10-01)
+## 16. Multiple users and accounts (accepted 2026-10-01)
 
-Шлюзом пользуются двое: владелец и жена владельца. Каждый подключает свои аккаунты Telegram, есть общие.
+Two people use the gateway: the owner and the owner's wife. Each connects personal Telegram accounts; some accounts are shared.
 
-- **Пользователь:** свой bearer-токен (по нему шлюз узнаёт, кто вызывает) и аккаунт по умолчанию. В базе лежит только хэш токена.
-- **Аккаунт:** сессия Telegram и список пользователей с доступом. Один процесс держит сессии всех аккаунтов, у каждого аккаунта своя очередь и свои лимиты. Общий аккаунт делит очередь между пользователями, и это защищает сам аккаунт.
-- **Вызов:** у инструментов, которые ходят в Telegram, необязательный параметр `account`; доступны только свои и общие аккаунты. Скоупы, запросы на запись, задачи и аудит принадлежат пользователю.
-- **Вход:** каждый входит в свой аккаунт сам (`tg-mcp login --account <имя>`), код приходит на его телефон.
+- **User:** a bearer token for caller identity and a default account. Store only the token hash.
+- **Account:** a Telegram session and access grants. One process owns all sessions; each account has its own queue and limits. Shared users share the queue to protect the account.
+- **Call:** Telegram tools accept an optional `account`; only owned and granted accounts are accessible. Scopes, approvals, jobs, and audit belong to users.
+- **Login:** each person logs in independently (`tg-mcp login --account <name>`), receiving the code on their own phone.
 
-Ограничение: агенты обоих работают под одним пользователем macOS (`nick`), поэтому токены друг друга им доступны. Разделение в шлюзе защищает от ошибок, а не от агента, которого увели через prompt injection. Сессии Telegram защищены отдельно (решение 17).
+Limitation: both people's agents run as macOS user `nick` and can access each other's tokens. Gateway separation prevents mistakes, not a prompt-injected agent's deliberate impersonation. Sessions have separate protection (decision 17).
 
-Почему: так сказал владелец.
+Reason: owner instruction.
 
-## 17. Демон под отдельным пользователем macOS (принято 2026-10-01)
+## 17. Dedicated macOS service user (accepted 2026-10-01)
 
-На лабораторной машине демон работает под своим пользователем macOS (`tgmcp`), а не под `nick`, под которым работают агенты. Сессии, ключ шифрования, база и `.env` лежат у этого пользователя, агентам они недоступны. Пользователя и LaunchDaemon создаёт владелец: это требует прав администратора.
+The lab daemon runs as `tgmcp`, separately from agent user `nick`. Sessions, encryption key, database, and `.env` belong to the service user and are inaccessible to agents. The owner creates the user and LaunchDaemon with administrator privileges.
 
-Следствия:
+Consequences:
 
-- выгрузки и картинки демон пишет в общую папку с правом чтения для агентов;
-- управление (вход, пользователи, скоупы, `doctor`) идёт через `sudo tg-mcp-admin`: агент этого сделать не может;
-- stdio-прокладка только пересылает вызовы в демон.
+- Exports and images go into a shared directory readable by agents.
+- Login, users, scopes, and doctor use `sudo tg-mcp-admin`; agents cannot administer them.
+- The stdio proxy only forwards requests.
 
-Почему: агенты работают с shell под `nick`. Агент, которого увели через prompt injection, иначе мог бы прочитать сессию вместе с ключом и унести аккаунт целиком. Так решил владелец.
+Reason: agents have shell access as nick. Without isolation, prompt injection could steal both session and encryption key, compromising the account. Owner decision.
 
-## 18. Общие аккаунты (принято 2026-10-01)
+## 18. Shared accounts (accepted 2026-10-01)
 
-Для аккаунта, к которому есть доступ у нескольких пользователей:
+For accounts granted to several users:
 
-- запись подтверждает тот, кто её подготовил: чужой запрос для другого пользователя не существует;
-- дневные пределы записи считаются на аккаунт, а не на пользователя;
-- локальный индекс чата виден всем пользователям аккаунта, удалить его может только тот, кто создал.
+- Only the requesting user can confirm a write; other users cannot see its approval.
+- Daily write caps apply per account, not per user.
+- All account users can search its local indexes; only the index creator can delete an index.
 
-Почему: так согласовал владелец. Общий аккаунт рискует одним и тем же аккаунтом Telegram, поэтому дневные пределы у него общие.
+Reason: owner agreement. All users expose the same Telegram account to risk, so caps are shared.
 
-## 19. Режим работы агента-разработчика и драйвер SQLite (принято 2026-10-01)
+## 19. Developer-agent workflow and SQLite driver (accepted 2026-10-01)
 
-- **Драйвер SQLite:** встроенный `node:sqlite`. Без нативной сборки, FTS5 есть на обеих машинах. Хранилище спрятано за портом, драйвер можно заменить.
-- **Git:** агент коммитит после каждого законченного шага с зелёными тестами и сразу пушит в `main` приватного репозитория.
-- **Лабораторная машина:** агент может по SSH собирать, тестировать и проверять шлюз. Всё, что требует sudo, делает владелец по готовой команде. Код и пароль 2FA вводит хозяин аккаунта.
+- **SQLite:** built-in `node:sqlite`, without native compilation. FTS5 is available on both machines. A storage port allows driver replacement.
+- **Git:** commit after each completed step with green tests and immediately push to private `main`.
+- **Lab machine:** the agent may build, test, and inspect over SSH. The owner runs supplied commands requiring sudo. The account holder enters login codes and 2FA passwords.
 
-Почему: так решил владелец, чтобы работа шла автономно.
+Reason: owner decision to allow autonomous development.
 
-## 20. Уточнения при реализации (предложено)
+## 20. Implementation details (proposed)
 
-- **HTTP без состояния.** На каждый запрос свой MCP-сервер. Демон может выйти при зависшем вызове и подняться заново, а клиенту достаточно повторить вызов.
-- **`structuredContent` не отдаётся.** Только компактный текст: часть клиентов передаёт модели и текст, и структуру, то есть ответ удваивался бы.
-- **`tg_status` доступен при любом составе наборов.** Агент всегда видит свои аккаунты и паузы.
-- **Код и Node на лабораторной машине принадлежат root.** Homebrew там принадлежит `nick`, поэтому демон исполняет собственную копию Node из `/opt/telegram-gateway-mcp`. Обновление требует sudo. Подробно в [deploy.md](deploy.md).
-- **Линтера нет.** Проверки делают строгий `tsc` и тесты.
+- **Stateless HTTP:** a new MCP server per request. After a hang and daemon restart, clients retry calls.
+- **No structuredContent:** compact text only; clients passing both text and structure would duplicate model context.
+- **tg_status is always available:** agents always see their accounts and pauses.
+- **Root-owned lab code and Node:** Homebrew belongs to nick, so the daemon uses a separate Node copy under `/opt/telegram-gateway-mcp`. Updates require sudo; see [deploy.md](deploy.md).
+- **No linter:** strict tsc and tests provide checks.
 
-Почему: решения принимались по ходу автономной работы (решение 19).
+Reason: implementation choices under decision 19.
 
-## 21. Согласование записи в отдельном боте (отменено владельцем 2026-10-01, см. решение 23)
+## 21. Separate approval bot (revoked by owner 2026-10-01; see decision 23)
 
-## 22. Изменения по итогам ревью (предложено)
+## 22. Review changes (proposed)
 
-Код прошёл два независимых ревью: безопасность и корректность. Что из этого действует.
+The code received two independent reviews, covering security and correctness. Current outcomes follow.
 
-Установка и файлы:
+Installation and files:
 
-- **Установщик не доверяет клону.** Он запускается только из копии под root (`/opt/telegram-gateway-mcp/install.sh`), сам забирает с GitHub коммит по полному sha и собирает его под root. Клон на лабораторной машине доступен агенту на запись, собирать из него нельзя.
-- **Общая папка для выгрузок** лежит в `/opt/telegram-gateway-mcp/files`. Шлюз не пишет и не читает по ссылкам и не использует папку, в которую может писать кто-то ещё.
-- **Демон слушает только localhost.** Другой адрес требует `TG_MCP_ALLOW_REMOTE=1`: токен идёт по HTTP открытым текстом.
+- **Do not trust agent-writable clones:** run only the root-owned `/opt/telegram-gateway-mcp/install.sh`; fetch a full GitHub commit SHA and build as root.
+- **Shared exports:** use `/opt/telegram-gateway-mcp/files`. Never follow symlinks or use directories writable by others.
+- **Localhost only:** other interfaces require `TG_MCP_ALLOW_REMOTE=1`; HTTP sends tokens without encryption.
 
-Доступ агента:
+Agent access:
 
-- **Поиск по сообщениям** ищет по одному виду чатов за вызов (`where`): каналы (по умолчанию), группы или личные чаты. Из личных чатов отдаётся только то, что владелец открыл на чтение (решение 30); число скрытых совпадений не показывается.
-- **Названия чатов и имена людей** в ответах считаются чужим текстом: из них убираются невидимые символы и переводы строк.
+- **Message search:** one chat category per call through `where`: channels by default, groups, or private chats. Return only private conversations opened for reading (decision 30), without hidden match counts.
+- **Names and titles:** treat them as untrusted text and remove invisible characters and line breaks.
 
-Подтверждение записи:
+Write confirmation:
 
-- Текст запроса чистится от невидимых символов до показа: подтверждается ровно то, что уйдёт.
-- Подтверждение после истечения срока действие не выполняет.
-- Действие, прерванное перезапуском шлюза, не повторяется и закрывается как «исход неизвестен».
+- Sanitize text before preview so the confirmed text exactly matches the outgoing text.
+- Expired confirmations execute nothing.
+- Interrupted actions are not retried after restart and close with an unknown outcome.
 
-Лимитер:
+Limiter:
 
-- FLOOD_WAIT короче пяти минут ставит на паузу аккаунт. Дольше: закрывается только метод, который получил паузу (типичный случай: `contacts.ResolveUsername` на сутки), остальные запросы аккаунта работают.
-- Медленный режим чата (`SLOWMODE_WAIT`) это пауза одного чата, аккаунт на паузу не встаёт.
-- Перед аварийным выходом (зависший вызов) ждущие вызовы получают ошибку, и шлюз даёт 300 мс записать исходы.
+- FLOOD_WAIT under five minutes pauses the account. Longer waits pause only the affected method, such as contacts.ResolveUsername for a day; other methods remain usable.
+- SLOWMODE_WAIT pauses one chat, not the account.
+- Before exiting on a hanging call, reject waiting calls and allow 300 ms to record outcomes.
 
-Прочее:
+Other:
 
-- **Вход не регистрирует новые аккаунты.** Для номера без аккаунта библиотека молча создала бы аккаунт и приняла условия Telegram. Шлюз вход прерывает.
-- **Хранение:** аудит 90 дней, решённые запросы на запись 7 дней.
-- **Кэш сущностей:** username, который перешёл к другому чату, у прежнего снимается. Иначе подтверждённое сообщение могло уйти в старый чат.
+- **No account registration:** abort login for unregistered phone numbers rather than letting the library create an account and accept Telegram terms.
+- **Retention:** audit 90 days, resolved write requests 7 days.
+- **Entity cache:** remove reassigned usernames from former chats to prevent sending approved messages to the wrong destination.
 
-Почему: решения принимались в сторону меньшего доступа агента. Владелец может отменить любое.
+Reason: conservative agent access choices; the owner may revoke any proposed choice.
 
-## 23. Запись подтверждается через своего агента, без бота (принято 2026-10-01)
+## 23. Owner's agent confirms writes, without a bot (accepted 2026-10-01)
 
-Шлюз остаётся только MCP-сервером, с владельцем разговаривает только его агент. Отдельного бота для согласований нет.
+The gateway remains an MCP server; only the owner's agent talks to the owner. There is no separate approval bot.
 
-Как идёт запись:
+Write flow:
 
-1. Инструмент записи (`tg_reply`, `tg_send`, `tg_react`, `tg_join`) ничего не делает в Telegram. Он возвращает предпросмотр (что, куда, с какого аккаунта, точный текст) и `approval_id`.
-2. Агент показывает предпросмотр владельцу в своём разговоре с ним.
-3. После согласия владельца агент вызывает `tg_confirm` с этим `approval_id`. Действие выполняет шлюз. Формулировку можно заменить параметром `text`, отменить запрос можно `action=reject`.
+1. A write tool (`tg_reply`, `tg_send`, `tg_react`, `tg_join`) returns a preview with action, destination, account, exact text, and `approval_id`, without executing it.
+2. The agent shows this preview to the owner in their conversation.
+3. After owner consent, the agent calls `tg_confirm`. The gateway executes the action. `text` replaces wording; `action=reject` cancels it.
 
-Запрос живёт 30 минут: это время на «показал и получил ответ». Очереди черновиков шлюз не ведёт.
+Requests live for 30 minutes, allowing time for preview and response. There is no draft queue.
 
-Слабое место. Агент технически может вызвать `tg_confirm` сам, не спросив владельца: шлюз не видит, было ли согласие. Что остаётся защитой:
+Limitation: agents can technically call tg_confirm without asking; the gateway cannot observe human consent. Remaining safeguards:
 
-- разрешения самого клиента: в Claude Code инструмент `tg_confirm` стоит оставить в режиме «спрашивать» ([connect.md](connect.md));
-- пределы шлюза не зависят от агента: дневные числа, закрытые по умолчанию личные чаты, служебные чаты закрыты всегда;
-- текст из Telegram помечен как чужой, инструкции сервера запрещают подтверждать по просьбе из такого текста.
+- Client permissions: leave tg_confirm in ask mode in Claude Code ([connect.md](connect.md)).
+- Gateway-enforced caps, private chats closed by default, and permanently blocked service chats.
+- Untrusted-content labels and instructions prohibiting confirmation requested by Telegram content.
 
-Почему: так решил владелец. Отдельный бот это лишний посредник со своим токеном и своими сбоями.
+Reason: owner decision. A separate bot adds another intermediary, token, and failure mode.
 
-## 24. Список чатов, реакции, поиск каналов, статистика, индекс (предложено)
+## 24. Dialogs, reactions, discovery, statistics, and indexes (proposed)
 
-Владелец попросил пять возможностей. Что решено по ходу.
+Implementation choices for five owner-requested capabilities:
 
-- **`tg_list_dialogs` лежит в `core`.** Без него агент не может найти чат по размытому названию («чат барахолки»). По умолчанию показывает каналы и группы; личные чаты только с `type=private` и только открытые на чтение (решение 27). Чаты из списка запрета не показываются.
-- **Реакция это запись:** идёт через предпросмотр и `tg_confirm`. Только стандартные эмодзи.
-- **Статистика без оценок.** Шлюз считает числа (охват, вовлечённость, разброс, тренд), а баллов, ниши, риска накрутки и оценки цены рекламы в нём нет: это выводы, их делает агент (решение 7).
-- **Рост подписчиков по собственным снимкам.** Telegram отдаёт график роста только админам канала. Шлюз запоминает число участников раз в день, когда видит его, и показывает разницу. История начинается с первого обращения к каналу.
-- **Индекс наполняется только по вызову.** Чат индексируется вызовом `tg_index`, обновляется повторным вызовом. В базе шлюза лежит только то, что явно попросили положить.
-- **Поиск на триграммах FTS5.** Морфологии в SQLite нет; триграммы находят слово в любой форме («велосипед» и «велосипедом») и не зависят от регистра. Цена: слова короче трёх символов не индексируются.
-- **Тексты проиндексированных чатов хранятся в базе шлюза.** База лежит у пользователя демона, агентам недоступна. Удаление индекса и удаление аккаунта убирают и сообщения, и поисковые записи. Комментарии под постами в индекс не идут.
+- **tg_list_dialogs in core:** enables fuzzy chat discovery. Lists channels and groups by default; private chats require type=private and read access (decision 27). Owner-blocked chats are hidden.
+- **Reactions are writes:** preview and tg_confirm; standard emoji only.
+- **Statistics without verdicts:** calculate reach, engagement, dispersion, and trends. Scores, niche, manipulation risk, and advertising price estimates remain agent judgments (decision 7).
+- **Subscriber snapshots:** Telegram exposes historical growth only to admins. Store observed counts once daily and report differences beginning with the first observation.
+- **Explicit indexing:** tg_index populates and refreshes only chats explicitly requested by the agent.
+- **FTS5 trigrams:** SQLite has no morphology engine; case-insensitive substrings match forms such as bicycle/bicycles. Words shorter than three characters are not indexed.
+- **Indexed text:** stored in the service user's database, inaccessible to agents. Deleting indexes or accounts removes message and search rows. Post comments are not indexed.
 
-Почему: решения принимались по ходу работы (решение 19). Владелец может отменить любое.
+Reason: implementation choices under decision 19; the owner may revoke them.
 
-## 25. Чистый MCP: шлюз это инструмент, а не агент (принято 2026-10-01)
+## 25. Pure MCP: a tool, not an agent (accepted 2026-10-01)
 
-Шлюз ничего не делает, пока агент не вызвал инструмент: не следит за чатами, не запускает агентов, не пишет для них задания, не ведёт правил и поручений, не толкует данные за агента.
+Without a tool call, the gateway does not watch chats, launch agents, write assignments, manage rules or tasks, or interpret data.
 
-Что остаётся состоянием шлюза и не считается «агентностью»: сессии, кэш чатов, запросы на запись и журнал записи для пределов, снимки числа подписчиков, локальный индекс (наполняется только по вызову), задачи выгрузки и индексации, начатые агентом, аудит.
+Gateway state includes sessions, chat caches, write approvals and journals for caps, participant snapshots, explicitly populated local indexes, tool-started export/indexing jobs, and audit. These do not make it an agent.
 
-Фоновая работа демона одна: раз в минуту закрыть просроченные запросы на запись и удалить старые записи в своей базе. В Telegram без вызова он не ходит, только держит соединение.
+The daemon's only periodic work is once-a-minute expiration and database retention cleanup. It maintains connections but makes no autonomous Telegram requests.
 
-Постоянные задачи (следить за каналом и отвечать, вести переговоры) делает агент своими средствами: расписанием в Hermes или циклом в Claude Code. Он сам перечитывает ленту, сам помнит цель и ход переписки, сам спрашивает владельца, а в шлюз ходит за чтением и за записью через `tg_confirm`. Как это настроить: [connect.md](connect.md).
+Agents handle recurring monitoring and negotiations using their own schedules or loops, such as Hermes scheduling or Claude Code loops. They read history, remember goals and conversations, ask the owner, and use the gateway for reading and confirmed writes. See [connect.md](connect.md).
 
-Почему: так решил владелец. Шлюз проще, в нём нет кода, который принимает решения или тратит запуски моделей, и нет фоновой активности на аккаунте.
+Reason: owner decision for a simpler gateway without model-launch costs, autonomous decisions, or account activity.
 
-Цена: постоянные задачи нужно настраивать на стороне агента, и состояние переговоров живёт в памяти агента, а не в шлюзе.
+Tradeoff: recurring tasks and negotiation state live on the agent side.
 
-## 26. Библиотека MTProto: teleproto (принято 2026-10-02)
+## 26. MTProto library: teleproto (accepted 2026-10-02)
 
-Шлюз работает на `teleproto` 1.229.1, версия закреплена точно. Это форк GramJS (пакет `telegram`), на который указали сами авторы GramJS, когда архивировали его в июле 2026.
+Use exactly pinned `teleproto` 1.229.1, the GramJS fork recommended by its authors when they archived the `telegram` package in July 2026.
 
-Что проверено:
+Verified during migration:
 
-- В пакете нет установочных скриптов, запуска процессов и `eval`; сетевые адреса только серверов Telegram.
-- Формат сессии тот же, что у GramJS: сессия, созданная до перехода, работает без повторного входа.
-- Двойник Telegram в тестах сериализует каждый запрос настоящими классами библиотеки: поле, ставшее обязательным в новом слое протокола, тест поймает.
+- No package installation scripts, process launches, or eval; network endpoints belong to Telegram.
+- Compatible session format; existing gateway sessions work without another login.
+- The test fake serializes requests with real library classes, detecting newly required protocol fields.
 
-Чего шлюз не использует: обход капчи при входе в аккаунт (`reCaptchaCallback`) не подключён намеренно.
+The gateway deliberately does not configure login CAPTCHA bypass through reCaptchaCallback.
 
-Цена и риск. У форка один сопровождающий. Обновлять версию нужно осознанно: посмотреть изменения, прогнать тесты и проверку на живом аккаунте (см. [risks.md](risks.md)).
+Risk: the fork has one maintainer. Review changes, run tests, and verify a live account before upgrades ([risks.md](risks.md)).
 
-## 27. Режим личных чатов и настраиваемые дневные пределы (принято 2026-10-02)
+## 27. Private-chat modes and configurable daily caps (accepted 2026-10-02)
 
-**Режим личных чатов.** Задаётся командой владельца для пары «пользователь шлюза и аккаунт», действует сразу, без перезапуска:
+**Private-chat mode:** the owner sets it per gateway user/account pair, effective immediately without restart:
 
 ```
 tg-mcp scope private <user> <account> closed|send|open
 ```
 
-- `closed` (по умолчанию): открыты только диалоги из `scope allow`.
-- `send`: агент может подготовить сообщение любому человеку (`tg_send`), но переписку не читает. Читается только диалог, открытый через `scope allow`.
-- `open`: агент читает и пишет в любой личный чат; `tg_list_dialogs type=private` показывает список.
+- `closed` (default): only conversations opened with scope allow are accessible.
+- `send`: agents may prepare messages to any person through tg_send but cannot read conversations unless scope allow opens them.
+- `open`: agents may read and write any private conversation; tg_list_dialogs type=private lists them.
 
-Что не меняется ни в одном режиме: служебные чаты Telegram закрыты, `scope deny` сильнее режима, каждое сообщение уходит только после `tg_confirm`. Скоупы проверяются второй раз в момент подтверждения: если владелец закрыл режим между предпросмотром и «да», сообщение не уйдёт.
+Service chats remain blocked, scope deny overrides the mode, and every message requires tg_confirm. Recheck scopes at confirmation: closing access after preview prevents sending.
 
-Почему режим, а не просто «открыть всё»: отправка и чтение это разные риски. Отправку владелец видит и подтверждает сам. Чтение личной переписки отдаёт агенту чужой текст (в том числе попытки управлять агентом) и личные данные собеседников, и подтверждения на чтение нет.
+Reason for separate send/read modes: owners see and approve outgoing messages. Reading exposes contacts' personal data and untrusted instructions without per-read confirmation.
 
-**Дневные пределы.** Числа 20 ответов, 5 новых диалогов, 5 вступлений и 30 реакций в день на аккаунт это осторожные значения по умолчанию, которые выбрал разработчик шлюза, а не правило Telegram: своих порогов Telegram не публикует. Смысл предела: сообщения незнакомым людям это действие, за которое Telegram ограничивает аккаунт после жалоб (`PEER_FLOOD`), а предел не даёт дойти до этого незаметно, по одному «да» за раз. Пределы задаются в `.env` демона, 0 снимает предел:
+**Daily caps:** defaults of 20 replies, 5 new conversations, 5 joins, and 30 reactions per account are conservative gateway choices, not Telegram rules. Telegram does not publish thresholds. Caps prevent accumulating risky stranger contacts through individual approvals until complaints cause PEER_FLOOD. Configure the daemon's .env; 0 removes a cap:
 
 ```
 TG_MCP_LIMIT_NEW_DIALOGS=20
@@ -269,147 +269,155 @@ TG_MCP_LIMIT_JOINS=5
 TG_MCP_LIMIT_REACTIONS=30
 ```
 
-Действующие значения показывают `doctor` и `tg_status`. Опечатка в числе это ошибка запуска, а не молчаливый возврат к значению по умолчанию.
+The example overrides the default new-conversation cap. doctor and tg_status report effective values. Invalid numeric values fail startup rather than silently using defaults.
 
-Цена: в режиме `open` агент видит всю личную переписку аккаунта, включая «Избранное». Для личного аккаунта владельца разумнее `send` и точечные `scope allow`.
+Tradeoff: open mode exposes all private conversations, including Saved Messages. For the owner's personal account, send mode with specific scope allow rules is more conservative.
 
-## 28. Моста к архивам других проектов не будет (принято 2026-10-02)
+## 28. No bridge to other projects' archives (accepted 2026-10-02)
 
-Шлюз не читает базы других проектов. Он работает только с Telegram и со своей базой SQLite.
+The gateway reads only Telegram and its own SQLite database, never other projects' databases.
 
-Почему: так решил владелец. Мост был идеей из первого плана и не начинался; шлюзу он добавил бы вторую базу и зависимость от чужих схем.
+Reason: owner decision. The unimplemented initial bridge idea would add another database and dependencies on external schemas.
 
-## 29. Предела «один ответ на пост» нет (принято 2026-10-02)
+## 29. No one-reply-per-post cap (accepted 2026-10-02)
 
-Под одним постом аккаунт может ответить сколько угодно раз: каждый ответ по-прежнему идёт через предпросмотр и `tg_confirm`, и общий дневной предел ответов действует. Раньше шлюз разрешал один ответ на пост с аккаунта.
+Accounts may reply repeatedly under one post. Every reply still requires preview and tg_confirm and counts toward the daily reply cap. The former limit allowed one reply per post per account.
 
-Почему: так решил владелец. Шлюз это инструмент, сколько раз отвечать под постом, решает человек. Предел появился ради правил автоматизации (два правила могли ответить на один пост), а их больше нет; при этом он не давал вести разговор в комментариях.
+Reason: owner decision. Humans decide conversation frequency. The cap originally prevented multiple automation rules replying to one post; those rules no longer exist, and the cap blocked comment conversations.
 
-Что осталось: пока один подготовленный ответ на пост ждёт решения, второй черновик на тот же пост не создаётся. Это защита от повторного вызова, а не предел: после подтверждения или отмены можно готовить следующий.
+Pending-request deduplication remains: while one draft awaits a decision, do not prepare a second draft for the same post. Another reply can be prepared after confirmation or rejection.
 
-## 30. Меньше решений за владельца: превью ссылок, ответ на сообщение, поиск по личным чатам (принято 2026-10-02)
+## 30. Link previews, reply targets, and private search (accepted 2026-10-02)
 
-Владелец попросил снять три ограничения, которые шлюз накладывал без явной причины.
+The owner requested removal of three unjustified restrictions:
 
-- **Превью ссылок.** У `tg_reply` и `tg_send` появился параметр `link_preview`. По умолчанию превью выключено: карточку ссылки Telegram добавляет сам, и владелец не видит её в предпросмотре. Если параметр включён, предпросмотр прямо говорит об этом.
-- **Ответ на конкретное сообщение.** `tg_reply` со ссылкой на комментарий (`...?comment=N`) отвечает на этот комментарий, а не на пост; ответ остаётся в ветке поста. У `tg_send` параметр `reply_to` отвечает на сообщение чата по его id. Текст сообщения, на которое отвечают, в предпросмотр не попадает: это чужой текст.
-- **Поиск по личным чатам.** `tg_search_messages where=private` ищет по личным перепискам аккаунта. Агенту отдаётся только то, что открыто на чтение: диалоги из `scope allow` или все личные чаты в режиме `open`. В режимах `closed` и `send` без открытых диалогов поиск ничего не показывает. Служебные чаты Telegram не показываются никогда.
+- **Link previews:** tg_reply and tg_send accept link_preview. Disabled by default because Telegram-generated cards are not visible in the action preview. Enabling it is explicitly stated in the preview.
+- **Specific reply targets:** tg_reply with a comment link (...?comment=N) replies within that comment's thread. tg_send reply_to targets a chat message ID. Do not include the target's untrusted text in the action preview.
+- **Private search:** tg_search_messages where=private returns only conversations opened for reading by scope allow or open mode. Closed/send modes with no allowed conversations return nothing. Service chats remain hidden.
 
-Почему: так решил владелец. Шлюз это инструмент: как писать и где искать, решает человек, а шлюз отвечает за то, чтобы уходило ровно подтверждённое и читалось только открытое.
+Reason: owner decision. Humans choose writing and search behavior; the gateway enforces exact confirmed text and authorized reads.
 
-## 31. Inline-кнопки: видны в сообщениях, нажимаются в два шага (принято 2026-10-02)
+## 31. Inline buttons are visible and use two-step presses (accepted 2026-10-02)
 
-Задача из issue 1 репозитория: бот прислал сообщение с кнопкой, а шлюз не показывал клавиатуру и не умел её нажать.
+Issue 1 requested displaying and pressing a bot's inline keyboard.
 
-- **Чтение.** `tg_get_message` и `tg_read_history mode=full` показывают inline-кнопки сообщения строкой `buttons:`: место (ряд.позиция), подпись, вид кнопки и адрес, если кнопка ведёт по ссылке. В кратком режиме в заголовке только число кнопок. Байтов callback в выдаче нет. Подпись и адрес это чужой текст.
-- **Нажатие.** `tg_press_button` готовит нажатие по сообщению и месту кнопки, нажимает `tg_confirm` после согласия владельца. Байты callback агент не передаёт: шлюз берёт их из сообщения сам. При подтверждении сообщение читается заново; если бот его изменил и на этом месте уже другая кнопка, нажатия нет.
-- **Только callback.** Ссылки, веб-приложения, вход на сайт, оплату, игры и переход в inline-режим шлюз не нажимает и ссылок не открывает. Кнопку, которая просит пароль 2FA аккаунта, тоже.
-- **Ответ бота** (всплывающая строка, окно или ссылка) возвращается агенту как чужой текст. Если бот не ответил вовремя (`BOT_RESPONSE_TIMEOUT`), это исход «нажато, бот промолчал», а не сбой.
-- **Дневного предела нет.** Каждое нажатие подтверждает владелец; вызовы остаются в аудите.
-- **Что нажимать, решает владелец.** Шлюз не делит кнопки на разрешённые и запретные по смыслу: кнопка проверки у бота-привратника («я не бот») нажимается так же, как любая другая callback-кнопка, после подтверждения. Прежнее правило «капчу проходит только владелец руками» владелец снял: шлюз это инструмент, что можно, а что нельзя, решает человек. Сам шлюз капчу не решает: картинок и задач не распознаёт и без вызова ничего не делает.
+- **Reading:** tg_get_message and full history show buttons: with row.column, label, kind, and destination for URL buttons. Brief mode reports only the button count. Never expose callback bytes. Labels and destinations are untrusted.
+- **Pressing:** tg_press_button prepares a position-based preview; tg_confirm executes after owner consent. Callback bytes come from the message, never agent arguments. Reread at confirmation and refuse changed buttons.
+- **Callbacks only:** do not open links, web apps, sign-in flows, payments, games, inline-mode switches, or buttons requiring the account's 2FA password.
+- **Bot response:** return toast, alert, or URL as untrusted text. BOT_RESPONSE_TIMEOUT means pressed without a timely bot answer, not failed execution.
+- **No daily press cap:** the owner confirms every press; audit retains calls.
+- **Meaning is the owner's choice:** gatekeeper verification buttons such as 'I am not a bot' use the same confirmed callback flow. The owner revoked the former manual-only CAPTCHA-button rule. The gateway does not interpret images, solve challenges, or act autonomously.
 
-Почему нажатие идёт через шлюз записи: кнопка бота может значить что угодно (голос, покупку внутри бота, удаление, согласие с условиями), и подпись пишет сам бот. Клавиатуры под полем ввода (`ReplyKeyboardMarkup`) сюда не входят: нажатие такой кнопки это обычное сообщение через `tg_send`.
+Reason for the write gate: buttons may vote, purchase within a bot, delete content, or accept terms; the bot controls their labels. ReplyKeyboardMarkup buttons are ordinary text messages through tg_send, outside this feature.
 
-## 32. Скрытые ссылки видны в полном режиме (принято 2026-10-02)
+## 32. Full mode displays hidden links (accepted 2026-10-02)
 
-В режиме `full` (`tg_get_message`, `tg_read_history mode=full`) после текста сообщения идёт строка `hidden links:`: слова, под которыми спрятан адрес, и сам адрес. Явные адреса видны в тексте и в эту строку не попадают. У кнопок-ссылок адрес показан рядом с подписью (решение 31). В кратком режиме ни того, ни другого нет: он остаётся в две строки на сообщение.
+Full message/history mode adds hidden links: after text, showing linked words and destinations. Explicit URLs remain in text; URL-button destinations appear with their labels (decision 31). Brief mode shows neither, preserving two lines per message.
 
-Почему: так решил владелец. Пост вида «подробности тут» без адреса агенту бесполезен, а человек в Telegram этот адрес видит. Адреса помечены как чужой текст; шлюз по ним не ходит.
+Reason: owner decision. A post saying 'details here' without its destination is unusable to an agent. Addresses are untrusted; the gateway never opens them.
 
-## 33. Публичный проект начинается с чистого снимка (принято 2026-10-05)
+## 33. Public project starts from a clean snapshot (accepted 2026-10-05)
 
-Владелец создаёт новый репозиторий для открытого проекта. В него переносится подготовленный и проверенный снимок инструмента без истории коммитов текущего приватного репозитория. В новом репозитории начинается своя история, и после переноса дальнейшая разработка ведётся там.
+The owner creates a new repository containing a prepared, verified snapshot without this private repository's commit history. New history begins there, and further development moves there after migration.
 
-Текущий репозиторий остаётся приватным с существующей историей. Его видимость не меняется, история не переписывается, issues, PR, логи и артефакты автоматически не переносятся. Для публикации проверяются файлы выбранного снимка и материалы нового репозитория; отдельный аудит прежней приватной истории не является условием открытия нового.
+The current repository stays private with its existing history. Do not change its visibility, rewrite history, or automatically transfer issues, PRs, logs, or artifacts. Audit the selected snapshot and new repository materials; auditing all old private history is not a prerequisite for the new publication.
 
-Снимок проверяется на секреты и личные данные, сохраняет обязательные уведомления о чужом коде. Отсутствие старых коммитов не заменяет эту проверку. SHA исходного коммита и SHA первого коммита нового репозитория различаются: в отчёте подготовки их связывают составом и контрольной суммой снимка. Проверки выпуска выполняются на коммите нового репозитория.
+Check the snapshot for secrets and personal data and retain required third-party notices. Removing old commits does not replace this audit. Source and first public-repository commit SHAs differ; the preparation report connects them through file contents and a snapshot checksum. Verify releases on the new repository's commit.
 
-Название нового репозитория выбрано в решении 35, владелец и адрес в решении 38, порядок очистки, переноса и открытия в решении 39. Правила дальнейшего приёма изменений согласуются отдельно. До переноса решение 19 о коммитах и push в текущий приватный `main` продолжает действовать.
+Decision 35 selects the name, 38 selects owner/address, and 39 defines cleanup and publication order. Public contribution rules remain a separate owner question. Decision 19 continues to authorize commits and pushes to current private main until migration.
 
-Почему: владелец хочет открыть готовый инструмент и развивать его дальше с новой публичной истории.
+Reason: the owner wants to open the finished tool and develop it with a fresh public history.
 
-## 34. Лицензия открытого проекта MIT (принято 2026-10-05)
+## 34. Standard MIT license (accepted 2026-10-05)
 
-Для открытого выпуска выбрана стандартная MIT без дополнительных ограничений по сфере использования. Цель: разрешить использование в собственных проектах, в том числе коммерческих и закрытых, изменение и распространение.
+Use standard MIT without field-of-use restrictions, allowing personal, commercial, and closed-source use, modification, and redistribution.
 
-Получатели сохраняют уведомление об авторских правах и текст лицензии в копиях или существенных частях кода. MIT не требует раскрывать изменения и не вводит обязанность автора поддерживать проект или выпускать обновления; в ней есть отказ от гарантий и ограничение ответственности. Это не обещание полного освобождения от любой ответственности. Основание: [официальный текст MIT](https://opensource.org/license/mit).
+Recipients retain copyright and license notices in copies or substantial portions. MIT does not require disclosing modifications or oblige the author to provide support or updates. It disclaims warranties and limits liability without guaranteeing immunity from every obligation. Source: [MIT license text](https://opensource.org/license/mit).
 
-Строка правообладателя согласована владельцем 6 октября 2026: `Copyright (c) 2026 NickShtefan`.
+The owner approved this copyright line on 2026-10-06: `Copyright (c) 2026 NickShtefan`.
 
-Перед оформлением `LICENSE` нужно проверить происхождение материалов и обязательные уведомления зависимостей. Лицензия проекта не заменяет условия Telegram и не меняет лицензии стороннего кода. Пока эти шаги не выполнены, выбор MIT записан как решение о будущем выпуске.
+Before adding LICENSE, verify material provenance and dependency notices. The project license does not replace Telegram terms or third-party licenses. Until these checks are complete, MIT remains the choice for the future release.
 
-Почему: владелец хочет свободное использование и распространение без обязательства сопровождать чужие установки.
+Reason: free use and distribution without an obligation to maintain others' installations.
 
-## 35. Название открытого проекта telegram-mcp-gateway (принято 2026-10-06)
+## 35. Public name: telegram-mcp-gateway (accepted 2026-10-06)
 
-Владелец выбрал имя нового репозитория `telegram-mcp-gateway` и публичный заголовок приложения `Unofficial Telegram MCP Gateway`.
+Repository: `telegram-mcp-gateway`. Display title: `Unofficial Telegram MCP Gateway`.
 
-Почему: полные слова Telegram и MCP обозначают категорию, `gateway` соответствует архитектуре общего демона. Сочетание `telegram-mcp` подходит для поиска по подстроке в официальном MCP Registry; проверка GitHub и npm не обнаружила публикаций с точным выбранным именем. Доводы, источники и ограничения проверки записаны в [naming-research.md](naming-research.md). Это не обещание позиций в поиске или резервирование имени.
+Reason: Telegram and MCP identify the category; gateway describes the shared-daemon architecture. The telegram-mcp substring fits official MCP Registry search. Research found no published exact-name GitHub/npm match; evidence and limitations are in [naming-research.md](naming-research.md). This guarantees neither ranking nor name reservation.
 
-Решение относится к будущему открытому проекту. Новый репозиторий создаёт владелец по решению 33; его владелец и адрес выбраны в решении 38, порядок создания в решении 39. Публикация npm-пакета выбрана в решении 36, его имя в решении 37. Переименование команд, папки состояния и переменных среды этим решением не выбирается. Текущий приватный репозиторий и код сохраняют действующие имена до соответствующего шага подготовки.
+This applies to the future open project. The owner creates the repository (33), under the selected account/address (38), following decision 39. npm publication and its name are selected in 36/37. CLI commands, state directories, and environment variables are not renamed by this decision. Current private names remain until the relevant preparation step.
 
-## 36. Первый публичный выпуск включает npm-пакет (принято 2026-10-06)
+## 36. First public release includes npm (accepted 2026-10-06)
 
-Владелец выбрал публикацию npm-пакета для первого публичного выпуска. npm становится способом распространения готового инструмента; установка из Git остаётся дополнительным путём для разработки.
+Publish a ready-to-use npm package in the first public release; Git installation remains an additional development path.
 
-Имя пакета выбрано в решении 37. Публикуемый пакет должен содержать проверенную сборку и CLI, лицензию и обязательные уведомления, без секретов и личных данных. Его состав и установка проверяются на кандидате из нового репозитория по [open-source-plan.md](open-source-plan.md).
+Decision 37 selects the package name. Include verified build/CLI, license, and required notices without secrets or personal data. Verify package contents and installation on a candidate from the new repository ([open-source-plan.md](open-source-plan.md)).
 
-Это решение о составе будущего выпуска. Кандидат ещё не подготовлен; публикация следует после аудита, оформления лицензии и проверки выпуска. Схема изолированного запуска и установщик из решения 22 требуют отдельной подготовки под npm и проверки; переход на npm сам по себе не отменяет требования изоляции.
+This selects the future release scope. Publication follows candidate preparation, audit, licensing, and release checks. Isolation and the installer from decision 22 require npm-specific preparation and verification; npm does not remove isolation requirements.
 
-Почему: владелец выбрал npm-публикацию при обсуждении способа установки первого выпуска.
+Reason: owner choice during installation-method discussion.
 
-## 37. Имя публичного npm-пакета telegram-mcp-gateway (принято 2026-10-06)
+## 37. Public npm name: telegram-mcp-gateway (accepted 2026-10-06)
 
-Владелец выбрал для публичного npm-пакета имя `telegram-mcp-gateway` без scope. Оно совпадает с именем нового репозитория из решения 35.
+Use the unscoped `telegram-mcp-gateway`, matching the new repository name.
 
-Почему: единое имя для репозитория и пакета помогает найти нужный проект и связать его с установкой. Проверка опубликованных имён и ограничения этой проверки записаны в [naming-research.md](naming-research.md). Выбор имени не резервирует его в npm; перед публикацией проверка повторяется.
+Reason: one name connects discovery and installation. Availability evidence and limitations are in [naming-research.md](naming-research.md). The name is not reserved; recheck before publication.
 
-Имя применяется к пакету будущего открытого выпуска на этапе подготовки по [open-source-plan.md](open-source-plan.md). Текущий приватный пакет, команда `tg-mcp`, папка состояния и переменные среды этим решением не переименовываются. Владелец публикации и порядок выпуска остаются вопросами подготовки.
+Apply it during future release preparation. This does not rename the current private package, tg-mcp command, state directory, or environment variables. npm publishing identity and release execution remain preparation questions.
 
-## 38. Новый репозиторий в личном аккаунте NickShtefan (принято 2026-10-06)
+## 38. Personal GitHub account NickShtefan (accepted 2026-10-06)
 
-Владелец выбрал личный GitHub-аккаунт `NickShtefan` для нового репозитория `telegram-mcp-gateway`. Планируемый адрес: [github.com/NickShtefan/telegram-mcp-gateway](https://github.com/NickShtefan/telegram-mcp-gateway).
+Create the future repository under `NickShtefan`: [github.com/NickShtefan/telegram-mcp-gateway](https://github.com/NickShtefan/telegram-mcp-gateway).
 
-Почему: владелец согласовал размещение нового проекта в своём личном аккаунте под именем из решения 35.
+Reason: owner approval of their personal account and the selected name.
 
-Репозиторий создаёт владелец по решению 33, порядок очистки, переноса и открытия выбран в решении 39. Выбор адреса не меняет текущий remote приватного репозитория и не определяет аккаунт npm-публикации.
+The owner creates it under decisions 33/39. The selected address changes neither the current private remote nor npm publishing identity.
 
-## 39. Сначала очистка текущего репозитория, затем перенос и открытие (принято 2026-10-06)
+## 39. Clean current files, then migrate and publish (accepted 2026-10-06)
 
-Владелец согласовал следующий порядок подготовки:
+Agreed preparation order:
 
-1. Очистить файлы и код текущего приватного репозитория: убрать устаревшие и временные материалы, дубли и подтверждённо неиспользуемый код. Сохранить работающие возможности, необходимые тесты и обязательные уведомления о сторонних материалах. Результат очистки проверить сборкой и тестами.
-2. Подготовить и проверить состав публичного снимка, включая аудит секретов и личных данных, происхождение материалов и лицензию. Зафиксировать исходный SHA и список переносимых файлов.
-3. Владелец создаёт новый пустой приватный репозиторий `NickShtefan/telegram-mcp-gateway`. В него переносится подготовленный снимок без старой истории, первым коммитом без родителей.
-4. Пройти CI и проверки выпуска на коммите нового репозитория, включая состав npm-пакета и чистую установку.
-5. После принятия проверенного выпуска открыть доступ к новому репозиторию и опубликовать npm-пакет по решению 36.
+1. Remove obsolete/temporary materials, duplicates, and proven unused code from the current private repository. Preserve working features, necessary tests, and third-party notices. Verify build and tests.
+2. Prepare and audit the public snapshot for secrets, personal data, provenance, and licensing. Record source SHA and transferred file list.
+3. The owner creates an empty private `NickShtefan/telegram-mcp-gateway`. Transfer the snapshot as a first commit without parents or old history.
+4. Run CI and release checks on the new commit, including npm package contents and clean installation.
+5. After accepting the verified release, make the new repository public and publish npm under decision 36.
 
-Очистка текущего репозитория выполняется обычными изменениями файлов с сохранением его приватной истории по решению 33. Она не затрагивает действующие Telegram-сессии и пользовательские данные. Состав переноса определяется отдельно: необходимые приватные эксплуатационные материалы могут остаться в текущем репозитории, за пределами публичного снимка.
+Cleanup uses ordinary file changes, preserving private history (33), live Telegram sessions, and user data. Define transfer contents separately; necessary private operational materials may remain in the current repository outside the public snapshot.
 
-Почему: владелец хочет сначала вычистить старый репозиторий и перенести полностью подготовленный код, затем проверить будущий выпуск до открытия доступа.
+Reason: the owner wants clean code and a verified release before opening access.
 
-## 40. macOS и Linux для первого выпуска, Windows как желательная платформа (принято 2026-10-06)
+## 40. macOS/Linux first; Windows desired (accepted 2026-10-06)
 
-Владелец согласовал поддержку macOS и Linux для первого публичного выпуска и хочет по возможности включить Windows. Подготовка учитывает все три системы; готовность каждой подтверждается установкой, проверками и работой шлюза на выбранной среде.
+Prepare macOS and Linux support for the first release, with Windows included if possible. Verify every declared environment through installation, checks, and gateway operation.
 
-Способ запуска на Windows уточнён в решении 41. Нативная Windows и WSL 2 (Linux внутри Windows) являются разными средами: проверка Linux или WSL 2 сама по себе не подтверждает нативную поддержку Windows. Версии систем, Node и окончательный состав поддерживаемых сред первого выпуска остаются вопросами подготовки.
+Decision 41 specifies Windows execution. Native Windows and WSL 2 are distinct environments; Linux/WSL checks do not prove native Windows support. OS/Node versions and final supported environments remain preparation work.
 
-Почему: владелец хочет, чтобы шлюз был доступен и пользователям агентов на Windows. Поддержка Windows у клиентов и выявленные ограничения текущего шлюза записаны в [open-source-plan.md](open-source-plan.md).
+Reason: serve Windows agent users too. Client support and current gateway limitations are in [open-source-plan.md](open-source-plan.md).
 
-## 41. Нативная Windows, проверка на компьютере владельца (принято 2026-10-06)
+## 41. Native Windows, tested on owner's computer (accepted 2026-10-06)
 
-Владелец выбрал нативный запуск шлюза на Windows, в том числе из PowerShell. WSL остаётся вариантом запуска Linux-версии и не заменяет нативную Windows в подготовке и проверке выпуска.
+Target native Windows execution, including PowerShell. WSL runs the Linux version and does not substitute for native Windows preparation or proof.
 
-У владельца есть Windows-компьютер для проверки подготовленного кандидата. На нём планируется пройти установку, запуск CLI и демона, подключение MCP-клиента, перезапуск, блокировку второго процесса и защиту файлов сессии. Версию Windows, архитектуру и Node записать в отчёт проверки. Telegram-сессию создать собственным входом на этой машине по действующим правилам.
+The owner has a Windows computer for candidate testing: installation, CLI/daemon, MCP connection, restart, second-process locking, and session-file protection. Record Windows version, architecture, and Node. Create a new gateway-owned Telegram session by logging in on that machine.
 
-Почему: владелец согласовал нативную поддержку и предложил свой компьютер для испытаний. Адаптация и испытания пока не выполнены; ожидаемая работа Linux-версии в WSL также не означает проведённую проверку этой среды.
+Reason: owner approval and offered test hardware. Adaptation and tests have not run; expected WSL compatibility is also unverified.
 
-## 42. Актуальная LTS Node.js, совместимость с веткой 22 (принято 2026-10-06)
+## 42. Latest tested Node LTS, retaining Node 22 (accepted 2026-10-06)
 
-Владелец согласовал Node 24 LTS как рекомендуемую версию и поддержку ветки Node 22 начиная с 22.13. Допускается более новая рекомендуемая ветка, если она уже получила долгосрочную поддержку и шлюз прошёл на ней проверки выпуска.
+Recommend Node 24 LTS and support Node 22 from 22.13. A newer recommended branch is allowed once it has LTS status and the gateway passes release checks on it.
 
-На 6 октября 2026 самая новая LTS-ветка: Node 24; Node 22 также имеет статус LTS, Node 26 пока имеет статус Current. По официальному расписанию переход Node 26 в LTS запланирован на 28 октября 2026. Перед подготовкой выпуска повторно проверить статус веток и выбрать актуальную LTS, затем зафиксировать точные версии в отчёте. Источники: [статусы Node](https://nodejs.org/en/about/previous-releases), [расписание Node](https://github.com/nodejs/Release/blob/main/schedule.json).
+As of 2026-10-06, Node 24 is the newest LTS; Node 22 remains LTS and Node 26 is Current. Node 26 LTS is scheduled for 2026-10-28. Recheck branch status before release and record exact versions. Sources: [Node statuses](https://nodejs.org/en/about/previous-releases), [Node schedule](https://github.com/nodejs/Release/blob/main/schedule.json).
 
-Планируемая матрица проверяет минимальную версию 22.13, актуальное обновление ветки 22 и актуальное обновление рекомендуемой LTS на заявленных системах. Новую LTS включать после сборки, проверки типов, тестов, работы SQLite и FTS5, чистой установки пакета и запуска шлюза. До этих проверок совместимость новой ветки не заявляется.
+The planned matrix covers minimum 22.13, the current Node 22 patch, and the current recommended LTS patch on declared systems. New LTS support requires build, type checks, tests, SQLite/FTS5, clean package installation, and gateway startup. Do not claim compatibility before proof.
 
-Почему: владелец принял предложенные версии и разрешил выбрать более свежую ветку с долгосрочной поддержкой. Проверки матрицы и обновление среды относятся к подготовке выпуска; этим шагом записано решение.
+Reason: owner accepted these versions and allowed a newer LTS. Matrix execution and environment updates remain release preparation.
+
+## 43. English-only repository (accepted 2026-10-06)
+
+The owner selected English for the entire repository, without a Russian edition, and requested removing Russian prose now. Translate documentation, code comments, tool/CLI messages and examples, test names and fixtures, scripts, and agent instructions. New commit messages are English. Conversation with the owner remains in Russian.
+
+Preserve accepted decisions, security constraints, required attribution, runtime behavior, and support for Unicode Telegram content. English repository content does not limit Telegram data to English. Preserve existing private Git history under decision 33; the new repository receives only the vetted English snapshot.
+
+Reason: owner instruction during open-source preparation. Language cleanup is a concrete prerequisite, separate from the remaining obsolete-code, provenance, secrets, and release audits.

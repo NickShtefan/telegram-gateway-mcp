@@ -1,27 +1,27 @@
 /**
- * Маскировка телефонов в тексте выгрузки: остаются первые две и последние две
- * цифры. Нужна, чтобы номера продавцов не уходили в файлы и в контекст агента,
- * пока владелец явно не попросил их оставить.
+ * Masks phone numbers in exported text, retaining the first two and last two
+ * digits. Seller phone numbers must not enter files or agent context
+ * unless the owner explicitly requests them.
  */
 
 /**
- * Разделитель между группами цифр телефона: пробел, дефис или дефис в пробелах.
- * Дефисом считаются и его типографские двойники: неразрывный дефис (U+2011),
- * цифровое тире (U+2012), короткое тире (U+2013), минус (U+2212).
+ * Phone digit-group separator: space, hyphen, or a hyphen surrounded by spaces.
+ * Hyphen variants include nonbreaking hyphen (U+2011),
+ * figure dash (U+2012), en dash (U+2013), and minus sign (U+2212).
  */
 const PHONE_GAP = String.raw`(?:[ \u00A0\u202F]?[\-\u2011\u2012\u2013\u2212]?[ \u00A0\u202F]?)`;
 
 /**
- * Телефон. Две формы:
- * 1. Международная: `+` и от 10 до 15 цифр, между цифрами допустимы пробел,
- *    дефис и скобки (`+7 999 123-45-67`, `+1 (415) 555-2671`).
- * 2. Без плюса: ровно 11 цифр, первая 7 или 8, код из трёх цифр подряд
- *    (можно в скобках) начинается на 0, 3, 4, 7, 8 или 9: `8 (999) 123-45-67`,
- *    `89991234567`, белорусское `8 029 ...`. Остальные семь цифр идут группами
- *    3-2-2, 3-4, 2-2-3 или 4-3 (или слитно). Ограничения на код и на группы
- *    отсекают цены вида `8 500 000` и `7 800 000 4 000 000`.
- * Слева не должно быть буквы, цифры, `_`, `+`, `#` (это id и хэштеги), справа
- * не должно быть цифры (так отпадают карты из 16 цифр и длинные id).
+ * Phone numbers have two accepted forms:
+ * 1. International: + followed by 10-15 digits with optional spaces,
+ *    hyphens, and parentheses (+7 999 123-45-67, +1 (415) 555-2671).
+ * 2. Without +: exactly 11 digits beginning with 7 or 8; a consecutive
+ *    three-digit code, optionally parenthesized, starts with 0, 3, 4, 7, 8, or 9.
+ *    Examples: 8 (999) 123-45-67, 89991234567, Belarusian 8 029 ... .
+ *    The remaining seven digits use 3-2-2, 3-4, 2-2-3, 4-3, or no separators.
+ *    These constraints exclude prices such as 8 500 000 or 7 800 000 4 000 000.
+ * No letter, digit, _, +, or # may precede a match (IDs and hashtags);
+ * no digit may follow it (excluding 16-digit cards and long IDs).
  */
 const PHONE_SRC =
   String.raw`(?<![\p{L}\p{N}_+#])(?:(\+\d(?:${PHONE_GAP}\(?\d\)?){9,14})` +
@@ -29,8 +29,8 @@ const PHONE_SRC =
   String.raw`(?:\d{3}${PHONE_GAP}\d{2}${PHONE_GAP}\d{2}|\d{3}${PHONE_GAP}\d{4}|\d{2}${PHONE_GAP}\d{2}${PHONE_GAP}\d{3}|\d{4}${PHONE_GAP}\d{3}))(?!\d)`;
 
 /**
- * Длина номера вместе с кодом страны. Нужна, чтобы международный номер не
- * захватил число после себя: `+7 999 123-45-67 25 000 руб`.
+ * Number length including country code prevents international matches
+ * from consuming a following price: +7 999 123-45-67 25 000 RUB.
  */
 const PHONE_LENGTHS: ReadonlyArray<readonly [string, number]> = [
   ['380', 12],
@@ -57,7 +57,7 @@ interface Span {
   end: number;
 }
 
-/** Сколько символов совпадения оставить, если за номером прилипло чужое число. */
+/** Match length to retain when an unrelated number follows the phone. */
 function internationalPhoneLength(match: string): number {
   const digits = match.replace(/\D/g, '');
   const known = PHONE_LENGTHS.find(([code]) => digits.startsWith(code));
@@ -67,7 +67,7 @@ function internationalPhoneLength(match: string): number {
     if (!/\d/.test(match[i]!)) continue;
     seen++;
     if (seen === known[1]) {
-      // Цифры идут подряд дальше: это не номер этой страны, оставляем как нашли.
+      // Consecutive extra digits invalidate this country length; keep the full match.
       return /\d/.test(match[i + 1] ?? '') ? match.length : i + 1;
     }
   }
@@ -97,8 +97,8 @@ function maskDigits(phone: string): string {
 }
 
 /**
- * Заменяет телефоны маской: остаются первые две и последние две цифры,
- * пунктуация не меняется. `+7 999 123-45-67` -> `+7 9** ***-**-67`.
+ * Masks phones while retaining the first two and last two digits and
+ * punctuation: +7 999 123-45-67 becomes +7 9** ***-**-67.
  */
 export function maskPhones(text: string): string {
   if (!text) return text;

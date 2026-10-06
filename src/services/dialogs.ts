@@ -1,11 +1,11 @@
 /**
- * Список чатов аккаунта: каналы, группы и личные диалоги. Что из этого
- * показать агенту, решает инструмент по скоупам.
+ * Account dialogs: channels, groups, and private conversations. Tools
+ * decide which results to expose according to scopes.
  *
- * `messages.GetDialogs` отдаёт диалоги страницами, от самых свежих. Позиция
- * следующей страницы задаётся датой и id последнего сообщения диалога и самим
- * диалогом. Архив (папка 1) читается отдельным проходом: без него пропадали бы
- * чаты, которые владелец убрал в архив.
+ * messages.GetDialogs returns pages newest first. Next-page positions
+ * use the final dialog's latest message date and ID and
+ * the dialog peer. Read archive folder 1 in a separate pass
+ * so archived chats are not omitted.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
@@ -16,7 +16,7 @@ import { chatTypeOf, type ChatType } from './resolve.js';
 
 export const DIALOGS_PAGE_MAX = 100;
 
-/** Папка диалогов: 0 это основной список, 1 это архив. */
+/** Dialog folder: 0 for the main list, 1 for archive. */
 export type DialogFolder = 0 | 1;
 
 export interface DialogsPosition {
@@ -30,17 +30,17 @@ export interface DialogDto {
   type: ChatType;
   members: number | null;
   unread: number;
-  /** Unix-секунды последнего сообщения; null, если Telegram его не прислал. */
+  /** Latest message time in Unix seconds, or null when absent. */
   lastDate: number | null;
   pinned: boolean;
   archived: boolean;
-  /** Позиция сразу после этого диалога: с неё можно продолжить список. */
+  /** Position immediately after this dialog, suitable for resuming the list. */
   position: DialogsPosition | null;
 }
 
 export interface DialogsPage {
   dialogs: DialogDto[];
-  /** Позиция следующей страницы; null, если папка прочитана до конца. */
+  /** Next-page position, or null when the folder is exhausted. */
   next: DialogsPosition | null;
 }
 
@@ -115,7 +115,7 @@ export class DialogsService {
       if (key === null || !chat) continue;
       const lastDate = typeof d.topMessage === 'number' ? (dates.get(`${key}:${d.topMessage}`) ?? null) : null;
       const pos: DialogsPosition | null = lastDate !== null && typeof d.topMessage === 'number' ? { offsetDate: lastDate, offsetId: d.topMessage, offsetPeerKey: key } : null;
-      // Закреплённые диалоги стоят первыми вне порядка дат: позицию по ним берём, только если других нет.
+      // Pinned dialogs ignore date order; use them for positions only when no ordinary dialogs exist.
       if (pos && (d.pinned !== true || lastPosition === null || lastPinned)) {
         lastPosition = pos;
         lastPinned = d.pinned === true;
@@ -133,7 +133,7 @@ export class DialogsService {
       });
     }
 
-    // messages.Dialogs приходит, когда диалогов меньше страницы: дальше читать нечего.
+    // messages.Dialogs means fewer than a page of results, with no more to read.
     const complete = result.className === 'messages.Dialogs' || raw.length < limit || lastPosition === null;
     return { dialogs, next: complete ? null : lastPosition };
   }

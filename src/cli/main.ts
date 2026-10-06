@@ -1,6 +1,6 @@
 /**
- * Разбор команд `tg-mcp`. Команды для человека: вход, проверка, пользователи
- * и аккаунты. Демон и прокладка для агентов подключаются в `serve` и `stdio`.
+ * Parse human-facing `tg-mcp` commands: login, diagnostics, users,
+ * and accounts. `serve` and `stdio` start daemon/proxy for agents.
  */
 import { parseArgs } from 'node:util';
 import { loadConfig, type GatewayConfig } from '../core/config.js';
@@ -61,7 +61,7 @@ State lives in TG_MCP_HOME (default ~/.tg-mcp). Telegram API credentials go to <
 export interface CliDeps {
   io?: CliIo;
   env?: NodeJS.ProcessEnv;
-  /** Для тестов: готовые конфигурация и хранилище вместо файлов на диске. */
+  /** Tests inject ready configuration/storage instead of disk files. */
   config?: GatewayConfig;
   storage?: Storage;
 }
@@ -85,7 +85,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
   }
 
   if (command === 'stdio') {
-    // Прокладка работает под пользователем агента: домашнюю папку шлюза она не трогает.
+    // The proxy runs as the agent user and never touches the gateway home.
     const env = deps.env ?? process.env;
     try {
       const { values } = parseArgs({ args: rest, options: { url: { type: 'string' } } });
@@ -295,7 +295,7 @@ function scopeCommand(args: string[], storage: Storage, io: CliIo): number {
       return 0;
     }
     case 'private': {
-      // Без режима команда только показывает текущий.
+      // Without a mode, only display the current setting.
       const mode = chat === undefined ? getPrivateMode(storage, need(user, 'user id'), need(account, 'account id')) : setPrivateMode(storage, need(user, 'user id'), need(account, 'account id'), chat);
       io.out(`Private chats for user "${user}" on account "${account}": ${PRIVATE_MODE_NOTES[mode]}`);
       return 0;

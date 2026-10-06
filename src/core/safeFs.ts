@@ -1,9 +1,9 @@
 /**
- * Безопасная работа с общей папкой шлюза. Её читают агенты под другим
- * пользователем macOS, поэтому демон не доверяет тому, что в ней лежит:
- * не ходит по символическим ссылкам и не трогает чужие файлы. Иначе
- * подложенная ссылка заставила бы демон отдать ключ сессии как «картинку»
- * или перезаписать свой `.env` выгрузкой.
+ * Safe shared-directory operations. Agents read it under another macOS
+ * user, so the daemon treats its contents as untrusted:
+ * never follow symlinks or modify other users' files. Otherwise a
+ * malicious symlink could expose a session key as an image
+ * or overwrite the daemon's `.env` through an export.
  */
 import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -15,7 +15,7 @@ function untrusted(path: string, why: string): GatewayError {
   return new GatewayError('UNAVAILABLE', `The gateway files directory is not safe to use: ${path} ${why}. The owner has to check who created it.`);
 }
 
-/** Папка существует, это не ссылка, она принадлежит процессу и чужим в неё писать нельзя. */
+/** Existing nonsymlink directory owned by this process and not writable by others. */
 export function assertTrustedDir(path: string): void {
   const st = lstatSync(path);
   if (st.isSymbolicLink()) throw untrusted(path, 'is a symbolic link');
@@ -24,7 +24,7 @@ export function assertTrustedDir(path: string): void {
   if ((st.mode & 0o022) !== 0) throw untrusted(path, 'is writable by other users');
 }
 
-/** Создаёт папку (и недостающих родителей до `root`) и проверяет каждую. Права 755: агенты читают, пишет только демон. */
+/** Create/check directories up to `root`; mode 755 lets agents read and only the daemon write. */
 export function ensureTrustedDir(path: string, root: string): void {
   const chain: string[] = [];
   for (let current = path; current.startsWith(root) && current.length >= root.length; current = dirname(current)) {
@@ -32,7 +32,7 @@ export function ensureTrustedDir(path: string, root: string): void {
     if (current === root) break;
   }
   if (chain[0] !== root) throw untrusted(path, 'is outside the files directory');
-  // Саму общую папку создаём вместе с родителями: при разработке её может ещё не быть.
+  // Create the shared directory and parents; it may be absent during development.
   mkdirSync(root, { recursive: true, mode: 0o755 });
   for (const dir of chain) {
     try {
@@ -45,7 +45,7 @@ export function ensureTrustedDir(path: string, root: string): void {
   }
 }
 
-/** Обычный файл, принадлежащий процессу: не ссылка и не чужой. */
+/** Regular file owned by this process, not a symlink or another user's file. */
 export function isOwnRegularFile(path: string): boolean {
   try {
     const st = lstatSync(path);
@@ -56,8 +56,8 @@ export function isOwnRegularFile(path: string): boolean {
 }
 
 /**
- * Открывает новый файл на запись. Существующий свой файл заменяется, чужой
- * файл или ссылка дают ошибку: по ссылке запись не идёт никогда.
+ * Open a new output file. Replace existing own files; reject other users'
+ * files and symlinks. Never follow a symlink.
  */
 export function openNewFile(path: string, mode = 0o644): number {
   const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
@@ -81,7 +81,7 @@ export function writeNewFile(path: string, data: Buffer, mode = 0o644): void {
   chmodSync(path, mode);
 }
 
-/** Читает свой обычный файл, не переходя по ссылкам. null, если файла нет, он чужой или больше предела. */
+/** Read an owned regular file without following links; null if absent, foreign, or oversized. */
 export function readOwnFile(path: string, maxBytes: number): Buffer | null {
   let fd: number;
   try {

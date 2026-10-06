@@ -1,7 +1,7 @@
 /**
- * Сущности Telegram: превращение объектов teleproto в записи кэша и обратно в
- * InputPeer. accessHash привязан к сессии, поэтому кэш ведётся отдельно для
- * каждого аккаунта.
+ * Telegram entities: convert teleproto objects into cache records and back
+ * to InputPeer. accessHash is session-bound, so each account
+ * has a separate cache.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
@@ -48,7 +48,7 @@ function idToBigInt(value: unknown): bigint | null {
   }
 }
 
-/** Активный username: обычный или первый активный из коллекционных. */
+/** Active username: primary or the first active collectible username. */
 function pickUsername(e: ApiEntityLike): string | null {
   if (typeof e.username === 'string' && e.username) return e.username;
   if (Array.isArray(e.usernames)) {
@@ -58,13 +58,13 @@ function pickUsername(e: ApiEntityLike): string | null {
   return null;
 }
 
-/** Объект User, Chat или Channel из ответа Telegram -> запись для кэша. null для всего остального. */
+/** Telegram User/Chat/Channel -> cache record; null for other objects. */
 export function entityFromApi(obj: unknown): EntityInfo | null {
   const e = obj as ApiEntityLike | null;
   if (!e || typeof e !== 'object' || typeof e.className !== 'string') return null;
   const id = idToBigInt(e.id);
   if (id === null || id <= 0n) return null;
-  // У «min»-объектов accessHash годится не для всех запросов: в кэш его не кладём.
+  // min-object accessHash is not valid for every request: do not cache it.
   const hash = e.min ? null : e.accessHash !== undefined && e.accessHash !== null ? String(e.accessHash) : null;
 
   switch (e.className) {
@@ -122,7 +122,7 @@ export function entityFromApi(obj: unknown): EntityInfo | null {
   }
 }
 
-/** Собирает все сущности из ответа: поля `users` и `chats` есть почти у каждого метода. */
+/** Collect response entities; most methods expose `users` and `chats`. */
 export function harvestEntities(result: unknown): EntityInfo[] {
   const r = result as { users?: unknown; chats?: unknown; user?: unknown; chat?: unknown } | null;
   if (!r || typeof r !== 'object') return [];
@@ -147,7 +147,7 @@ interface PeerLike {
   channelId?: unknown;
 }
 
-/** Peer из сообщения (PeerUser, PeerChat, PeerChannel) -> ключ чата. */
+/** Message Peer (PeerUser, PeerChat, PeerChannel) -> chat key. */
 export function peerKeyOfPeer(peer: unknown): string | null {
   const p = peer as PeerLike | null;
   if (!p || typeof p !== 'object') return null;

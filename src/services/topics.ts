@@ -1,7 +1,7 @@
 /**
- * Темы форумов. Многие барахолки устроены как форум: «Продам», «Куплю»,
- * «Обмен». Список тем нужен, чтобы поиск, лента и выгрузка не смешивали
- * продажу с покупкой.
+ * Forum topics. Marketplaces often separate 'Selling', 'Buying', and
+ * 'Exchange'. Topic lists let search, history, and exports
+ * distinguish offers from wanted listings.
  */
 import { Api } from 'teleproto';
 import { toInputPeer } from '../core/entities.js';
@@ -12,12 +12,12 @@ import type { EntityRecord } from '../storage/port.js';
 export interface TopicDto {
   id: number;
   title: string;
-  /** id последнего сообщения в теме. */
+  /** Latest message ID in the topic. */
   topMessageId: number | null;
   closed: boolean;
   pinned: boolean;
   hidden: boolean;
-  /** Unix-секунды создания темы. */
+  /** Topic creation time in Unix seconds. */
   date: number | null;
 }
 
@@ -44,7 +44,7 @@ export class TopicsService {
     if (chat.kind !== 'channel') {
       throw new GatewayError('INVALID_ARGUMENT', 'Forum topics exist only in supergroups with topics enabled.');
     }
-    // У канала тем не бывает: Telegram отвечает на такой запрос «чат не найден», что сбивает с толку.
+    // Channels have no topics; avoid Telegram's misleading chat-not-found response.
     if (chat.meta.broadcast === true) {
       throw new GatewayError('INVALID_ARGUMENT', 'This chat is a channel, not a forum: it has no topics. Read it with tg_read_history without topic.');
     }
@@ -52,7 +52,7 @@ export class TopicsService {
     try {
       result = (await this.tg.invoke(
         accountId,
-        // С 2025 года темы есть не только у супергрупп, и метод переехал из channels в messages.
+        // Since 2025, topics are not limited to supergroups; the method moved to messages.
         new Api.messages.GetForumTopics({
           peer: toInputPeer(chat),
           q: params.query || undefined,
@@ -72,7 +72,7 @@ export class TopicsService {
       throw err;
     }
 
-    // На запрос без совпадений Telegram всё равно присылает закреплённые темы: оставляем только подходящие.
+    // Telegram returns pinned topics even without matches; keep only matching titles.
     const wanted = (params.query ?? '').trim().toLowerCase();
     const topics = (result.topics ?? [])
       .filter(t => t && t.className === 'ForumTopic' && typeof t.id === 'number')
@@ -86,7 +86,7 @@ export class TopicsService {
         hidden: t.hidden === true,
         date: typeof t.date === 'number' ? t.date : null,
       }));
-    // С запросом счётчик Telegram включает и лишние закреплённые темы: верим тому, что осталось.
+    // Telegram counts unrelated pinned topics too; use the filtered count.
     return { topics, total: wanted !== '' ? topics.length : typeof result.count === 'number' ? result.count : null };
   }
 }

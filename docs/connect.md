@@ -1,20 +1,20 @@
-# Подключение и конфиги
+# Connections and configuration
 
-Шлюз запускается один раз, каждый клиент добавляет его одной записью. Установка на лабораторную машину: [deploy.md](deploy.md). Ниже считается, что демон слушает `http://127.0.0.1:7777/mcp`, а команды лежат в `/opt/telegram-gateway-mcp/bin`.
+Start the gateway once; each client adds one server entry. Lab installation: [deploy.md](deploy.md). Examples assume `http://127.0.0.1:7777/mcp` and commands in `/opt/telegram-gateway-mcp/bin`.
 
-Что проверено на лабораторной машине с живым Telegram: Claude Code (подключён, владелец работает через него), Codex (полный сценарий «сводка по каналу»), Hermes (`hermes mcp add`, `hermes mcp test`). OpenCode: только подключение, для прогона нужен провайдер моделей.
+Live lab evidence: Claude Code connected and used by the owner; Codex completed the channel-summary scenario; Hermes passed `hermes mcp add` and `hermes mcp test`. OpenCode connection only: the full run needs a model provider.
 
-`npx tg-mcp` не использовать: в npm под этим именем чужой пакет (решение 14).
+Do not use `npx tg-mcp`: that npm name belongs to another package (decision 14).
 
-## Пользователи и аккаунты
+## Users and accounts
 
-Пользователи шлюза, их токены и доступ к аккаунтам лежат в базе демона и управляются командой владельца (решение 16). Файла конфигурации для этого нет.
+Gateway users, tokens, and account grants live in the daemon database and are managed by owner commands (decision 16), not a configuration file.
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user add nick --account agent
 ```
 
-Команда печатает токен один раз. В базе хранится только его хэш.
+The token is printed once; only its hash is stored.
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin user list
@@ -26,17 +26,17 @@ sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin account grant agent partner
 
 ## Claude Code
 
-Сервер добавляется в профиль пользователя. Токен при этом записывается в конфиг профиля (`.claude.json`, права 600).
+Add the server to the user profile. The token is stored in that profile's `.claude.json` (mode 600).
 
 ```bash
 claude mcp add --scope user --transport http tg-gateway http://127.0.0.1:7777/mcp \
   --header "Authorization: Bearer $(cat ~/.config/tg-mcp/token)"
 ```
 
-- Имя сервера любое. На лабораторной машине это `tg-gateway`, а не `telegram`: имя `telegram` там уже носит плагин Claude Code для общения с владельцем через бота, и агент путал бы их. Инструменты тогда называются `mcp__tg-gateway__tg_status` и так далее.
-- Если профилей несколько, перед командой укажи нужный: `CLAUDE_CONFIG_DIR=/Users/nick/.claude claude mcp add ...`. Второй пользователь делает то же в своём профиле со своим токеном.
-- Проверка: `claude mcp list` должен показать `tg-gateway ... Connected`. Уже открытая сессия увидит сервер после перезапуска.
-- Разрешения. Чтобы агент не спрашивал подтверждение на каждое чтение, в `settings.json` профиля можно разрешить сервер целиком, а подтверждение записи оставить с вопросом:
+- Any server name works. The lab uses `tg-gateway`, not `telegram`: a separate Claude Code bot plugin already uses `telegram` for owner communication. The distinct name avoids confusion. Tools are named `mcp__tg-gateway__tg_status`, etc.
+- For multiple profiles, select one: `CLAUDE_CONFIG_DIR=/Users/nick/.claude claude mcp add ...`. The second user repeats setup in their own profile with their own token.
+- Check `claude mcp list` for `tg-gateway ... Connected`. Restart existing sessions to load the server.
+- To avoid prompts on every read, allow the server while keeping write confirmation subject to a question in profile `settings.json`:
 
 ```json
 {
@@ -47,7 +47,7 @@ claude mcp add --scope user --transport http tg-gateway http://127.0.0.1:7777/mc
 }
 ```
 
-Файл для запуска без интерфейса (`claude -p --mcp-config`):
+Headless configuration (`claude -p --mcp-config`):
 
 ```json
 {
@@ -63,7 +63,7 @@ claude mcp add --scope user --transport http tg-gateway http://127.0.0.1:7777/mc
 
 ## Codex
 
-Запись в `~/.codex/config.toml`. Таймаут вызова стоит поднять: выгрузка ждёт до 20 секунд, прежде чем вернуть `job_id`.
+Add to `~/.codex/config.toml`. Increase the tool timeout: exports wait up to 20 seconds before returning `job_id`.
 
 ```toml
 [mcp_servers.telegram]
@@ -72,7 +72,7 @@ bearer_token_env_var = "TG_MCP_TOKEN"
 tool_timeout_sec = 90
 ```
 
-Разовый запуск без правки конфига (проверено):
+One-off invocation without editing configuration (verified):
 
 ```bash
 TG_MCP_TOKEN=... codex exec --skip-git-repo-check \
@@ -83,7 +83,7 @@ TG_MCP_TOKEN=... codex exec --skip-git-repo-check \
 
 ## OpenCode
 
-Запись в `opencode.json` проекта или в глобальный конфиг (подключение проверено командой `opencode mcp list`).
+Add to project `opencode.json` or global configuration (connection verified with `opencode mcp list`).
 
 ```json
 {
@@ -98,11 +98,11 @@ TG_MCP_TOKEN=... codex exec --skip-git-repo-check \
 }
 ```
 
-Для `opencode run` на лабораторной машине нужен провайдер моделей: сейчас их нет, а бесплатные модели в неинтерактивном режиме не работают.
+The lab needs a model provider for `opencode run`; none is configured, and free models do not work non-interactively there.
 
 ## Hermes
 
-Hermes хранит токен в своём `~/.hermes/.env`, а в `config.yaml` ставит ссылку на него. Имя переменной он строит из имени сервера: для `tg-gateway` это `MCP_TG_GATEWAY_API_KEY`.
+Hermes stores the token in `~/.hermes/.env`, referenced by `config.yaml`. The variable name derives from the server name: `tg-gateway` gives `MCP_TG_GATEWAY_API_KEY`.
 
 ```bash
 printf '\nMCP_TG_GATEWAY_API_KEY=%s\n' "$(cat ~/.config/tg-mcp/token)" >> ~/.hermes/.env
@@ -112,7 +112,7 @@ printf '\nMCP_TG_GATEWAY_API_KEY=%s\n' "$(cat ~/.config/tg-mcp/token)" >> ~/.her
 hermes mcp add tg-gateway --url http://127.0.0.1:7777/mcp --auth header
 ```
 
-Команда спросит, нужна ли авторизация (да), найдёт токен в `.env`, покажет инструменты и предложит включить все. В `config.yaml` получится:
+Answer yes to authentication. Hermes finds the `.env` token, shows tools, and offers to enable all. Resulting `config.yaml`:
 
 ```yaml
 mcp_servers:
@@ -123,87 +123,85 @@ mcp_servers:
     enabled: true
 ```
 
-Проверка: `hermes mcp test tg-gateway`. Инструменты появятся в новой сессии Hermes.
+Check `hermes mcp test tg-gateway`. Tools appear in new Hermes sessions.
 
-## Любой клиент со stdio
+## Any stdio client
 
-Прокладка проксирует в демон и сама сессий не открывает. Токен в `TG_MCP_TOKEN`.
+The proxy forwards to the daemon without opening sessions. Supply `TG_MCP_TOKEN`.
 
 ```json
 {
   "command": "/opt/telegram-gateway-mcp/bin/tg-mcp",
   "args": ["stdio"],
-  "env": { "TG_MCP_TOKEN": "<токен пользователя>" }
+  "env": { "TG_MCP_TOKEN": "<user token>" }
 }
 ```
 
-## Наборы инструментов и запись
+## Toolsets and writes
 
-В `.env` демона (`/var/tgmcp/.tg-mcp/.env`):
+Daemon `.env` (`/var/tgmcp/.tg-mcp/.env`):
 
 ```
 TG_MCP_TOOLSETS=core,discover,analytics,index,write
 ```
 
-- `core`: чтение и поиск, список чатов аккаунта. Включён по умолчанию.
-- `discover`: поиск каналов по названию, похожие каналы, источники репостов.
-- `analytics`: статистика канала.
-- `index`: локальный индекс чатов и поиск по нему без лимитов Telegram.
-- `write`: ответы, сообщения, реакции, вступление. Всегда в два шага.
+- `core`: reading/search, account dialogs; enabled by default.
+- `discover`: channel name search, similar channels, forwarding sources.
+- `analytics`: channel statistics.
+- `index`: local chat indexing/search without Telegram rate limits.
+- `write`: replies, messages, reactions, joins, and button presses; always two steps.
 
-Каждый включённый набор добавляет описания своих инструментов в контекст агента. Включай то, чем пользуешься. После правки `.env` демон нужно перезапустить ([deploy.md](deploy.md)).
+Each enabled toolset adds descriptions to the agent context. Enable what you use. Restart the daemon after `.env` changes ([deploy.md](deploy.md)).
 
-Запись выглядит так: ты просишь агента ответить под постом, он вызывает `tg_reply` и показывает тебе предпросмотр, ты говоришь «да», он вызывает `tg_confirm`, и шлюз отправляет сообщение.
+Write flow: you ask for a reply, the agent calls `tg_reply` and shows its preview; you agree; the agent calls `tg_confirm`; the gateway sends it.
 
-Шлюз не видит, спросил ли агент тебя на самом деле. Поэтому в Claude Code не добавляй `mcp__tg-gateway__tg_confirm` в список разрешённых без вопроса: пусть клиент спрашивает разрешение на каждый вызов. Остальные инструменты шлюза можно разрешить целиком, они ничего не отправляют.
+The gateway cannot observe whether the agent actually asked you. Keep `mcp__tg-gateway__tg_confirm` out of Claude Code's prompt-free allow list: the client must ask for every confirmation call. Other gateway tools can be allowed as a whole because they do not send messages directly.
 
-## Мониторинг и переписка: это делает агент
+## Monitoring and conversations belong to the agent
 
-Шлюз это чистый MCP (решение 25): он не следит за каналами, не запускает агентов и не ведёт переговоров. Постоянные задачи настраиваются на стороне агента, шлюз для них даёт те же инструменты, что и в разговоре.
+The pure MCP gateway (decision 25) neither watches channels, starts agents, nor manages negotiations. Configure ongoing tasks in the agent; the gateway exposes the same tools as in a conversation.
 
-### Следить за каналом
+### Watch a channel
 
-Дай агенту расписание. В Hermes это cron-задача, в Claude Code `/loop` или запланированная задача. Пример задания:
-
-```
-Каждые 15 минут: вызови tg_read_history для @channel с limit=5.
-Сравни id самого нового поста с тем, что запомнил в прошлый раз.
-Если есть новые посты, прочитай их (tg_get_message, при картинке tg_get_media)
-и напиши мне короткую сводку. Если новых нет, ничего не пиши.
-```
-
-Агент помнит последний id сам (в своей памяти или в файле). Опрос раз в 15 минут это 4 запроса в час на канал: лимитам Telegram это не мешает.
-
-### Отвечать на новые посты
-
-То же расписание, плюс запись:
+Give the agent a schedule (Hermes cron, Claude Code `/loop` or scheduled task). Example assignment:
 
 ```
-Если вышел новый пост в @channel, подготовь ответ через tg_reply
-и пришли мне предпросмотр. Отправляй через tg_confirm только после моего «да».
+Every 15 minutes, call tg_read_history for @channel with limit=5.
+Compare the newest post ID to the one remembered from the previous run.
+Read new posts (tg_get_message, plus tg_get_media for images)
+and send me a short summary. Stay silent when there are no new posts.
 ```
 
-Запрос на запись живёт 30 минут. Если ты ответил позже, агент подготовит ответ заново. Шлюз не даст превысить дневной предел ответов (по умолчанию 20) и не создаст второй черновик на тот же пост, пока первый ждёт твоего решения.
+The agent remembers the last post. The gateway supplies history; it does not watch or initiate anything.
 
-### Вести переговоры с человеком
+### Prepare post replies
 
-1. Открой агенту диалог (личные переписки закрыты по умолчанию):
+```
+When a new post appears in @channel, prepare a reply through tg_reply
+and show me the preview. Send through tg_confirm only after I say yes.
+```
+
+Requests expire in 30 minutes. If you respond later, the agent prepares a new one. The gateway enforces the daily reply cap (default 20) and prevents a second draft for the same post while the first waits for your decision.
+
+### Negotiate with a person
+
+1. Open the dialog (private chats are closed by default):
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin scope allow nick agent @username
 ```
 
-Если открывать каждого собеседника отдельно неудобно, разреши писать любому человеку (читать переписку агент при этом не сможет):
+If opening each peer separately is inconvenient, permit sending to anyone without reading conversations:
 
 ```bash
 sudo /opt/telegram-gateway-mcp/bin/tg-mcp-admin scope private nick agent send
 ```
 
-Режим `open` вместо `send` открывает и чтение всех личных чатов аккаунта, `closed` возвращает как было. Команда действует сразу, перезапуск не нужен. Текущий режим агент видит в `tg_status`.
+`open` also allows reading every private chat on the account; `closed` restores individual grants. The command applies immediately without restart. `tg_status` shows the mode.
 
-2. Объясни агенту цель и рамки в разговоре: он держит их в своей памяти. Сообщения он готовит через `tg_send`, ты подтверждаешь каждое.
-3. Ответы собеседника агент читает через `tg_read_history` по этому диалогу: когда ты спросишь или по своему расписанию.
+2. Explain the goal/boundaries in the conversation; the agent stores them in its memory. It drafts with `tg_send`; you confirm each message.
+3. The agent reads replies with `tg_read_history` when asked or on its own schedule.
 
-Закрыть диалог обратно: `tg-mcp-admin scope remove nick agent @username`.
+Close the dialog again: `tg-mcp-admin scope remove nick agent @username`.
 
-Новым людям (тем, кому аккаунт ещё не писал) по умолчанию можно написать пяти в день. Это настройка шлюза, а не правило Telegram: её меняет строка `TG_MCP_LIMIT_NEW_DIALOGS=<число>` в `.env` демона, 0 снимает предел (см. [deploy.md](deploy.md)).
+The default new-peer cap is five per day. It is a gateway setting, not a Telegram rule: set `TG_MCP_LIMIT_NEW_DIALOGS=<number>` in daemon `.env`; 0 disables it ([deploy.md](deploy.md)).

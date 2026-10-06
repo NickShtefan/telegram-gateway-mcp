@@ -1,6 +1,6 @@
 /**
- * Единый вид сообщения для всех инструментов. Объекты teleproto разбираются по
- * `className`, поэтому тестам хватает простых объектов.
+ * Common message representation for all tools. Parse teleproto objects by
+ * `className`, allowing plain objects in tests.
  */
 import { parsePeerKey } from '../core/chatId.js';
 import type { AccountIdentity } from '../core/clientPool.js';
@@ -40,15 +40,15 @@ export interface MediaDto {
   width?: number;
   height?: number;
   durationSec?: number;
-  /** Для ссылок с превью: адрес и заголовок страницы. */
+  /** Link preview destination and page title. */
   url?: string;
   title?: string;
-  /** Можно ли скачать через tg_get_media. */
+  /** Whether tg_get_media can download this media. */
   downloadable: boolean;
 }
 
 export interface HiddenLinkDto {
-  /** Слова, под которыми спрятана ссылка. */
+  /** Visible words containing a hidden link. */
   text: string;
   url: string;
 }
@@ -62,32 +62,32 @@ export interface ForwardDto {
 export interface MessageDto {
   id: number;
   chatKey: string;
-  /** Unix-время, секунды. */
+  /** Unix timestamp in seconds. */
   date: number;
   editDate: number | null;
   text: string;
   author: AuthorDto;
   views: number | null;
   forwards: number | null;
-  /** Число комментариев у поста канала или ответов в ветке. */
+  /** Channel-post comment count or thread reply count. */
   replies: number | null;
-  /** У поста канала включены комментарии. */
+  /** Whether comments are enabled on a channel post. */
   hasComments: boolean;
   reactions: ReactionCount[];
   media: MediaDto | null;
-  /** Альбом: общий id у всех его сообщений. */
+  /** Shared ID for messages in an album. */
   groupedId: string | null;
   replyToId: number | null;
-  /** Тема форума. */
+  /** Forum topic. */
   topicId: number | null;
   forwardedFrom: ForwardDto | null;
-  /** Скрытые гиперссылки: слова текста, под которыми спрятан адрес. Явные адреса видны в самом тексте. */
+  /** Hidden hyperlinks with visible labels; explicit URLs remain in message text. */
   hiddenLinks: HiddenLinkDto[];
-  /** Служебное сообщение: имя действия, например MessageActionChatAddUser. */
+  /** Service-message action name, such as MessageActionChatAddUser. */
   service: string | null;
   pinned: boolean;
   out: boolean;
-  /** Inline-клавиатура под сообщением, рядами; пусто, если её нет. */
+  /** Inline keyboard rows; empty when absent. */
   buttons: ButtonDto[][];
 }
 
@@ -109,12 +109,12 @@ interface RawChat {
 }
 
 export interface EntityIndex {
-  /** По «голому» id строкой. */
+  /** Lookup by bare ID as a string. */
   users: Map<string, RawUser>;
   chats: Map<string, RawChat>;
 }
 
-/** Индекс пользователей и чатов из ответа Telegram: нужен, чтобы подписать авторов. */
+/** Indexes Telegram response users and chats for author attribution. */
 export function indexEntities(result: unknown): EntityIndex {
   const r = result as { users?: unknown; chats?: unknown } | null;
   const index: EntityIndex = { users: new Map(), chats: new Map() };
@@ -140,7 +140,7 @@ interface RawPeer {
   channelId?: unknown;
 }
 
-/** Автор по `fromId`: человек, канал или аноним (админ, пишущий от имени группы). */
+/** Author from fromId: person, channel, or anonymous group administrator. */
 export function authorFromPeer(fromId: unknown, index: EntityIndex, postAuthor?: string | null): AuthorDto {
   const peer = fromId as RawPeer | null;
   if (peer && peer.userId !== undefined && peer.userId !== null) {
@@ -169,8 +169,8 @@ export function authorFromPeer(fromId: unknown, index: EntityIndex, postAuthor?:
 }
 
 /**
- * Автор сообщения личного чата. Telegram не присылает там `fromId`: своё
- * сообщение узнаётся по флагу `out`, остальные написал собеседник.
+ * Private-chat authors: Telegram omits fromId. The out flag identifies
+ * account messages; other messages belong to the contact.
  */
 function privateAuthor(out: boolean, chatKey: string, index: EntityIndex, self?: AccountIdentity): AuthorDto {
   if (!out) return authorFromPeer({ userId: chatKey }, index);
@@ -254,7 +254,7 @@ interface RawEntity {
   url?: string;
 }
 
-/** Скрытые гиперссылки из entities: адрес и слова, под которыми он спрятан. Повторы адреса убираются. */
+/** Extracts hidden-link destinations and labels from entities, deduplicating URLs. */
 export function extractHiddenLinks(text: string, entities: unknown): HiddenLinkDto[] {
   if (!Array.isArray(entities)) return [];
   const links = new Map<string, HiddenLinkDto>();
@@ -292,9 +292,9 @@ interface RawMessage {
 }
 
 /**
- * Сообщение teleproto -> MessageDto. Возвращает null для MessageEmpty и мусора.
- * `chatKeyFallback` нужен для личных чатов, где у сообщения может не быть peerId.
- * `self` это аккаунт, которым читается чат: им подписываются свои сообщения личного чата.
+ * Converts teleproto messages to MessageDto; returns null for MessageEmpty or invalid input.
+ * chatKeyFallback handles private messages without peerId.
+ * self identifies the account reading the chat and attributes its outgoing messages.
  */
 export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallback?: string, self?: AccountIdentity): MessageDto | null {
   const m = raw as RawMessage | null;
@@ -305,7 +305,7 @@ export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallba
   if (!chatKey) return null;
 
   const text = typeof m.message === 'string' ? m.message : '';
-  // Пост канала без fromId написан самим каналом, сообщение личного чата одним из двух собеседников.
+  // Posts without fromId belong to the channel; private messages belong to one of the two participants.
   const author = m.fromId
     ? authorFromPeer(m.fromId, index, m.postAuthor)
     : m.post
@@ -354,7 +354,7 @@ export function normalizeMessage(raw: unknown, index: EntityIndex, chatKeyFallba
   };
 }
 
-/** Все сообщения из ответа Telegram, в исходном порядке. */
+/** All Telegram response messages in their original order. */
 export function normalizeMessages(result: unknown, chatKeyFallback?: string, self?: AccountIdentity): MessageDto[] {
   const r = result as { messages?: unknown } | null;
   if (!r || !Array.isArray(r.messages)) return [];
@@ -367,7 +367,7 @@ export function normalizeMessages(result: unknown, chatKeyFallback?: string, sel
   return out;
 }
 
-/** Общее число сообщений в выборке, если Telegram его сообщил (messages.MessagesSlice, ChannelMessages). */
+/** Total result count when supplied by Telegram (MessagesSlice or ChannelMessages). */
 export function totalCount(result: unknown): number | null {
   const r = result as { count?: unknown; messages?: unknown } | null;
   if (!r || typeof r !== 'object') return null;

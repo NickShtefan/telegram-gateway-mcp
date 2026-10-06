@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { entityFromApi, harvestEntities, peerKeyOfPeer, toInputChannel, toInputPeer, toInputUser } from '../entities.js';
 
 describe('entityFromApi', () => {
-  it('канал: ключ в форме -100, флаги и активный username', () => {
+  it('channel: -100 key, flags, and active username', () => {
     const info = entityFromApi({
       className: 'Channel',
       id: 1782171896n,
@@ -23,14 +23,14 @@ describe('entityFromApi', () => {
     });
   });
 
-  it('min-объект не отдаёт accessHash в кэш', () => {
+  it('does not cache accessHash from min objects', () => {
     expect(entityFromApi({ className: 'User', id: 7, accessHash: 99n, min: true, firstName: 'A' })).toMatchObject({
       accessHash: null,
       meta: {},
     });
   });
 
-  it('пользователь и обычная группа', () => {
+  it('handles users and basic groups', () => {
     expect(entityFromApi({ className: 'User', id: 42, accessHash: '9', username: 'seller', firstName: 'Ivan', lastName: 'P', bot: false })).toMatchObject({
       peerKey: '42',
       kind: 'user',
@@ -41,15 +41,15 @@ describe('entityFromApi', () => {
     expect(entityFromApi({ className: 'Chat', id: 4321, title: 'Flat' })).toMatchObject({ peerKey: '-4321', kind: 'chat', accessHash: null });
   });
 
-  it('чужие объекты игнорируются', () => {
+  it('ignores unrelated objects', () => {
     expect(entityFromApi({ className: 'Message', id: 1 })).toBeNull();
     expect(entityFromApi(null)).toBeNull();
     expect(entityFromApi({ className: 'User', id: 0 })).toBeNull();
   });
 });
 
-describe('harvestEntities и peerKeyOfPeer', () => {
-  it('собирает users и chats из ответа', () => {
+describe('harvestEntities and peerKeyOfPeer', () => {
+  it('collects users and chats from a response', () => {
     const found = harvestEntities({
       messages: [{ className: 'Message', id: 1 }],
       users: [{ className: 'User', id: 1, accessHash: 1n }, { className: 'UserEmpty', id: 2 }],
@@ -59,7 +59,7 @@ describe('harvestEntities и peerKeyOfPeer', () => {
     expect(harvestEntities(undefined)).toEqual([]);
   });
 
-  it('peer сообщения превращается в ключ', () => {
+  it('converts a message peer to a key', () => {
     expect(peerKeyOfPeer({ className: 'PeerChannel', channelId: 5n })).toBe('-1000000000005');
     expect(peerKeyOfPeer({ className: 'PeerUser', userId: 42 })).toBe('42');
     expect(peerKeyOfPeer({ className: 'PeerChat', chatId: 9 })).toBe('-9');
@@ -67,8 +67,8 @@ describe('harvestEntities и peerKeyOfPeer', () => {
   });
 });
 
-describe('InputPeer из кэша', () => {
-  it('строит InputPeer по типу чата', () => {
+describe('InputPeer from the cache', () => {
+  it('builds InputPeer for each chat type', () => {
     const channel = toInputPeer({ peerKey: '-1000000000005', accessHash: '77' });
     expect(channel.className).toBe('InputPeerChannel');
     expect(String((channel as { channelId: unknown }).channelId)).toBe('5');
@@ -79,7 +79,7 @@ describe('InputPeer из кэша', () => {
     expect(toInputUser({ peerKey: '42', accessHash: '1' }).className).toBe('InputUser');
   });
 
-  it('без accessHash объясняет, что чат надо сначала найти', () => {
+  it('explains that an unknown accessHash requires resolving the chat', () => {
     expect(() => toInputPeer({ peerKey: '-1000000000005', accessHash: null })).toThrow(/tg_resolve/);
     expect(() => toInputChannel({ peerKey: '42', accessHash: '1' })).toThrow(/not a channel/);
   });

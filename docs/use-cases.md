@@ -1,72 +1,65 @@
-# Кейсы
+# Use cases
 
-Задачи, ради которых сделан шлюз. Их назвал владелец 1 октября 2026. Каждая по шагам: [scenarios.md](scenarios.md).
+Owner-requested tasks from 2026-10-01. See [scenarios.md](scenarios.md) for detailed flows.
 
-Шлюз это чистый MCP (решение 25): он отвечает на вызовы и выполняет подтверждённые действия, а сам ничего не делает. Поэтому кейсы делятся так:
+The pure MCP gateway responds to calls and executes confirmed actions (decision 25). One-off cases 1/2 fit one agent conversation; ongoing cases 3/4 require agent-owned scheduling and memory, using the same gateway tools.
 
-- **Разовый запрос** (кейсы 1 и 2): агент решает задачу за один разговор, шлюз только отвечает на вызовы.
-- **Постоянная задача** (кейсы 3 и 4): её ведёт сам агент, своим расписанием и своей памятью. Шлюз даёт ему те же инструменты чтения и записи.
+## 1. Marketplace prices: one-off
 
-## 1. Цены в барахолке (разовый запрос)
+> Find listings for this item in the marketplace and analyze prices.
 
-> «Зайди в чат барахолки, найди объявления на такую-то тему и дай аналитику по ценам»
+Flow: tg_list_dialogs -> tg_list_topics -> tg_search_chat -> tg_export (photos=thumb) -> agent code -> tg_get_media.
 
-Цепочка: `tg_list_dialogs` → `tg_list_topics` → `tg_search_chat` → `tg_export (photos=thumb)` → код агента → `tg_get_media`
+- **Forum topics:** distinguish Selling, Buying, and Exchange through topic filters in search/history/export.
+- **File export:** JSONL path, row count, and five examples avoid putting hundreds of listings into model context. Agent code calculates medians and dispersion.
+- **Price interpretation:** original listing text remains unchanged; agents parse 25k, 25,000 RUB, and negotiable. Authors are hashed and phones masked.
+- **Images:** export previews in batches and request full albums to inspect item condition.
+- **Private chats:** joining requires confirmation. Gatekeeper challenges are completed manually or through an owner-approved callback press.
 
-Что нужно шлюзу:
+## 2. Channel summary: one-off
 
-- **Темы форумов.** Барахолки часто разбиты на «Продам», «Куплю», «Обмен»; поиск, лента и выгрузка принимают `topic`.
-- **Выгрузка в файл.** Сотни объявлений не влезут в контекст. `tg_export` пишет JSONL и возвращает путь, число строк и пять примеров; медиану и разброс агент считает своим кодом.
-- **Цены считает агент.** Выгрузка отдаёт текст объявлений как есть, без толкования: «25к», «25 000 ₽», «торг» агент разбирает своим кодом или сам. Авторы хэшируются, телефоны маскируются.
-- **Фото объявлений:** превью пачкой вместе с выгрузкой, полный альбом по запросу, чтобы агент оценил состояние вещи.
-- **Закрытые чаты:** вступление только через шлюз записи с подтверждением. Проверку бота-привратника вступление не проходит: её проходит владелец руками или подтверждает нажатие кнопки проверки через `tg_press_button`.
+> Open this channel and explain what people discuss.
 
-## 2. Сводка по каналу (разовый запрос)
+Flow: tg_resolve -> tg_read_history (brief) -> tg_get_message for five posts -> tg_get_media -> tg_get_comments for five posts.
 
-> «Зайди на этот канал и расскажи, о чём там говорят»
+- Brief history uses one or two lines per post plus views, reactions, and comment counts.
+- Top comments are ranked by reactions.
+- Images expose chart/screenshot details.
+- Untrusted-content boundaries prevent treating comment instructions as commands.
 
-Цепочка: `tg_resolve` → `tg_read_history (brief)` → `tg_get_message × 5` → `tg_get_media` → `tg_get_comments × 5`
+## 3. Monitoring and comments: agent-owned
 
-Что нужно шлюзу:
+> Watch this channel and prepare replies when new posts appear.
 
-- **Краткий режим ленты:** 1-2 строки на пост плюс просмотры, реакции и число комментариев. Месяц постов укладывается в несколько тысяч токенов.
-- **Комментарии** самых обсуждаемых постов, отсортированные по реакциям.
-- **Картинки постов**, когда главное на графике или скриншоте.
-- **Пометка чужого текста:** в комментариях бывают попытки командовать агентом.
+The gateway never monitors or replies autonomously.
 
-## 3. Мониторинг и ответы в комментариях (ведёт агент)
+- The agent's own schedule or loop initiates checks.
+- Read history and compare remembered IDs, or pass since.
+- Read new posts, images, and comments; prepare tg_reply; show the owner its preview and call tg_confirm after consent.
 
-> «Следи за этим каналом и, когда выходят посты, отвечай на них в комментариях»
+Gateway capabilities: history, images, comments, thread replies from the account or send_as identity, and daily reply caps (default 20). Live send_as verification remains pending.
 
-Шлюз сам не следит и не отвечает. Задачу ведёт агент:
+## 4. Conversations and agreements: agent-owned
 
-- **Расписание у агента.** Cron в Hermes или цикл в Claude Code раз в N минут просит агента проверить канал.
-- **Что нового.** Агент вызывает `tg_read_history` и сравнивает id постов с тем, что запомнил в прошлый раз (или передаёт `since`).
-- **Ответ.** Агент читает пост, картинку и комментарии, готовит ответ через `tg_reply`, показывает тебе предпросмотр и после твоего «да» вызывает `tg_confirm`.
+> Contact this account and arrange the proposed agreement.
 
-Что даёт шлюз: чтение, картинки, комментарии, ответ в ветку от аккаунта или от имени канала (`send_as`), дневной предел ответов (по умолчанию 20).
+The agent retains goals, constraints, and conversation state.
 
-## 4. Переписка и договорённость (ведёт агент)
+- The owner opens specific conversations with `tg-mcp-admin scope allow <user> <account> @username`. Private chats are closed by default. scope private send allows sending without reading; open allows both.
+- Prepare tg_send, show the preview, obtain consent, and execute tg_confirm.
+- Read replies when requested or on the agent's own schedule.
+- Ask the owner about money, addresses, and meeting times in the agent conversation.
 
-> «Напиши такому-то аккаунту и договорись с ним о том-то»
+The gateway provides authorized conversation reads and two-step sends with a configurable new-conversation cap (default 5/day). It has no money-transfer capability. tg_confirm enforces the workflow step, not independently verified human approval.
 
-Цель, рамки и ход разговора держит агент в своей памяти, шлюз про них ничего не знает:
+## Shared requirement: images
 
-- **Диалог открывает владелец:** `tg-mcp-admin scope allow <пользователь> <аккаунт> @username`. Личные переписки закрыты по умолчанию. Чтобы не открывать каждого собеседника, есть режим `scope private <пользователь> <аккаунт> send` (писать можно любому, читать нельзя) и `open` (читать и писать).
-- **Сообщения.** Агент готовит текст через `tg_send`, ты подтверждаешь, `tg_confirm` отправляет.
-- **Ответы собеседника.** Агент читает диалог через `tg_read_history`, когда ты спросишь или по своему расписанию.
-- **Что решаешь только ты** (деньги, адрес, время встречи), агент спрашивает у тебя в своём разговоре с тобой.
+All cases may download photos, albums by groupedId, and video previews. thumb is default; full requires a request. Return paths or inline images for compatible clients. Previews conserve model context.
 
-Что даёт шлюз: чтение открытого диалога, отправку в два шага, лимит новых диалогов (по умолчанию 5 в день, настраивается). Переводов денег шлюз не умеет вообще.
+## Shared requirement: multiple users
 
-## Общее требование: изображения
+The owner and the owner's wife use separate Claude Code sessions with personal and shared Telegram accounts. Bearer tokens identify users and restrict account access; each confirms their own write requests through their own agent (decisions 16/23).
 
-Скачивать картинки для анализа во всех кейсах: фото, альбом целиком по `grouped_id`, превью видео; размер `thumb` по умолчанию и `full` по запросу; путь к файлу или image-контент в ответе для клиентов, которые его принимают. Картинки дорогие для модели, поэтому по умолчанию превью.
+## Writing identity: decided
 
-## Общее требование: несколько пользователей
-
-Шлюзом пользуются владелец и жена владельца, каждый из своей сессии Claude Code. У каждого свои аккаунты Telegram, есть общие. Шлюз узнаёт пользователя по токену, даёт ему только его и общие аккаунты; свои запросы на запись каждый подтверждает сам, через своего агента (решения 16 и 23).
-
-## От чьего имени пишет агент (решено)
-
-Пишет тот аккаунт, который подключён к шлюзу: отдельный аккаунт агента или личный аккаунт владельца, если он сам его подключил. В канале, где аккаунт админ, можно ответить от имени канала (`send_as`). Если аккаунтов несколько, агент называет нужный в параметре `account`.
+Use the connected Telegram account, whether a separate agent account or an explicitly connected owner account. Administrators may use send_as for channel identity. Select among multiple accounts with the account argument.

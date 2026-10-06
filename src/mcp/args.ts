@@ -1,16 +1,16 @@
 /**
- * Разбор аргументов инструментов. Схемы плоские (строки, числа, enum), поэтому
- * даты приходят строкой, а здесь превращаются в unix-секунды.
+ * Parses tool arguments. Schemas are flat (strings, numbers, enums), so
+ * dates arrive as strings and are converted here to Unix seconds.
  */
 import { GatewayError } from '../core/errors.js';
 
 const RELATIVE_RE = /^(\d{1,4})\s*(m|min|h|d|w|mo|y)$/i;
-/** `m` это минуты; месяц пишется `mo` и считается за 30 дней, год за 365. */
+/** `m` means minutes; `mo` means a 30-day month, and a year is 365 days. */
 const UNIT_SECONDS: Record<string, number> = { m: 60, min: 60, h: 3600, d: 86_400, w: 604_800, mo: 30 * 86_400, y: 365 * 86_400 };
 
 /**
- * Момент времени: `30d`, `12h`, `2w`, `6mo`, `1y` (столько назад от сейчас), дата
- * `2026-09-01`, дата и время ISO или unix-секунды. Возвращает unix-секунды.
+ * Timestamp: `30d`, `12h`, `2w`, `6mo`, `1y` (relative to now), a date
+ * such as `2026-09-01`, an ISO datetime, or Unix seconds. Returns Unix seconds.
  */
 export function parseWhen(value: string, nowMs: number, argName: string): number {
   const text = value.trim();
@@ -31,7 +31,7 @@ export function parseWhen(value: string, nowMs: number, argName: string): number
     return Number.isNaN(ms) ? fail() : Math.floor(ms / 1000);
   }
   if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(text)) {
-    // Без часового пояса считаем время как UTC: так же, как шлюз его печатает.
+    // Treat dates without a timezone as UTC, matching gateway output.
     const iso = text.replace(' ', 'T');
     const ms = Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`);
     return Number.isNaN(ms) ? fail() : Math.floor(ms / 1000);
@@ -58,7 +58,7 @@ export function clampLimit(value: number | undefined, fallback: number, max: num
   return Math.min(Math.max(1, Math.trunc(value)), max);
 }
 
-/** Окно дат словами для заголовка ответа. */
+/** Human-readable date window for response headers. */
 export function describeWindow(window: DateWindow): string {
   const fmt = (s: number): string => new Date(s * 1000).toISOString().slice(0, 16).replace('T', ' ');
   if (window.minDate && window.maxDate) return ` from ${fmt(window.minDate)} to ${fmt(window.maxDate)}`;
@@ -67,7 +67,7 @@ export function describeWindow(window: DateWindow): string {
   return '';
 }
 
-/** Число от 0 до max: для «сколько сообщений добавить», где ноль это осмысленное значение. */
+/** A number from 0 to max, allowing zero for additional-message counts. */
 export function clampCount(value: number | undefined, max: number): number {
   if (value === undefined || !Number.isFinite(value)) return 0;
   return Math.min(Math.max(0, Math.trunc(value)), max);

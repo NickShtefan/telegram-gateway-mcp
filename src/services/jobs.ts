@@ -1,10 +1,10 @@
 /**
- * Задачи: всё, что дольше обычного вызова (выгрузка истории за месяцы,
- * скачивание сотен превью). Инструмент сразу возвращает `job_id`, прогресс
- * читается отдельным вызовом.
+ * Jobs for operations longer than ordinary calls, such as months of history
+ * or hundreds of previews. Tools return `job_id` immediately;
+ * separate calls read progress.
  *
- * Состояние у каждой задачи своё и лежит в базе, а после рестарта задачи
- * возвращаются в очередь.
+ * Each job has independent state persisted in the database and returns
+ * to the queue after a restart.
  */
 import { randomBytes } from 'node:crypto';
 import { GatewayError, isGatewayError } from '../core/errors.js';
@@ -13,9 +13,9 @@ import type { JobRecord, Storage } from '../storage/port.js';
 
 export interface JobContext {
   job: JobRecord;
-  /** Сохраняет прогресс: его видит агент. */
+  /** Persists progress visible to the agent. */
   progress(update: Record<string, unknown>): void;
-  /** true, если шлюз останавливается: исполнитель должен прерваться, задача продолжится после старта. */
+  /** True during shutdown; executors must stop and resume after startup. */
   stopping(): boolean;
 }
 
@@ -23,12 +23,12 @@ export type JobRunner = (context: JobContext) => Promise<Record<string, unknown>
 
 export interface JobManagerOptions {
   storage: Storage;
-  /** Сколько задач выполняется одновременно. */
+  /** Maximum concurrent jobs. */
   concurrency?: number;
   log?: Logger;
 }
 
-/** Сколько раз задачу продолжают после рестарта. */
+/** Maximum job resumptions after restarts. */
 const MAX_RESUMES = 2;
 
 export class JobManager {
@@ -46,7 +46,7 @@ export class JobManager {
     this.log = options.log ?? createLogger('jobs');
   }
 
-  /** Регистрирует исполнителя вида задач. Параметры задачи лежат в базе, поэтому её можно продолжить после рестарта. */
+  /** Registers a job executor; persisted parameters allow restart resumption. */
   register(kind: string, runner: JobRunner): void {
     this.runners.set(kind, runner);
   }
@@ -60,7 +60,7 @@ export class JobManager {
     return job;
   }
 
-  /** Задача пользователя. Чужая задача неотличима от несуществующей. */
+  /** Looks up a user job; another user's job is indistinguishable from a missing one. */
   get(id: string, userId: string): JobRecord {
     const job = this.storage.jobs.get(id);
     if (!job || job.userId !== userId) {
@@ -69,7 +69,7 @@ export class JobManager {
     return job;
   }
 
-  /** Ждёт завершения задачи не дольше `ms` и возвращает её текущее состояние. */
+  /** Waits at most `ms` for completion and returns current state. */
   async waitFor(id: string, userId: string, ms: number): Promise<JobRecord> {
     const done = (j: JobRecord): boolean => j.state === 'done' || j.state === 'failed';
     const current = this.get(id, userId);
@@ -78,7 +78,7 @@ export class JobManager {
       const list = this.waiters.get(id) ?? [];
       const finish = (): void => {
         clearTimeout(timer);
-        // Ожидание по таймауту тоже снимается: иначе список рос бы на каждый опрос долгой задачи.
+        // Remove timed-out waiters too, preventing accumulation during long-job polling.
         const rest = (this.waiters.get(id) ?? []).filter(w => w !== finish);
         if (rest.length > 0) this.waiters.set(id, rest);
         else this.waiters.delete(id);
@@ -91,10 +91,10 @@ export class JobManager {
     return this.get(id, userId);
   }
 
-  /** После рестарта: прерванные задачи возвращаются в очередь и запускаются снова. */
+  /** Requeues interrupted jobs after restart and resumes execution. */
   resume(): number {
-    // Если задача была «выполняемой» при падении уже несколько раз, виновата, скорее всего, она сама:
-    // её вызов зависает и роняет процесс. Такая задача закрывается, а не запускается снова.
+    // A job repeatedly left running after crashes is likely causing them:
+    // a hanging call kills the process. Close this job instead of restarting it.
     for (const job of this.storage.jobs.list({ state: 'running', limit: 500 })) {
       const resumes = Number(job.progress._resumes ?? 0) + 1;
       if (resumes > MAX_RESUMES) {
@@ -116,7 +116,7 @@ export class JobManager {
   private pump(): void {
     if (this.stopped) return;
     while (this.active < this.concurrency) {
-      // Самая старая задача первой, сколько бы их ни накопилось.
+      // Always run the oldest job first, regardless of queue size.
       const next = this.storage.jobs.list({ state: 'queued', limit: 50, oldestFirst: true }).find(j => this.runners.has(j.kind));
       if (!next) return;
       this.active++;
@@ -143,7 +143,7 @@ export class JobManager {
         stopping: () => this.stopped,
       });
       if (this.stopped) {
-        // Процесс останавливается: задача остаётся «выполняемой» и вернётся в очередь при старте.
+        // On shutdown, leave the job running in storage so startup requeues it.
         return;
       }
       this.storage.jobs.update(id, { state: 'done', result });

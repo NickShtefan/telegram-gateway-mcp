@@ -50,7 +50,7 @@ function fakeFactory(overrides: Record<string, unknown> = {}): ClientFactory {
 }
 
 describe('admin', () => {
-  it('создаёт пользователя с токеном, в базе только хэш', () => {
+  it('creates a token-bearing user and stores only its hash', () => {
     const { user, token } = addUser(storage, { id: 'nick', accounts: ['nick', 'agent'] });
     expect(user.defaultAccount).toBe('nick');
     expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
@@ -59,14 +59,14 @@ describe('admin', () => {
     expect(() => addUser(storage, { id: 'Bad Id' })).toThrow(/Invalid user id/);
   });
 
-  it('новый токен отменяет старый', () => {
+  it('issuing a new token revokes the old one', () => {
     const { token } = addUser(storage, { id: 'nick' });
     const next = rotateToken(storage, 'nick');
     expect(storage.users.findByTokenHash(sha256Hex(token))).toBeNull();
     expect(storage.users.findByTokenHash(sha256Hex(next))?.id).toBe('nick');
   });
 
-  it('общий аккаунт виден как shared, отзыв доступа меняет аккаунт по умолчанию', () => {
+  it('marks shared accounts and changes defaults after access revocation', () => {
     addUser(storage, { id: 'nick', accounts: ['agent'] });
     addUser(storage, { id: 'partner', accounts: ['partner'] });
     grantAccount(storage, 'agent', 'partner');
@@ -79,7 +79,7 @@ describe('admin', () => {
 });
 
 describe('login', () => {
-  it('сохраняет зашифрованную сессию и данные аккаунта', async () => {
+  it('stores encrypted sessions and account details', async () => {
     io.prompt = vi.fn(async (q: string) => (q.startsWith('Phone') ? '+79991234567' : '12345'));
     await runLogin({ config, storage, io, account: 'agent', factory: fakeFactory(), sessionSecret: 'secret' });
     expect(storage.accounts.get('agent')).toMatchObject({ status: 'active', username: 'agent_acc', tgUserId: '555' });
@@ -91,20 +91,20 @@ describe('login', () => {
     expect(out.join('\n')).toContain('tg-mcp account grant agent <user>');
   });
 
-  it('без учётных данных API не начинает вход', async () => {
+  it('does not start login without API credentials', async () => {
     const bare = loadConfig({ TG_MCP_HOME: home });
     await expect(runLogin({ config: bare, storage, io, account: 'agent', factory: fakeFactory() })).rejects.toThrow(/TG_API_ID/);
   });
 });
 
 describe('doctor', () => {
-  it('пустая установка: предупреждения без ошибок', async () => {
+  it('reports warnings without errors for an empty installation', async () => {
     const checks = await collectChecks({ config, storage, io, nodeVersion: 'v22.22.0' });
     expect(checks.filter(c => c.level === 'fail')).toEqual([]);
     expect(checks.map(c => c.message).join('\n')).toContain('no gateway users');
   });
 
-  it('снятый набор automate в настройках: предупреждение, а не падение', async () => {
+  it('warns about the removed automate toolset without crashing', async () => {
     const before = process.env.TG_MCP_TOOLSETS;
     process.env.TG_MCP_TOOLSETS = 'core,automate,write';
     try {
@@ -116,11 +116,11 @@ describe('doctor', () => {
     }
   });
 
-  it('показывает режим личных чатов и дневные пределы записи', async () => {
+  it('shows private-chat modes and daily write limits', async () => {
     addUser(storage, { id: 'nick', accounts: ['agent'] });
     const quiet = (await collectChecks({ config, storage, io })).map(c => c.message).join('\n');
     expect(quiet).not.toContain('private chats');
-    // пределы касаются только записи: без набора write их не показываем
+    // Limits apply only to writes; hide them when the write toolset is disabled.
     expect(quiet).not.toContain('write limits');
 
     writePrivateMode(storage, 'nick', 'agent', 'send');
@@ -130,7 +130,7 @@ describe('doctor', () => {
     expect(text).toContain('write limits per account per day: replies 20, new dialogs 25, joins 5, reactions no limit');
   });
 
-  it('старый Node и аккаунт без сессии это ошибки', async () => {
+  it('reports old Node versions and accounts without sessions as errors', async () => {
     storage.accounts.upsert({ id: 'agent' });
     const checks = await collectChecks({ config, storage, io, nodeVersion: 'v20.11.0' });
     const failed = checks.filter(c => c.level === 'fail').map(c => c.message);
@@ -138,7 +138,7 @@ describe('doctor', () => {
     expect(failed.some(m => m.includes('account agent: no session'))).toBe(true);
   });
 
-  it('--connect подключает аккаунты, когда демон не запущен', async () => {
+  it('--connect connects accounts while the daemon is stopped', async () => {
     io.prompt = vi.fn(async () => '1');
     await runLogin({ config, storage, io, account: 'agent', phone: '+79991234567', factory: fakeFactory() });
     addUser(storage, { id: 'nick', accounts: ['agent'] });
@@ -146,7 +146,7 @@ describe('doctor', () => {
     expect(checks.some(c => c.level === 'ok' && c.message.startsWith('account agent connects: @agent_acc'))).toBe(true);
   });
 
-  it('--connect не открывает сессии, пока демон держит блокировку', async () => {
+  it('--connect does not open sessions while the daemon holds the lock', async () => {
     const lock = await acquireLock(home);
     try {
       const factory = vi.fn(fakeFactory());
@@ -160,7 +160,7 @@ describe('doctor', () => {
 });
 
 describe('lock', () => {
-  it('второй процесс не получает блокировку, после release она свободна', async () => {
+  it('rejects a second lock owner and allows acquisition after release', async () => {
     expect(await isLockHeld(home)).toBe(false);
     const lock = await acquireLock(home);
     expect(await isLockHeld(home)).toBe(true);
@@ -172,8 +172,8 @@ describe('lock', () => {
   });
 });
 
-describe('lock: гонки и мусор', () => {
-  it('из двух одновременных стартов блокировку получает один', async () => {
+describe('lock: races and stale files', () => {
+  it('only one concurrent startup acquires the lock', async () => {
     const results = await Promise.allSettled([acquireLock(home), acquireLock(home), acquireLock(home)]);
     const won = results.filter(r => r.status === 'fulfilled');
     expect(won).toHaveLength(1);
@@ -183,8 +183,8 @@ describe('lock: гонки и мусор', () => {
     await (won[0] as PromiseFulfilledResult<{ release(): Promise<void> }>).value.release();
   });
 
-  it('сокет умершего процесса занимается заново', async () => {
-    // сервер закрыт без удаления файла: так выглядит сокет после kill -9
+  it('reclaims a dead process socket', async () => {
+    // Closed server without socket removal, as after kill -9.
     const dead = createServer();
     await new Promise<void>(resolve => dead.listen(lockPath(home), resolve));
     const handle = (dead as unknown as { _handle: { close(): void } })._handle;
@@ -195,19 +195,19 @@ describe('lock: гонки и мусор', () => {
     await lock.release();
   });
 
-  it('слишком длинный путь к папке шлюза даёт понятную ошибку, а не EINVAL', async () => {
+  it('explains an oversized home path instead of returning EINVAL', async () => {
     const deep = join(home, 'a'.repeat(60), 'b'.repeat(60));
     expect(await isLockHeld(deep)).toBe(false);
     await expect(acquireLock(deep)).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('Set TG_MCP_HOME to a shorter path') });
   });
 
-  it('обычный файл на месте сокета не считается живым процессом', async () => {
+  it('does not treat a regular file at the socket path as a live process', async () => {
     writeFileSync(lockPath(home), 'stale');
     const lock = await acquireLock(home);
     await lock.release();
   });
 
-  it('doctor --connect держит блокировку, пока открыты сессии', async () => {
+  it('doctor --connect holds the lock while sessions remain open', async () => {
     io.prompt = vi.fn(async () => '1');
     await runLogin({ config, storage, io, account: 'agent', phone: '+79991234567', factory: fakeFactory() });
     let heldDuringConnect = false;
@@ -228,14 +228,14 @@ describe('lock: гонки и мусор', () => {
 });
 
 describe('main', () => {
-  it('help и неизвестная команда', async () => {
+  it('handles help and unknown commands', async () => {
     expect(await main(['help'], { io, config, storage })).toBe(0);
     expect(out.join('\n')).toContain('tg-mcp login --account');
     expect(await main(['frobnicate'], { io, config, storage })).toBe(1);
     expect(err.join('\n')).toContain('Unknown command');
   });
 
-  it('user add печатает токен один раз, user list его не показывает', async () => {
+  it('user add prints the token once and user list does not expose it', async () => {
     expect(await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage })).toBe(0);
     const token = out[out.length - 1]!;
     expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
@@ -245,7 +245,7 @@ describe('main', () => {
     expect(out.join('\n')).not.toContain(token);
   });
 
-  it('account grant и list', async () => {
+  it('handles account grant and list', async () => {
     await main(['user', 'add', 'nick'], { io, config, storage });
     await main(['user', 'add', 'partner'], { io, config, storage });
     expect(await main(['account', 'grant', 'agent', 'nick'], { io, config, storage })).toBe(0);
@@ -256,7 +256,7 @@ describe('main', () => {
     expect(await main(['account', 'grant', 'agent', 'ghost'], { io, config, storage })).toBe(1);
   });
 
-  it('scope: владелец открывает личный чат и закрывает канал', async () => {
+  it('scope: the owner opens a private chat and closes a channel', async () => {
     await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage });
     out.length = 0;
     expect(await main(['scope', 'allow', 'nick', 'agent', '@Seller'], { io, config, storage })).toBe(0);
@@ -266,12 +266,12 @@ describe('main', () => {
     expect(out.join('\n')).toContain('deny  -1001782171896');
     expect(await main(['scope', 'remove', 'nick', 'agent', 't.me/seller'], { io, config, storage })).toBe(0);
     expect(storage.scopes.list('nick', 'agent')).toHaveLength(1);
-    // чужой аккаунт и инвайт не принимаются
+    // Reject inaccessible accounts and invites.
     expect(await main(['scope', 'allow', 'nick', 'other', '@x_user'], { io, config, storage })).toBe(1);
     expect(await main(['scope', 'allow', 'nick', 'agent', 't.me/+AbCdEf'], { io, config, storage })).toBe(1);
   });
 
-  it('scope private: режим личных чатов показывается, меняется и не выглядит правилом для чата', async () => {
+  it('scope private: shows and changes modes without presenting them as chat rules', async () => {
     await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage });
     out.length = 0;
     expect(await main(['scope', 'private', 'nick', 'agent'], { io, config, storage })).toBe(0);
@@ -292,11 +292,11 @@ describe('main', () => {
     expect(await main(['scope', 'private', 'nick', 'agent', 'closed'], { io, config, storage })).toBe(0);
     expect(storage.scopes.list('nick', 'agent')).toHaveLength(0);
 
-    // опечатка в режиме и чужой аккаунт ничего не меняют
+    // Invalid modes and inaccessible accounts must not change state.
     expect(await main(['scope', 'private', 'nick', 'agent', 'all'], { io, config, storage })).toBe(1);
     expect(await main(['scope', 'private', 'nick', 'other', 'open'], { io, config, storage })).toBe(1);
     expect(new ScopePolicy(storage).privateMode('nick', 'agent')).toBe('closed');
-    // служебную цель нельзя поставить или снять обычным правилом
+    // An ordinary rule cannot create or remove a service target.
     expect(await main(['scope', 'allow', 'nick', 'agent', '*private-open'], { io, config, storage })).toBe(1);
   });
 });

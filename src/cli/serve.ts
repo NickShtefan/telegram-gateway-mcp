@@ -1,7 +1,7 @@
 /**
- * `tg-mcp serve`: демон, который владеет сессиями Telegram и отдаёт
- * инструменты агентам по HTTP. Берёт блокировку: второй процесс на тех же
- * сессиях не стартует.
+ * `tg-mcp serve`: daemon owning Telegram sessions and exposing
+ * HTTP tools to agents. Acquire the lock so a second process
+ * cannot start with the same sessions.
  */
 import { parseToolsets, type GatewayConfig } from '../core/config.js';
 import { GatewayError } from '../core/errors.js';
@@ -21,18 +21,18 @@ export interface ServeOptions {
   toolsets?: string;
   filesDir?: string;
   allowedOrigins?: string[];
-  /** Для тестов: остановка без сигнала процесса и подмена зависимостей. */
+  /** Tests may stop without process signals and inject dependencies. */
   signal?: AbortSignal;
   overrides?: RuntimeOverrides;
   onReady?: (info: { host: string; port: number }) => void;
   log?: Logger;
 }
 
-/** Как долго хранятся записи аудита. */
+/** Audit retention period. */
 const AUDIT_KEEP_MS = 90 * 86_400_000;
 const PRUNE_EVERY_MS = 6 * 3_600_000;
 
-/** Известный шум teleproto: цикл обновлений бросает TIMEOUT мимо всех обработчиков. */
+/** Known teleproto noise: the update loop throws TIMEOUT outside handlers. */
 function isUpdateLoopNoise(reason: unknown): boolean {
   const text = reason instanceof Error ? `${reason.message}\n${reason.stack ?? ''}` : String(reason);
   return /TIMEOUT/.test(text) && /updates\.js|_updateLoop/.test(text);
@@ -48,7 +48,7 @@ export async function runServe(options: ServeOptions): Promise<number> {
     filesDir: options.filesDir ?? options.config.filesDir,
   };
 
-  // Токен идёт открытым текстом по HTTP: вне localhost его можно перехватить.
+  // HTTP carries plaintext tokens; remote traffic could be intercepted.
   const loopback = ['127.0.0.1', 'localhost', '::1'].includes(config.host);
   if (!loopback && process.env.TG_MCP_ALLOW_REMOTE !== '1') {
     throw new GatewayError(
@@ -74,7 +74,7 @@ export async function runServe(options: ServeOptions): Promise<number> {
   try {
     const resumed = services.jobs.resume();
     if (resumed > 0) log.info('resumed interrupted jobs', { count: resumed });
-    // Действия, которые выполнялись в момент падения: исход неизвестен, повторять их шлюз не станет.
+    // Writes executing at a crash have unknown outcomes and are never replayed.
     const interrupted = services.writeGate.approvals.recover();
     if (interrupted > 0) log.warn('write actions interrupted by a restart, their outcome is unknown', { count: interrupted });
     http = await startHttpServer({
@@ -93,7 +93,7 @@ export async function runServe(options: ServeOptions): Promise<number> {
     throw err;
   }
 
-  // Сам по себе демон в Telegram не ходит. Раз в минуту только уборка в своей базе.
+  // No autonomous Telegram queries; once a minute, only local database housekeeping.
   let lastPrune = 0;
   const sweeper = setInterval(() => {
     try {

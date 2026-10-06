@@ -1,14 +1,14 @@
 /**
- * Лимитер MTProto-вызовов. Каждый вызов в Telegram проходит через него.
+ * MTProto call limiter. Every Telegram call goes through it.
  *
- * - очередь на аккаунт, одна полоса на сессию: 60 запросов в минуту, 500 мс
- *   между запросами;
- * - дедлайн ВНУТРИ полосы: зависший вызов освобождает её по времени, процесс
- *   выходит при зависании;
- * - пауза аккаунта на FLOOD_WAIT, повторы до предела;
- * - бюджет ожидания: если пауза длиннее, чем готов ждать вызывающий, он сразу
- *   получает ошибку с retry_after, а не висит;
- * - приоритет: вызовы агента идут раньше фоновых задач (выгрузка, индексация).
+ * - one queue/lane per account session: 60 requests/minute and 500 ms
+ *   between calls;
+ * - deadline INSIDE the lane: a hung call releases it when time expires,
+ *   and the process exits on a hang;
+ * - account pause on FLOOD_WAIT, retries within the limit;
+ * - wait budget: when the pause exceeds what the caller can wait,
+ *   return retry_after immediately rather than hanging;
+ * - agent calls take priority over background export/index jobs.
  */
 import { classifyError, floodInfo, GatewayError } from './errors.js';
 import { createLogger, type Logger } from './log.js';
@@ -17,34 +17,34 @@ import { DeadlineError, MAX_TIMER_MS, withTimeout } from './time.js';
 export type Priority = 'interactive' | 'background';
 
 export interface LimiterOptions {
-  /** Минимальная пауза между вызовами одного аккаунта. */
+  /** Minimum spacing between calls on the same account. */
   minIntervalMs?: number;
-  /** Вызовов в минуту на аккаунт. */
+  /** Calls per account per minute. */
   perMinute?: number;
-  /** FLOOD_WAIT дольше этого не пережидается никем, даже фоновой задачей. */
+  /** Nobody waits through FLOOD_WAIT above this limit, including background jobs. */
   floodCapSeconds?: number;
   maxFloodRetries?: number;
-  /** Дедлайн самого вызова, если не задан в опциях вызова. */
+  /** Default call deadline when options do not specify one. */
   defaultDeadlineMs?: number;
-  /** Сколько вызов агента готов ждать очередь и паузы до старта. */
+  /** Agent call budget for waiting on the queue and pauses before starting. */
   interactiveWaitBudgetMs?: number;
-  /** Сколько секунд паузы ставить, если FLOOD_WAIT пришёл без числа. */
+  /** Default pause seconds when FLOOD_WAIT carries no number. */
   unknownFloodSeconds?: number;
-  /** Зависший вызов: процесс должен выйти (см. core/recovery.ts). */
+  /** Hung call requires process exit (see core/recovery.ts). */
   onFatal: (reason: string) => void;
   log?: Logger;
   now?: () => number;
 }
 
 export interface CallOptions {
-  /** Имя вызова для логов и ошибок, например `messages.GetHistory`. */
+  /** Call name for logs/errors, e.g. `messages.GetHistory`. */
   label: string;
   priority?: Priority;
   deadlineMs?: number;
   waitBudgetMs?: number;
-  /** Что делать, если вызов не вернулся к дедлайну. По умолчанию перезапуск процесса. */
+  /** Behavior when a call misses its deadline; default: process restart. */
   onHang?: 'restart' | 'error';
-  /** Вызов что-то меняет в Telegram: при таймауте исход неизвестен. */
+  /** The call mutates Telegram state; timeout means an unknown outcome. */
   write?: boolean;
 }
 
@@ -52,9 +52,9 @@ export interface LaneStatus {
   queued: number;
   callsInWindow: number;
   perMinute: number;
-  /** Секунды до конца паузы FLOOD_WAIT, 0 если паузы нет. */
+  /** Remaining account FLOOD_WAIT seconds; 0 if not paused. */
   floodWaitSeconds: number;
-  /** Методы на долгой паузе: Telegram считает лимиты по методам, остальные вызовы работают. */
+  /** Long method-specific pauses; other account methods remain available. */
   pausedMethods: Array<{ label: string; seconds: number }>;
 }
 
@@ -65,7 +65,7 @@ interface Item {
   label: string;
   priority: Priority;
   deadlineMs: number;
-  /** Момент, после которого вызов уже не стартует. */
+  /** Latest time at which the call may start. */
   startBy: number;
   onHang: 'restart' | 'error';
   write: boolean;
@@ -80,9 +80,9 @@ interface Lane {
   windowStart: number;
   windowCount: number;
   floodWaitUntil: number;
-  /** Долгие паузы отдельных методов: имя вызова -> момент окончания. */
+  /** Long method pauses: method name -> end time. */
   methodPausedUntil: Map<string, number>;
-  /** Будит спящий цикл полосы: пришёл новый вызов или пора остановиться. */
+  /** Wake the lane loop for new work or shutdown. */
   wake: (() => void) | null;
 }
 
@@ -116,8 +116,8 @@ export class AccountLimiter {
   }
 
   /**
-   * Выполняет op в полосе аккаунта: по одному, с паузами, дедлайном и разбором
-   * FLOOD_WAIT. Отклоняется только GatewayError.
+   * Run op in the account lane: sequentially, with spacing, deadline, and
+   * FLOOD_WAIT handling. Reject only with GatewayError.
    */
   run<T>(accountId: string, op: () => Promise<T>, options: CallOptions): Promise<T> {
     if (this.stopped) {
@@ -145,14 +145,14 @@ export class AccountLimiter {
         expiryTimer: null,
       };
 
-      // Этот метод на долгой паузе: отвечаем сразу, остальные вызовы аккаунта не страдают.
+      // This method has a long pause; reject immediately without affecting other methods.
       const methodLeft = (lane.methodPausedUntil.get(options.label) ?? 0) - now;
       if (methodLeft > 0) {
         reject(this.pausedError(methodLeft, options.label));
         return;
       }
 
-      // Пауза уже длиннее бюджета: отвечаем сразу, очередь не занимаем.
+      // The pause already exceeds the budget; reject without occupying the queue.
       const floodLeft = lane.floodWaitUntil - now;
       if (floodLeft > budget) {
         reject(this.pausedError(floodLeft));
@@ -183,7 +183,7 @@ export class AccountLimiter {
     };
   }
 
-  /** Останавливает приём и отклоняет всё, что ждёт в очередях. */
+  /** Stop accepting calls and reject all queued work. */
   shutdown(): void {
     this.stopped = true;
     for (const lane of this.lanes.values()) {
@@ -195,7 +195,7 @@ export class AccountLimiter {
     }
   }
 
-  // ---------- внутреннее ----------
+  // ---------- internals ----------
 
   private lane(accountId: string): Lane {
     let lane = this.lanes.get(accountId);
@@ -210,7 +210,7 @@ export class AccountLimiter {
     if (front) {
       lane.queue.unshift(item);
     } else if (item.priority === 'interactive') {
-      // Вызовы агента встают перед фоновыми, но после своих же.
+      // Agent calls precede background work, but preserve agent FIFO order.
       const firstBackground = lane.queue.findIndex(q => q.priority === 'background');
       if (firstBackground === -1) lane.queue.push(item);
       else lane.queue.splice(firstBackground, 0, item);
@@ -227,7 +227,7 @@ export class AccountLimiter {
     }
   }
 
-  /** Вызов, который не успел стартовать за свой бюджет, получает ошибку сам, не дожидаясь очереди. */
+  /** Reject a call exceeding its start budget independently of the queue. */
   private armExpiry(lane: Lane, item: Item): void {
     this.clearExpiry(item);
     const ms = Math.max(0, item.startBy - this.now());
@@ -267,8 +267,8 @@ export class AccountLimiter {
         }
 
         if (waitMs > 0) {
-          // Спим не дольше нужного; новый вызов будит цикл, и голова очереди
-          // выбирается заново (вызов агента мог встать перед фоновым).
+          // Sleep only as long as needed. New work wakes the loop and
+          // reselects the queue head (an agent call may now precede background work).
           await this.interruptibleSleep(lane, waitMs);
           continue;
         }
@@ -321,7 +321,7 @@ export class AccountLimiter {
     lane.lastCallAt = startedAt;
 
     try {
-      // Дедлайн внутри полосы: зависший вызов освобождает её по времени.
+      // Deadline inside the lane: a hung call releases the lane on timeout.
       const result = await withTimeout(item.op(), item.deadlineMs, item.label);
       item.resolve(result);
     } catch (err) {
@@ -340,13 +340,13 @@ export class AccountLimiter {
         const now = this.now();
         this.log.warn('FLOOD_WAIT', { account: accountId, label: item.label, seconds, scope: flood.scope });
 
-        // Медленный режим одного чата: аккаунт не на паузе, повторять вызов не нужно.
+        // One chat's slow mode does not pause the account or warrant a retry.
         if (flood.scope === 'chat') {
           item.reject(classifyError(err, { write: item.write }));
           return;
         }
-        // Долгая пауза относится к методу (например, ResolveUsername на сутки): остальные
-        // вызовы аккаунта продолжают работать, а этот метод отвечает ошибкой до конца паузы.
+        // A long pause belongs to one method (e.g. a day for ResolveUsername);
+        // other account calls continue, while that method rejects until the pause ends.
         if (seconds > this.floodCapSeconds) {
           lane.methodPausedUntil.set(item.label, now + seconds * 1000);
           item.reject(
@@ -361,7 +361,7 @@ export class AccountLimiter {
 
         const fitsBudget = seconds * 1000 <= item.startBy - now;
         if (seconds <= this.floodCapSeconds && fitsBudget && item.retries < this.maxFloodRetries) {
-          // FLOOD_WAIT значит, что запрос не выполнен: повтор безопасен и для записи.
+          // FLOOD_WAIT means the request was not executed; retry is safe even for writes.
           item.retries++;
           this.enqueue(accountId, lane, item, true);
           return;

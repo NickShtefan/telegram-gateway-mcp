@@ -1,6 +1,6 @@
 /**
- * Сборка ядра: хранилище, лимитер, пул клиентов, шлюз вызовов. Один раз на
- * процесс. Зависимости передаются явно, поэтому в тестах любую можно заменить.
+ * Composes storage, limiter, client pool, and call gateway once per
+ * process. Explicit dependencies allow test substitution.
  */
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -20,7 +20,7 @@ export interface Runtime {
   pool: ClientPool;
   tg: Tg;
   log: Logger;
-  /** Останавливает очереди, закрывает клиентов и базу. */
+  /** Stops queues and closes clients and the database. */
   close(): Promise<void>;
 }
 
@@ -30,7 +30,7 @@ export interface RuntimeOverrides {
   sessionSecret?: string;
   exit?: ExitProcess;
   limiter?: Partial<LimiterOptions>;
-  /** Пауза между отказом ждущим вызовам и выходом процесса при зависании. */
+  /** Grace period between rejecting waiting calls and exiting after a hang. */
   fatalGraceMs?: number;
   log?: Logger;
 }
@@ -44,13 +44,13 @@ export function createRuntime(config: GatewayConfig, overrides: RuntimeOverrides
   }
   const store = storage;
 
-  // Чужое хранилище (передано снаружи) закрывает тот, кто его открыл.
+  // Externally supplied storage is closed by its creator.
   const ownsStorage = overrides.storage === undefined;
   let limiterRef: AccountLimiter | null = null;
   const fatal = createFatalHandler({
     exit: overrides.exit,
     log: log.child('recovery'),
-    // Сначала все ждущие вызовы получают ошибку и успевают записать исход, потом процесс выходит.
+    // Let rejected calls record their outcomes before the process exits.
     prepare: () => limiterRef?.shutdown(),
     graceMs: overrides.fatalGraceMs ?? 300,
     beforeExit: () => {

@@ -1,9 +1,9 @@
 /**
- * Резолвер: превращает `@username`, ссылку t.me, инвайт или id в чат.
+ * Resolves @username, t.me links, invites, and IDs to chats.
  *
- * Сначала кэш сущностей аккаунта, и только потом `contacts.ResolveUsername`,
- * у которого жёсткие лимиты. accessHash привязан к сессии, поэтому кэш у
- * каждого аккаунта свой.
+ * Check the account entity cache before contacts.ResolveUsername,
+ * which has strict rate limits. accessHash belongs to a session,
+ * so each account has its own cache.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
@@ -24,32 +24,32 @@ export interface ChatCard {
   username: string | null;
   about: string | null;
   members: number | null;
-  /** Состоит ли аккаунт в чате; null, если Telegram этого не сообщил. */
+  /** Account membership, or null when Telegram does not report it. */
   isMember: boolean | null;
   verified: boolean;
   scam: boolean;
-  /** Группа обсуждений канала или канал, к которому привязана группа. */
+  /** Channel discussion group, or the channel linked to a group. */
   linkedChatKey: string | null;
-  /** У канала есть группа обсуждений, то есть комментарии под постами. */
+  /** Whether a channel has a discussion group and post comments. */
   commentsEnabled: boolean | null;
   slowmodeSeconds: number | null;
   link: string | null;
 }
 
 export interface InviteCard {
-  /** Аккаунт уже состоит в чате: его можно читать. */
+  /** Existing membership allows the account to read the chat. */
   member: boolean;
-  /** Чат, если он доступен (участник или предпросмотр). */
+  /** Chat when accessible through membership or preview. */
   chat: EntityRecord | null;
   title: string | null;
   about: string | null;
   members: number | null;
   type: ChatType | null;
-  /** Вступление по заявке: её одобряет админ чата. */
+  /** Join requests require approval by a chat administrator. */
   requestNeeded: boolean;
 }
 
-/** Через сколько записи кэша с username перепроверяются в Telegram. */
+/** Time until cached usernames are revalidated through Telegram. */
 const USERNAME_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function chatTypeOf(entity: Pick<EntityRecord, 'kind' | 'meta'>): ChatType {
@@ -77,7 +77,7 @@ export class Resolver {
     this.now = deps.now ?? (() => Date.now());
   }
 
-  /** Разбирает ссылку и находит чат. Для инвайтов чат доступен, только если аккаунт уже в нём. */
+  /** Parses references and resolves chats; invite chats require existing membership. */
   async resolve(accountId: string, ref: string, options?: TgCallOptions): Promise<{ parsed: ParsedRef; chat: EntityRecord }> {
     const parsed = parseRef(ref);
     return { parsed, chat: await this.chat(accountId, parsed.chat, options) };
@@ -116,13 +116,13 @@ export class Resolver {
     return entity;
   }
 
-  /** Чат по ключу: только из кэша, потому что без accessHash Telegram его не отдаст. */
+  /** Resolves keys from cache only; Telegram requires the cached accessHash. */
   byKey(accountId: string, key: string): EntityRecord {
     const cached = this.entities.get(accountId, key);
     if (cached && this.usable(cached)) return cached;
     const ref = parsePeerKey(key);
     if (ref.kind === 'chat') {
-      // Обычной группе accessHash не нужен.
+      // Basic groups do not need accessHash.
       return { accountId, peerKey: key, kind: 'chat', accessHash: null, username: null, title: null, meta: {}, updatedAt: this.now() };
     }
     throw new GatewayError(
@@ -131,7 +131,7 @@ export class Resolver {
     );
   }
 
-  /** Забыть чат: после CHAT_NOT_FOUND запись кэша считается устаревшей. */
+  /** Forgets stale chat entries after CHAT_NOT_FOUND. */
   forget(accountId: string, key: string): void {
     this.entities.remove(accountId, key);
   }
@@ -173,7 +173,7 @@ export class Resolver {
     };
   }
 
-  /** Карточка чата: описание, участники, группа обсуждений, состоит ли аккаунт. */
+  /** Chat profile: description, participants, discussion group, and membership. */
   async card(accountId: string, entity: EntityRecord, options?: TgCallOptions): Promise<ChatCard> {
     const base: ChatCard = {
       peerKey: entity.peerKey,
@@ -198,7 +198,7 @@ export class Resolver {
           new Api.channels.GetFullChannel({ channel: toInputChannel(entity) }),
           options,
         )) as unknown as { fullChat?: { about?: string; participantsCount?: number; linkedChatId?: unknown; slowmodeSeconds?: number } };
-        // GetFullChannel возвращает и сам канал с актуальными флагами: перечитываем из кэша.
+        // GetFullChannel also returns updated channel flags; reread the cache.
         const fresh = this.entities.get(accountId, entity.peerKey) ?? entity;
         const linked = result.fullChat?.linkedChatId;
         const linkedKey = linked !== undefined && linked !== null ? makePeerKey({ kind: 'channel', id: BigInt(String(linked)) }) : null;

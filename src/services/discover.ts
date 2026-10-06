@@ -1,10 +1,10 @@
 /**
- * Поиск каналов: по названию, по рекомендациям Telegram и по источникам
- * репостов.
+ * Channel discovery by title, Telegram recommendations, and repost
+ * sources.
  *
- * Рекомендации обходятся по уровням, источники репостов считаются по `fwdFrom`
- * в ленте. Каждый вызов идёт через лимитер, а чаты из ответов попадают в кэш
- * аккаунта, поэтому найденный канал можно сразу открыть другими инструментами.
+ * Explore recommendations by depth and count repost sources from `fwdFrom`.
+ * Each call uses the limiter; returned chats enter the account cache,
+ * allowing other tools to open discovered channels immediately.
  */
 import { Api } from 'teleproto';
 import { entityFromApi, peerKeyOfPeer, toInputChannel, type EntityInfo } from '../core/entities.js';
@@ -17,7 +17,7 @@ export interface FoundChat {
   chat: EntityInfo;
   type: ChatType;
   members: number | null;
-  /** Аккаунт уже состоит в этом чате. */
+  /** Whether the account already belongs to this chat. */
   member: boolean;
   verified: boolean;
   scam: boolean;
@@ -25,7 +25,7 @@ export interface FoundChat {
 
 export interface SimilarResult {
   chats: FoundChat[];
-  /** Сколько похожих каналов Telegram знает всего: без Premium он показывает только часть. */
+  /** Total known similar channels; non-Premium accounts see only a subset. */
   total: number | null;
 }
 
@@ -33,23 +33,23 @@ export interface ForwardSource {
   peerKey: string;
   chat: EntityRecord | null;
   count: number;
-  /** Unix-секунды самого свежего репоста из этого источника. */
+  /** Unix timestamp of the most recent repost from this source. */
   lastDate: number;
 }
 
 export interface ForwardSourcesResult {
   scanned: number;
   forwards: number;
-  /** Репосты от людей и из источников, которые скрыли себя. */
+  /** Reposts from people and hidden sources. */
   hidden: number;
   sources: ForwardSource[];
-  /** Дата самого старого просмотренного сообщения. */
+  /** Timestamp of the oldest scanned message. */
   oldestDate: number | null;
 }
 
 export const FIND_MAX = 30;
 export const FORWARD_SCAN_MAX = 500;
-/** На втором уровне рекомендации берутся только у самых крупных каналов первого. */
+/** Explore second-level recommendations only for the largest first-level channels. */
 const SIMILAR_TOP_PER_LEVEL = 3;
 const SIMILAR_MAX = 60;
 
@@ -82,8 +82,8 @@ export class DiscoverService {
   ) {}
 
   /**
-   * Публичные каналы и группы по словам из названия или username. Telegram ищет
-   * по именам, а не по содержимому постов.
+   * Public channels and groups matching title or username words. Telegram
+   * searches names rather than post contents.
    */
   async find(accountId: string, query: string, limit: number, options?: TgCallOptions): Promise<FoundChat[]> {
     const result = (await this.tg.invoke(
@@ -109,7 +109,7 @@ export class DiscoverService {
     return found.slice(0, limit);
   }
 
-  /** Каналы, которые Telegram считает похожими. `depth = 2` добавляет похожие на самые крупные из найденных. */
+  /** Telegram recommendations; depth 2 expands from the largest discovered channels. */
   async similar(accountId: string, channel: EntityRecord, depth: 1 | 2, options?: TgCallOptions): Promise<SimilarResult> {
     const fetch = async (target: { peerKey: string; accessHash: string | null }): Promise<{ infos: EntityInfo[]; total: number | null }> => {
       const result = await this.tg.invoke(accountId, new Api.channels.GetChannelRecommendations({ channel: toInputChannel(target) }), options);
@@ -138,14 +138,14 @@ export class DiscoverService {
         try {
           add((await fetch(seed.chat)).infos);
         } catch {
-          // Один канал без рекомендаций не должен ломать весь обход.
+          // Missing recommendations for one channel must not abort exploration.
         }
       }
     }
     return { chats, total: first.total };
   }
 
-  /** Откуда канал репостит: считает источники пересланных сообщений в последних постах. */
+  /** Counts repost sources in the channel's latest posts. */
   async forwardSources(
     accountId: string,
     chat: EntityRecord,
@@ -169,7 +169,7 @@ export class DiscoverService {
         if (!m.forwardedFrom) continue;
         forwards++;
         const source = m.forwardedFrom.peerKey;
-        // Источник репоста интересен, только если это канал или группа, а не человек и не сам чат.
+        // Keep channel/group sources, excluding people and the source chat itself.
         if (source === null || !source.startsWith('-') || source === chat.peerKey) {
           hidden++;
           continue;

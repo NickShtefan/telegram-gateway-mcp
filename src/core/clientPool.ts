@@ -1,9 +1,9 @@
 /**
- * Пул клиентов teleproto: одно подключение на аккаунт, параллельные попытки
- * подключиться склеиваются, connect ограничен по времени, подключение без
- * интерактива и с проверкой `getMe`.
+ * teleproto client pool: one connection per account; concurrent attempts
+ * are coalesced, connect is time-bounded, and connection is non-interactive
+ * with `getMe` verification.
  *
- * Второй клиент на той же сессии не создаётся никогда: AUTH_KEY_DUPLICATED.
+ * Never create a second client on the same session: AUTH_KEY_DUPLICATED.
  */
 import { TelegramClient } from 'teleproto';
 import { Logger as GramLogger } from 'teleproto/extensions';
@@ -24,13 +24,13 @@ export interface ClientParams {
 
 export type ClientFactory = (params: ClientParams) => TelegramClient;
 
-/** Логгер teleproto, который пишет в stderr через логгер шлюза. */
+/** teleproto logger routed through the gateway logger to stderr. */
 class StderrGramLogger extends GramLogger {
   constructor(private readonly sink: Logger) {
     super(GramLogLevel.WARN);
   }
 
-  // Базовый логгер пишет через console.log, то есть в stdout: этот метод заменяет его целиком.
+  // The base logger uses console.log/stdout; this method replaces it completely.
   override log(level: GramLogLevel, message: string, error?: unknown): void {
     const text = error === undefined ? message : `${message}: ${error instanceof Error ? error.message : String(error)}`;
     if (level === GramLogLevel.ERROR) this.sink.error(text);
@@ -42,7 +42,7 @@ class StderrGramLogger extends GramLogger {
 export const defaultClientFactory: ClientFactory = ({ session, apiId, apiHash, log }) =>
   new TelegramClient(new StringSession(session), apiId, apiHash, {
     connectionRetries: 5,
-    // FLOOD_WAIT шлюз разбирает сам (лимитер): teleproto не должен спать молча.
+    // The gateway limiter handles FLOOD_WAIT; teleproto must not sleep silently.
     floodSleepThreshold: 0,
     baseLogger: new StderrGramLogger(log),
   });
@@ -56,20 +56,20 @@ export interface AccountIdentity {
 export interface PoolCredentials {
   apiId: number;
   apiHash: string;
-  /** Секрет для расшифровки сессий. */
+  /** Secret used to decrypt sessions. */
   sessionSecret: string;
 }
 
 export interface ClientPoolOptions {
   storage: Storage;
   /**
-   * Учётные данные запрашиваются при первом подключении, а не при создании
-   * пула: команды, которым Telegram не нужен, работают и без них.
+   * Request credentials on the first connection rather than pool creation:
+   * commands not using Telegram can work without them.
    */
   credentials: () => PoolCredentials;
   factory?: ClientFactory;
   connectTimeoutMs?: number;
-  /** Подключение зависло: процесс должен выйти. */
+  /** Connection hung: the process must exit. */
   onFatal: (reason: string) => void;
   log?: Logger;
 }
@@ -111,12 +111,12 @@ export class ClientPool {
     }
   }
 
-  /** Кто подключён под этим аккаунтом; известно после первого подключения. */
+  /** Connected account identity, available after the first connection. */
   identity(accountId: string): AccountIdentity | null {
     return this.identities.get(accountId) ?? null;
   }
 
-  /** Сессия перестала работать: клиент закрывается, аккаунт помечается. */
+  /** Invalidated session: close the client and mark the account. */
   async markUnauthorized(accountId: string): Promise<void> {
     this.options.storage.accounts.setStatus(accountId, 'unauthorized');
     await this.drop(accountId);
@@ -169,7 +169,7 @@ export class ClientPool {
 
     let me: MeLike | null;
     try {
-      // connect и getMe под общим дедлайном: без сети оба могут не завершиться никогда.
+      // connect/getMe share a deadline; either can hang forever without networking.
       me = await withTimeout(
         (async () => {
           await client.connect();
@@ -212,12 +212,12 @@ export class ClientPool {
     return client;
   }
 
-  /** destroy, а не disconnect: иначе в teleproto остаётся цикл обновлений-зомби. */
+  /** Use destroy, not disconnect, to avoid a zombie teleproto update loop. */
   private async destroy(client: TelegramClient): Promise<void> {
     try {
       await withTimeout(client.destroy(), 5_000, 'client.destroy');
     } catch {
-      // закрытие не должно ронять вызывающего
+      // Closing must not crash the caller.
     }
   }
 }

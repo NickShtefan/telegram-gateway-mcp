@@ -1,7 +1,7 @@
 /**
- * Двойник шлюза Telegram для тестов сервисов и инструментов. Отвечает на
- * запросы по `className`, запоминает вызовы и, как настоящий TgGateway,
- * складывает сущности из ответов в кэш аккаунта.
+ * Telegram gateway fake for service and tool tests. Responds to requests
+ * by className, records calls, and caches entities from responses
+ * per account like the real TgGateway.
  */
 import type { Api, TelegramClient } from 'teleproto';
 import type { AccountIdentity } from '../../core/clientPool.js';
@@ -13,7 +13,7 @@ import type { EntitiesRepo } from '../../storage/port.js';
 export interface RecordedCall {
   accountId: string;
   className: string;
-  // Поля запроса разные у каждого метода: в тестах читаются как есть.
+  // Request fields vary by method; tests inspect them directly.
   request: any;
   options?: TgCallOptions;
 }
@@ -27,7 +27,7 @@ export class FakeTg implements Tg {
 
   constructor(private readonly entities?: EntitiesRepo) {}
 
-  /** Ответ на метод, например `messages.GetHistory`. */
+  /** Registers a response for a method such as messages.GetHistory. */
   on(className: string, handler: Handler): this {
     this.handlers.set(className, handler);
     return this;
@@ -45,8 +45,8 @@ export class FakeTg implements Tg {
 
   async invoke<R extends Api.AnyRequest>(accountId: string, request: R, options?: TgCallOptions): Promise<R['__response']> {
     const className = (request as { className?: string }).className ?? 'unknown';
-    // Запрос собран настоящими классами библиотеки: он обязан сериализоваться.
-    // Так тесты ловят поля, которые стали обязательными в новом слое протокола.
+    // Requests use real library classes and must serialize successfully.
+    // This catches fields newly required by protocol-layer updates.
     const serialize = (request as { getBytes?: () => unknown }).getBytes;
     if (typeof serialize === 'function') {
       try {
@@ -80,7 +80,7 @@ export class FakeTg implements Tg {
   }
 }
 
-/** Канал, как его отдаёт Telegram. */
+/** Channel object as returned by Telegram. */
 export function rawChannel(id: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return { className: 'Channel', id: BigInt(id), accessHash: BigInt(id * 7 + 1), title: `Channel ${id}`, broadcast: true, ...extra };
 }
@@ -89,7 +89,7 @@ export function rawUser(id: number, extra: Record<string, unknown> = {}): Record
   return { className: 'User', id: BigInt(id), accessHash: BigInt(id * 3 + 1), firstName: `User${id}`, ...extra };
 }
 
-/** Сообщение в канале или супергруппе. */
+/** Channel or supergroup message. */
 export function rawMessage(channelId: number, id: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     className: 'Message',

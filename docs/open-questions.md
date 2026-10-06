@@ -1,23 +1,22 @@
-# Открытые вопросы
+# Open questions
 
-Решения здесь принимает владелец. Агент может предложить вариант с доводами, но не выбирает сам. Уже принятое записано в [decisions.md](decisions.md).
+The owner decides these questions. An agent may propose options and evidence, but must not choose for the owner. Accepted decisions are in [decisions.md](decisions.md).
 
-## Ждёт подтверждения владельца
+## Awaiting owner confirmation
 
-Решения 20, 22 и 24 агент принял сам по ходу работы. Они помечены «предложено» и действуют, пока владелец не скажет иначе. Самые заметные:
+Decisions 20, 22, and 24 were proposed by an agent during implementation. They are marked "proposed" and apply until the owner says otherwise. The most visible are:
 
-- **Установка только из копии установщика под root и по sha коммита** (решение 22).
-- **Индекс наполняется только по вызову и хранит тексты чатов в базе шлюза** (решение 24).
+- **Install only from a root-owned installer copy at an exact commit SHA** (decision 22).
+- **Populate the index only on a tool call; store chat text in the gateway database** (decision 24).
 
-## Можно решить позже
+## Can be decided later
 
-1. **Premium у аккаунта агента.** Полнотекстовый поиск по всем публичным постам Telegram доступен только с Premium и дневной квотой. Нужен ли он?
+1. **Premium for the agent account.** Telegram-wide public-post full-text search requires Premium and has a daily quota. Is it needed?
 
-## Для открытия исходников
+## For open-source publication
 
-План и доводы: [open-source-plan.md](open-source-plan.md). Способ открытия выбран: новый репозиторий из чистого снимка, дальнейшая разработка в нём (решение 33). Лицензия выбрана: MIT, строка правообладателя `Copyright (c) 2026 NickShtefan` (решение 34). Название нового репозитория: `telegram-mcp-gateway`, публичный заголовок: `Unofficial Telegram MCP Gateway` (решение 35, [исследование](naming-research.md)). Первый публичный выпуск включает npm-пакет (решение 36), его имя: `telegram-mcp-gateway` без scope (решение 37). Новый репозиторий планируется в личном аккаунте: `NickShtefan/telegram-mcp-gateway` (решение 38). Сначала очищаем текущий репозиторий, переносим проверенный снимок в новый приватный, проходим проверки выпуска, затем открываем доступ и публикуем npm-пакет (решение 39). Остаются вопросы ниже.
+Plan and rationale: [open-source-plan.md](open-source-plan.md). The owner chose a clean new repository with further development there (decision 33), MIT with `Copyright (c) 2026 NickShtefan` (decision 34), the repository name `telegram-mcp-gateway` and public title `Unofficial Telegram MCP Gateway` (decision 35, [research](naming-research.md)), npm publication in the first release (decision 36), and the unscoped npm name `telegram-mcp-gateway` (decision 37). The planned repository is `NickShtefan/telegram-mcp-gateway` (decision 38). Clean the current repository, transfer a vetted snapshot to the new private repository, verify the release, then open access and publish the package (decision 39). English is the only repository language, with no Russian edition (decision 43).
 
-1. **Первый выпуск.** macOS и Linux выбраны, Windows желательна (решение 40). Для Windows выбран нативный запуск; есть компьютер владельца для испытаний (решение 41). Политика Node принята: рекомендовать 24 LTS или более новую проверенную LTS, поддерживать ветку 22 начиная с 22.13 (решение 42). При подготовке выпуска уточнить версии систем и клиентов, точные версии Node и результаты проверок. До публикации уточнить учётную запись владельца npm-пакета: 6 октября владелец сообщил, что аккаунта, вероятно, нет. Проверить существующий аккаунт и восстановить доступ либо зарегистрировать новый, затем зафиксировать логин и подготовить аутентификацию публикации. Это задача подготовки выпуска, она не мешает начать очистку и локальную проверку пакета. Согласовать публичную схему запуска и установки с учётом изоляции из решения 22. `tg-mcp` в npm занят чужим пакетом. Приватный режим текущего репозитория сохраняется по решению 33.
-2. **Публичные сценарии.** Согласовать работу с данными и демонстрации с учётом условий Telegram для ИИ, согласия соответствующих пользователей и применимости API Terms к шлюзу.
-3. **Вклад и сопровождение.** Определить сопровождающего, правила внешних PR, защиты `main`, условия принятия кода и приватный канал сообщений об уязвимостях. Изменение автоматического push в `main` оформить как пересмотр решения 19 для публичного проекта.
-4. **Язык.** Нужны ли английские материалы и какое изменение текущего правила о русской документации это потребует.
+1. **First release.** macOS and Linux are selected; Windows is desired (decision 40). Windows must run natively; the owner has a computer for testing (decision 41). The Node policy recommends 24 LTS or a newer verified LTS and supports Node 22 from 22.13 (decision 42). During release preparation, establish OS and client versions, exact Node versions, and test results. Resolve the npm account before publication: on October 6 the owner said they probably do not have one. Verify or recover an existing account, or register a new one; record the username and prepare publishing authentication. This does not block code cleanup or local packaging checks. Agree the public installation and execution model, preserving isolation under decision 22. The npm name `tg-mcp` belongs to a third party. Keep the current repository private under decision 33.
+2. **Public scenarios.** Agree data handling and demonstrations in light of Telegram's AI content terms, consent from the relevant users, and the API Terms' applicability to the gateway.
+3. **Contributions and maintenance.** Identify the maintainer, external PR rules, `main` protection, contribution terms, and a private vulnerability-reporting channel. Any change to automatic pushes to `main` must explicitly revise decision 19 for the public project.

@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
- * Точка входа `tg-mcp`. Первым делом console.log уводится в stderr, и только
- * потом загружается остальной код вместе с teleproto: в stdio-режиме любая чужая
- * строка в stdout ломает JSON-RPC.
+ * `tg-mcp` entry point. Redirect console.log to stderr first, then
+ * import the remaining code and teleproto: any third-party stdout
+ * line in stdio mode breaks JSON-RPC.
  */
 import { redirectConsoleToStderr } from '../core/log.js';
 
 redirectConsoleToStderr();
-// База, ключ и сокет шлюза доступны только его пользователю. Файлы для агентов
-// (выгрузки, картинки) получают права явно при записи.
+// Database, key, and lock socket are accessible only to the gateway user.
+// Agent exports/images receive explicit permissions when written.
 process.umask(0o077);
 
 const { main } = await import('./main.js');
 const code = await main(process.argv.slice(2));
 process.exitCode = code;
-// У демона остаётся таймер уборки: после остановки выходим сразу.
+// The daemon retains a housekeeping timer: exit immediately after shutdown.
 if (process.argv[2] === 'serve') process.exit(code);

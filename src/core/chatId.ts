@@ -1,7 +1,7 @@
 /**
- * Единая форма id чатов. Внутри шлюза чат всегда записан «помеченным» id
- * в форме Bot API: пользователь `123`, обычная группа `-123`, канал или
- * супергруппа `-100…`.
+ * Canonical chat IDs. The gateway stores marked IDs
+ * in Bot API form: user `123`, basic group `-123`, channel or
+ * supergroup `-100...`.
  */
 const CHANNEL_OFFSET = 1_000_000_000_000n;
 
@@ -9,7 +9,7 @@ export type PeerKind = 'user' | 'chat' | 'channel';
 
 export interface PeerRef {
   kind: PeerKind;
-  /** «Голый» положительный id из MTProto. */
+  /** Unmarked positive MTProto ID. */
   id: bigint;
 }
 
@@ -49,7 +49,7 @@ export function isBotApiChannelId(value: number | bigint | string): boolean {
   }
 }
 
-/** Ключ чата для хранения и вывода: помеченный id строкой. */
+/** Chat key for storage/output: a marked ID string. */
 export function peerKey(ref: PeerRef): string {
   if (ref.id <= 0n) throw new Error(`peerKey: expected a positive id, got ${ref.id}`);
   switch (ref.kind) {
@@ -62,7 +62,7 @@ export function peerKey(ref: PeerRef): string {
   }
 }
 
-/** Обратное преобразование: помеченный id -> тип и «голый» id. */
+/** Inverse conversion: marked ID -> type and unmarked ID. */
 export function parsePeerKey(key: string | number | bigint): PeerRef {
   const id = toBigInt(key, 'parsePeerKey');
   if (id === 0n) throw new Error('parsePeerKey: id must not be zero');
@@ -71,7 +71,7 @@ export function parsePeerKey(key: string | number | bigint): PeerRef {
   return { kind: 'chat', id: -id };
 }
 
-/** Похожа ли строка на помеченный id чата (а не на username или ссылку). */
+/** Whether a string resembles a marked chat ID rather than a username or URL. */
 export function looksLikePeerKey(value: string): boolean {
   return /^-?\d{1,20}$/.test(value.trim());
 }

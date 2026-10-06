@@ -1,6 +1,6 @@
 /**
- * Непрозрачные курсоры. Агент получает строку и возвращает её как есть;
- * внутри лежит позиция в выдаче Telegram (offsetId, offsetRate, offsetPeer).
+ * Opaque cursors. Agents return these strings unchanged; internally they
+ * contain Telegram result positions (offsetId, offsetRate, offsetPeer).
  */
 import { GatewayError } from '../core/errors.js';
 
@@ -12,7 +12,7 @@ export function encodeCursor(kind: string, data: CursorData): string {
   return PREFIX + Buffer.from(JSON.stringify([kind, data]), 'utf8').toString('base64url');
 }
 
-/** Разбирает курсор и проверяет, что он выдан тем же инструментом. */
+/** Parses a cursor and checks that the same tool issued it. */
 export function decodeCursor<T extends CursorData>(kind: string, cursor: string): T {
   const fail = (): never => {
     throw new GatewayError(

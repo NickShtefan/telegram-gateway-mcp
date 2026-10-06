@@ -1,6 +1,6 @@
 /**
- * Общие части инструментов: описания повторяющихся аргументов, подписи чатов,
- * поиск сообщения по ссылке или по паре «чат и id».
+ * Shared tool components: common argument descriptions, chat labels,
+ * and message lookup by link or chat/ID pair.
  */
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';
@@ -23,7 +23,7 @@ export const untilArg = z.string().optional().describe('End of the time window, 
 export const cursorArg = z.string().optional().describe('next_cursor from the previous call of this tool, to get the next page.');
 export const topicArg = z.number().int().positive().max(2_147_483_647).optional().describe('Forum topic id from tg_list_topics.');
 
-/** Подпись чата для заголовков: `@username` или название в кавычках. */
+/** Chat header label: `@username` or a quoted title. */
 export function chatLabel(chat: Pick<EntityRecord, 'username' | 'title' | 'peerKey'>): string {
   if (chat.username) return `@${safeLabel(chat.username, 40)}`;
   const title = safeLabel(chat.title, 60);
@@ -34,24 +34,24 @@ export function chatHeader(chat: EntityRecord): string {
   return `${chatLabel(chat)} [${chatTypeOf(chat)}]`;
 }
 
-/** Ссылка на сообщение чата; для чатов без ссылок null. */
+/** Chat message link, or null for chats without links. */
 export function linkBuilder(chat: EntityRecord, topicId?: number): (m: MessageDto) => string | null {
   return m => messageLink({ username: chat.username, peerKey: chat.peerKey, messageId: m.id, topicId: topicId ?? m.topicId ?? undefined });
 }
 
 export interface MessageLocation {
   accountId: string;
-  /** Чат, в котором лежит сообщение. Для комментария это группа обсуждений. */
+  /** Chat containing the message; comments belong to the discussion group. */
   chat: EntityRecord;
   messageId: number;
   topicId?: number;
-  /** Если запрошен комментарий: канал, пост и корень его ветки в группе обсуждений. */
+  /** For comments: source channel, post, and discussion-thread root. */
   commentOf?: { chat: EntityRecord; postId: number; rootId: number };
 }
 
 /**
- * Сообщение по ссылке t.me или по паре «чат и id». Ссылка вида
- * `t.me/name/123?comment=45` ведёт к комментарию в группе обсуждений.
+ * Finds a message by t.me link or chat/ID pair. A link such as
+ * `t.me/name/123?comment=45` targets a comment in the discussion group.
  */
 export async function locateMessage(
   context: ToolContext,
@@ -67,9 +67,9 @@ export async function locateMessage(
     if (parsed.commentId !== undefined) {
       const { services, principal } = context;
       const root = await services.comments.root(accountId, chat, parsed.messageId);
-      // Группа обсуждений это отдельный чат: владелец мог закрыть её.
+      // The discussion group is a separate chat and may be blocked by the owner.
       services.scopes.assertAllowed(principal.userId, accountId, root.discussion);
-      // Комментарий должен быть из ветки этого поста, а не любым сообщением группы.
+      // The comment must belong to this post's thread, not an arbitrary group message.
       const found = await services.history.byIds(accountId, root.discussion, [parsed.commentId]);
       const reply = (found.raw[0] as { replyTo?: { replyToMsgId?: number; replyToTopId?: number } } | undefined)?.replyTo;
       if (found.raw.length === 0 || (reply?.replyToTopId ?? reply?.replyToMsgId) !== root.rootId) {
@@ -79,7 +79,7 @@ export async function locateMessage(
         accountId,
         chat: root.discussion,
         messageId: parsed.commentId,
-        // Контекст вокруг комментария читается внутри его ветки.
+        // Read comment context within its own thread.
         topicId: root.rootId,
         commentOf: { chat, postId: parsed.messageId, rootId: root.rootId },
       };

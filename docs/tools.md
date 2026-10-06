@@ -1,125 +1,120 @@
-# Инструменты MCP
+# MCP tools
 
-Контракт, который видит агент: 23 инструмента в пяти наборах. Шлюз это чистый MCP (решение 25): ни один инструмент не работает сам по себе, всё происходит только по вызову. Наборы включаются переменной `TG_MCP_TOOLSETS` (по умолчанию `core`). Точные схемы аргументов и описания: `src/mcp/tools/`. Этот файл описывает назначение; при расхождении прав код.
+Agent-facing contract: 23 tools in five toolsets. The gateway is pure MCP (decision 25): every operation requires a call. Select `TG_MCP_TOOLSETS` (default `core`). Exact argument schemas/descriptions: `src/mcp/tools/`. This document explains purpose and rules.
 
-## Правила контракта
+## Common contract
 
-- Только tools; resources, prompts и elicitation не используются.
-- Плоские JSON-схемы: строки, числа, boolean, enum и массивы из них. Без union, `anyOf` и вложенных объектов. Это проверяется тестом.
-- Имена `tg_*` в snake_case. В `core` одиннадцать инструментов: описания всех попадают в контекст агента.
-- Аннотации: `readOnlyHint` для чтения, `destructiveHint` для записи.
-- Ответ компактным текстом: одна строка заголовка на сообщение (id, дата, автор, счётчики, ссылка t.me), текст обрезан до лимита, в конце `next_cursor`. `structuredContent` не отдаётся (решение 20).
-- В полном режиме после текста сообщения идут две строки, если есть что показать: `hidden links: "тут" https://...` (адреса, спрятанные под словами текста, решение 32) и `buttons: 1.1 "Подпись" (callback) | 1.2 "Сайт" (link https://...)` (ряд и позиция кнопки, подпись, вид, адрес у кнопок-ссылок, решение 31). В кратком режиме в заголовке только число кнопок. Байтов callback в выдаче нет.
-- Сообщение, отправленное с самого аккаунта, подписано `@username (this account)`: в личной переписке так видно, что написал собеседник, а что аккаунт. Пометка говорит об аккаунте, а не об агенте: с того же аккаунта пишет и владелец руками.
-- Ошибки: `isError` с текстом `Error: КОД`, объяснением и `retry_after` для FLOOD_WAIT.
-- Долгое оформляется задачей: `tg_export` и `tg_index` ждут до 20 секунд и, если не успели, возвращают `job_id`. Статус читается тем же инструментом с этим `job_id`.
-- Текст из Telegram всегда помечен как чужой: блок между `<<<TG:метка` и `TG:метка>>>` или строка с `> `. Метка случайная для каждого ответа.
-- Даты в аргументах: `30d`, `12h`, `2w`, `6mo`, `1y` (столько назад), `2026-09-01` или ISO. Время в ответах UTC.
-- Вызов идёт от пользователя, которого шлюз узнаёт по bearer-токену. У инструментов, которые ходят в Telegram, необязательный параметр `account`: по умолчанию аккаунт пользователя, доступны только свои и общие аккаунты (решение 16).
-- `tg_status` доступен при любом составе наборов.
+- Responses use compact text, with `brief` and `full` modes. Full message output includes hidden links (`hidden links: "here" https://...`, decision 32) and buttons (`buttons: 1.1 "Label" (callback) | 1.2 "Website" (link https://...)`, decision 31). Button row/position, label, type, and link URL are exposed; brief headers show only button count. Callback bytes are never exposed.
+- Messages from the account are labeled `@username (this account)`, distinguishing them from the private-chat peer. The label identifies the account, not the agent: the owner also sends messages manually.
+- Errors return `isError` with `Error: CODE`, an explanation, and FLOOD_WAIT `retry_after`.
+- `tg_export` and `tg_index` wait up to 20 seconds, then return `job_id` if unfinished. Query status using the same tool and ID.
+- Telegram text is untrusted: a block between `<<<TG:marker` and `TG:marker>>>` or lines prefixed `> `. The marker is random per response.
+- Dates accept `30d`, `12h`, `2w`, `6mo`, `1y` (ago), `2026-09-01`, or ISO. Output times are UTC.
+- Bearer tokens identify gateway users. Telegram tools accept optional `account`, defaulting to the user's default; only personal/shared accounts are available (decision 16).
+- `tg_status` is always available.
 
-## Запись: два шага, предпросмотр и `tg_confirm`
+## Writes: preview then `tg_confirm`
 
-Инструменты записи ничего не делают в Telegram сами (решения 4 и 23).
+Write tools do not execute Telegram actions directly (decisions 4 and 23).
 
-1. `tg_reply`, `tg_send`, `tg_react`, `tg_join` или `tg_press_button` возвращает предпросмотр: что будет сделано, с какого аккаунта, точный текст, и `approval_id`.
-2. Агент показывает предпросмотр владельцу.
-3. После согласия владельца агент вызывает `tg_confirm` с `approval_id`. Действие выполняет шлюз и сразу возвращает исход.
+1. `tg_reply`, `tg_send`, `tg_react`, `tg_join`, or `tg_press_button` returns the action, account, exact text, and `approval_id` as a preview.
+2. The agent shows it to the owner.
+3. After owner consent, the agent calls `tg_confirm` with `approval_id`. The gateway executes and returns the outcome.
 
-Правила:
+Rules:
 
-- `tg_confirm text=...` заменяет подготовленный текст словами владельца. `action=reject` отменяет запрос.
-- Чужой запрос подтвердить нельзя: для другого пользователя его не существует.
-- Повторное подтверждение действие второй раз не выполняет, а возвращает прежний исход.
-- Запрос живёт 30 минут: это время на «показал и получил ответ». После срока действие нужно подготовить заново.
-- Текст до 4096 символов (предел Telegram), без разметки. Невидимые символы убираются до предпросмотра: подтверждается ровно то, что уйдёт. Превью ссылок по умолчанию выключено по той же причине: карточку ссылки Telegram добавляет сам, в предпросмотре её не показать. Включается параметром `link_preview`, и предпросмотр об этом говорит.
-- Если шлюз перезапустился, пока действие выполнялось, оно не повторяется: исход `failed` с пометкой, что результат неизвестен.
-- Дневные пределы считает шлюз, от агента они не зависят: по умолчанию 20 ответов, 30 реакций, 5 вступлений и 5 новых диалогов (сообщений людям, которым аккаунт ещё не писал). Дневные числа владелец меняет в `.env` демона переменными `TG_MCP_LIMIT_REPLIES`, `TG_MCP_LIMIT_REACTIONS`, `TG_MCP_LIMIT_JOINS`, `TG_MCP_LIMIT_NEW_DIALOGS`; 0 снимает предел (решение 27). Действующие значения видны в `tg_status`.
-- Скоупы проверяются дважды: при подготовке действия и при подтверждении.
-- Нажатие кнопки: при подтверждении шлюз читает сообщение заново и нажимает, только если на том же месте та же кнопка. Ответ бота возвращается как чужой текст; ссылку из ответа шлюз не открывает. Дневного предела у нажатий нет.
+- `tg_confirm text=...` replaces prepared text with the owner's wording. `action=reject` cancels.
+- Another user's request cannot be confirmed; it is invisible to the caller.
+- Repeated confirmation returns the previous outcome without repeating the action.
+- Requests live 30 minutes for owner review/response; expired actions must be prepared again.
+- Text is limited to 4096 characters, without markup. Invisible characters are removed before preview; confirmed text is exactly what is sent. Link previews default off because Telegram generates cards that cannot be previewed here. `link_preview` enables them and is disclosed in the action preview.
+- A write interrupted by restart is not replayed: `failed`, with unknown-result notice.
+- Gateway daily limits are independent of the agent: defaults 20 replies, 30 reactions, 5 joins, 5 new dialogs (people the account has never messaged). The owner configures `TG_MCP_LIMIT_REPLIES`, `TG_MCP_LIMIT_REACTIONS`, `TG_MCP_LIMIT_JOINS`, `TG_MCP_LIMIT_NEW_DIALOGS` in the daemon `.env`; 0 removes a limit (decision 27). `tg_status` shows current values.
+- Scopes are checked at preparation and confirmation.
+- Button confirmation reloads the message and requires the same button at the same position. Bot output is untrusted; response links are not opened. Button presses have no daily cap.
 
-## Личные чаты
+## Private chats
 
-Личные переписки закрыты по умолчанию. Открывает их только владелец, командой на машине шлюза (на лабе через `sudo .../tg-mcp-admin`):
+Closed by default. Only the owner grants access through a command on the gateway machine (lab: `sudo .../tg-mcp-admin`):
 
-| Команда | Что открывает |
+| Command | Access |
 |---|---|
-| `scope allow <user> <account> <chat>` | один диалог: чтение и отправка |
-| `scope private <user> <account> send` | отправка любому человеку, без чтения переписки |
-| `scope private <user> <account> open` | чтение и отправка в любом личном чате |
-| `scope private <user> <account> closed` | обратно: только диалоги из `scope allow` |
-| `scope deny <user> <account> <chat>` | закрывает чат при любом режиме |
+| `scope allow <user> <account> <chat>` | Read/send in one dialog |
+| `scope private <user> <account> send` | Send to anyone without reading conversations |
+| `scope private <user> <account> open` | Read/send in any private chat |
+| `scope private <user> <account> closed` | Only dialogs listed by `scope allow` |
+| `scope deny <user> <account> <chat>` | Close the chat regardless of mode |
 
-Режим свой у каждой пары «пользователь и аккаунт» и действует сразу, без перезапуска. Служебные чаты Telegram (коды входа, BotFather, SpamBot) закрыты всегда. Карточку человека (`tg_resolve`) агент видит в любом режиме, переписку нет.
+Modes are per user/account and apply immediately without restart. Telegram service chats (login codes, BotFather, SpamBot) stay closed. `tg_resolve` can show a person's profile in any mode, without exposing the conversation.
 
-## core: чтение и поиск, включён по умолчанию
+## core: reading and searching, enabled by default
 
-| Инструмент | Что делает | Методы MTProto |
+| Tool | Behavior | MTProto methods |
 |---|---|---|
-| `tg_status` | Кто вызывает, какие аккаунты доступны, паузы FLOOD_WAIT (общая и по отдельным методам), режим личных чатов на каждом аккаунте, включённые наборы, дневные пределы записи | нет |
-| `tg_list_dialogs` | Каналы и группы, где состоит аккаунт, вместе с архивом: фильтр по названию и типу, курсор. Личные переписки показываются только с `type=private` и только те, что владелец открыл на чтение | messages.getDialogs |
-| `tg_resolve` | Карточка чата или человека по @username, ссылке t.me или инвайту: тип, участники, описание, комментарии, состоит ли аккаунт | contacts.resolveUsername, channels.getFullChannel, messages.getFullChat, users.getFullUser, messages.checkChatInvite |
-| `tg_search_messages` | Поиск по чатам аккаунта: каналы (`where=channels`, по умолчанию), группы (`where=groups`) или личные чаты (`where=private`, только открытые владельцем на чтение). Запрос из одного #хэштега ищет по публичным постам | messages.searchGlobal, channels.searchPosts |
-| `tg_search_chat` | Поиск внутри одного чата: слово, автор, даты, тема форума | messages.search |
-| `tg_read_history` | Лента чата: курсор или окно дат, режим `brief` или `full` (в полном видны скрытые ссылки и inline-кнопки) | messages.getHistory, messages.getReplies (тема) |
-| `tg_get_message` | Сообщение по ссылке или id, пачка до 100 id, контекст до и после; скрытые ссылки и inline-кнопки сообщения с их местом и видом | channels.getMessages, messages.getMessages, messages.getHistory |
-| `tg_get_comments` | Комментарии к посту: свежие, топ по реакциям, поиск по слову | messages.getReplies, messages.getDiscussionMessage, messages.search |
-| `tg_list_topics` | Темы форума | messages.getForumTopics |
-| `tg_export` | Выгрузка в JSONL или CSV: текст как есть, счётчики, ссылки, превью фото. Авторы хэшируются, телефоны маскируются. Возвращает путь, число строк и 5 примеров. Цены и прочий смысл из текста достаёт агент | messages.search, messages.getHistory, upload.getFile |
-| `tg_get_media` | Фото, альбом целиком или превью видео; `thumb` или `full`; путь к файлу или картинка в ответе | upload.getFile |
+| `tg_status` | Caller, accessible accounts, account/method FLOOD_WAIT pauses, private-chat modes, toolsets, daily write limits | None |
+| `tg_list_dialogs` | Account channels/groups, including archive; title/type filters, cursor. Private chats appear only with `type=private` and owner-granted reading | messages.getDialogs |
+| `tg_resolve` | Chat/person details by @username, t.me URL, or invite: type, participants, description, comments, membership | contacts.resolveUsername, channels.getFullChannel, messages.getFullChat, users.getFullUser, messages.checkChatInvite |
+| `tg_search_messages` | Account channels (default `where=channels`), groups (`where=groups`), or permitted private chats (`where=private`). A single #hashtag searches public posts | messages.searchGlobal, channels.searchPosts |
+| `tg_search_chat` | One-chat search: word, author, dates, forum topic | messages.search |
+| `tg_read_history` | Cursor/date-window history, `brief` or `full` (hidden links/buttons in full) | messages.getHistory, messages.getReplies (topic) |
+| `tg_get_message` | URL/ID lookup, batches up to 100 IDs, surrounding context; hidden links/buttons with positions/types | channels.getMessages, messages.getMessages, messages.getHistory |
+| `tg_get_comments` | Recent comments, top by reactions, keyword search | messages.getReplies, messages.getDiscussionMessage, messages.search |
+| `tg_list_topics` | Forum topics | messages.getForumTopics |
+| `tg_export` | JSONL/CSV: original text, counters, URLs, photo previews. Hashes authors, masks phones. Returns path, row count, 5 samples. The agent extracts prices/meaning | messages.search, messages.getHistory, upload.getFile |
+| `tg_get_media` | Photos, entire albums, video thumbnails; `thumb`/`full`; file path or inline image | upload.getFile |
 
-## write: действия в два шага
+## write: two-step actions
 
-| Инструмент | Что делает | Методы MTProto |
+| Tool | Behavior | MTProto methods |
 |---|---|---|
-| `tg_reply` | Черновик ответа в комментариях: на сам пост или на конкретный комментарий (ссылка вида `...?comment=N`). От аккаунта или от имени канала. `link_preview=true` включает превью ссылки | messages.getDiscussionMessage, messages.sendMessage |
-| `tg_send` | Черновик сообщения в группу, канал или человеку; `reply_to` отвечает на конкретное сообщение чата, `link_preview=true` включает превью ссылки. Человеку можно писать, если владелец открыл этот диалог (`scope allow`) или режим личных чатов `send` либо `open` | messages.sendMessage |
-| `tg_confirm` | Второй шаг записи: подтвердить или отменить подготовленное действие, при подтверждении можно заменить текст | нет своих, выполняет подготовленное действие |
-| `tg_join` | Запрос на вступление в канал или группу. Исход: вступил, заявка ждёт админа чата, уже участник. Проверку бота-привратника само вступление не проходит | channels.joinChannel, messages.importChatInvite |
-| `tg_react` | Реакция на пост, сообщение или комментарий одним стандартным эмодзи; `remove=true` снимает свою. До 30 в день | messages.sendReaction |
-| `tg_press_button` | Нажатие inline-кнопки под сообщением по её месту (`row`, `button`). Только кнопки callback: ссылки, веб-приложения, вход, оплату, игры и кнопки с паролем 2FA шлюз не нажимает. Что нажимать, решает владелец | channels.getMessages, messages.getMessages, messages.getBotCallbackAnswer |
+| `tg_reply` | Draft post/comment reply (`...?comment=N`), as the account or a channel. `link_preview=true` enables cards | messages.getDiscussionMessage, messages.sendMessage |
+| `tg_send` | Draft group/channel/person message; `reply_to` targets a chat message; `link_preview=true` enables cards. Private send requires `scope allow`, `send`, or `open` | messages.sendMessage |
+| `tg_confirm` | Confirm/reject a prepared action, optionally replacing text | Executes the prepared action |
+| `tg_join` | Join request: joined, pending admin approval, already a member. Joining does not solve gatekeeper-bot challenges | channels.joinChannel, messages.importChatInvite |
+| `tg_react` | One standard emoji on a post/message/comment; `remove=true` removes the account's reaction. Default 30/day | messages.sendReaction |
+| `tg_press_button` | Press an inline callback button by `row`/`button`. No links, web apps, login, payments, games, or 2FA-password buttons. The owner decides which to press | channels.getMessages, messages.getMessages, messages.getBotCallbackAnswer |
 
-## discover: поиск каналов
+## discover: channel discovery
 
-| Инструмент | Что делает | Методы MTProto |
+| Tool | Behavior | MTProto methods |
 |---|---|---|
-| `tg_find_channels` | Публичные каналы и группы по словам из названия или username. Telegram ищет по именам, а не по содержимому постов | contacts.search |
-| `tg_similar_channels` | Каналы, которые Telegram считает похожими (по общим подписчикам). `depth=2` добавляет соседей трёх крупнейших | channels.getChannelRecommendations |
-| `tg_forward_sources` | Откуда чат репостит: источники пересланных сообщений в последних постах, с числом репостов | messages.getHistory |
+| `tg_find_channels` | Public channels/groups by title or username words. Telegram searches names, not post content | contacts.search |
+| `tg_similar_channels` | Telegram's similar-channel recommendations (shared subscribers). `depth=2` adds neighbors of the three largest | channels.getChannelRecommendations |
+| `tg_forward_sources` | Sources of forwarded recent posts and counts | messages.getHistory |
 
-Найденные каналы сразу известны аккаунту: их можно открыть по @username или id без нового поиска. Без Premium Telegram показывает только часть похожих каналов.
+Discovered channels enter the account's entity cache; @username/ID lookup needs no new search. Without Premium, Telegram shows only part of the similar-channel list.
 
-## analytics: статистика канала
+## analytics: channel statistics
 
-| Инструмент | Что делает | Методы MTProto |
+| Tool | Behavior | MTProto methods |
 |---|---|---|
-| `tg_channel_stats` | Числа за период: подписчики и их изменение, посты в неделю, средние и медианные просмотры, охват (просмотры к подписчикам), вовлечённость (реакции к просмотрам), комментарии и репосты на пост, доля пересылок, тренд просмотров, разбивка по неделям, топ постов | channels.getFullChannel, messages.getHistory |
+| `tg_channel_stats` | Participants/change, weekly posts, mean/median views, reach (views/subscribers), engagement (reactions/views), comments/forwards per post, forwarding share, view trend, weekly breakdown, top posts | channels.getFullChannel, messages.getHistory |
 
-Всё считается по открытым счётчикам, поэтому работает и для чужих каналов. Оценок и «вердиктов» нет: шлюз отдаёт числа, выводы делает агент (решение 7). Рост подписчиков Telegram отдаёт только админам канала, поэтому шлюз запоминает число участников по дням, когда видит его (`tg_resolve`, `tg_channel_stats`), и показывает изменение между снимками. В первый день изменения нет.
+Computed from public counters, so it works for other people's channels too. No ratings or verdicts: the gateway supplies numbers; the agent interprets them (decision 7). Telegram supplies subscriber growth only to channel admins, so the gateway snapshots participant counts when observed (`tg_resolve`, `tg_channel_stats`) and compares dates. There is no change value on the first day.
 
-## index: локальный индекс
+## index: local index
 
-| Инструмент | Что делает | Методы MTProto |
+| Tool | Behavior | MTProto methods |
 |---|---|---|
-| `tg_index` | Сложить сообщения чата в базу шлюза (`add`, по умолчанию за 90 дней, до 3 лет), показать индексы (`list`), удалить (`remove`). Повторный `add` дочитывает новое. Долгий первый запуск возвращает `job_id` | messages.getHistory |
-| `tg_local_search` | Поиск по проиндексированным чатам без обращений к Telegram: формы слова и регистр не важны, все слова запроса должны быть в сообщении. Окно дат, один чат или все, курсор | нет |
+| `tg_index` | Add messages to the gateway database (`add`, default 90 days, up to 3 years), list indexes (`list`), remove (`remove`). Repeated `add` catches up. Long initial runs return `job_id` | messages.getHistory |
+| `tg_local_search` | Search indexed chats without Telegram calls: case/word-form insensitive; every query term must match. Date window, one/all chats, cursor | None |
 
-- Поиск видит только то, что было в чате на момент последнего `tg_index`: в ответе указана дата последней дочитки.
-- Слова короче трёх символов в индекс не попадают: они проверяются по найденным сообщениям, а запрос только из коротких слов не выполняется.
-- Индекс чата на общем аккаунте виден всем его пользователям, удалить его может только тот, кто создал. Чат, закрытый владельцем, из поиска пропадает.
-- За один запуск читается до 20 000 сообщений; большой чат индексируется за несколько вызовов, без пропусков.
+- Search reflects the last `tg_index`; output reports catch-up time.
+- Words shorter than three characters are not indexed: they are checked against retrieved messages. All-short-word queries are rejected.
+- A shared-account chat index is visible to all its users; only its creator can delete it. Owner-denied chats disappear from search.
+- Each run reads at most 20,000 messages; larger chats are indexed over multiple calls without gaps.
 
-## Чего в шлюзе нет намеренно
+## Intentionally absent
 
-Шлюз это инструмент, а не агент (решение 25). В нём нет и не должно появляться:
+The gateway is a tool, not an agent (decision 25).
 
-| Чего нет | Кто это делает |
+| Capability outside the gateway | Responsibility |
 |---|---|
-| Слежение за каналами, события о новых сообщениях | агент перечитывает ленту сам (`tg_read_history` с `since` или курсором) |
-| Правила «на каждый пост делай то-то» | расписание и логика на стороне агента |
-| Ведение переговоров: цель, рамки, память о переписке | память и логика агента; шлюз даёт чтение открытого диалога и `tg_send` |
-| Запуск агентов | сам агент или его расписание |
-| Разбор цен, оценки и «вердикты» по каналам | агент считает по тексту и числам |
-| Чтение баз других проектов | никто: шлюз работает только с Telegram (решение 28) |
-| Переводы денег, платные действия за Stars | никто: шлюз этого не делает никогда |
-| Решение капчи: распознавание картинок и задач | никто: шлюз только нажимает кнопку, которую подтвердил владелец |
+| Channel watching/new-message events | Agent rereads history (`tg_read_history` with `since` or cursor) |
+| Per-post automation rules | Agent-owned schedule/logic |
+| Negotiation goals, boundaries, conversation memory | Agent memory/logic; gateway supplies permitted reads and `tg_send` |
+| Starting agents | Agent or its own schedule |
+| Price extraction, channel ratings/verdicts | Agent processes text/numbers |
+| Reading other project databases | Nobody: the gateway only uses Telegram (decision 28) |
+| Money transfers/paid Stars actions | Never supported |
+| Solving image/task CAPTCHAs | Not supported: the gateway only presses an owner-confirmed button |

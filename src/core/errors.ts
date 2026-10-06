@@ -1,6 +1,6 @@
 /**
- * Ошибки шлюза. Любая ошибка Telegram превращается в GatewayError с кодом и
- * текстом, который понятен агенту: что случилось и что делать дальше.
+ * Gateway errors. Telegram errors become GatewayError with a code
+ * and an agent-readable explanation of what happened and what to do.
  */
 import { DeadlineError } from './time.js';
 
@@ -27,9 +27,9 @@ export type GatewayErrorCode =
 
 export interface GatewayErrorOptions {
   retryAfter?: number;
-  /** Для записи: действие могло примениться, результат неизвестен. */
+  /** A write may have been applied; the outcome is unknown. */
   outcomeUnknown?: boolean;
-  /** Исходный код ошибки Telegram, например CHANNEL_PRIVATE. */
+  /** Original Telegram error code, e.g. CHANNEL_PRIVATE. */
   telegramCode?: string;
   cause?: unknown;
 }
@@ -64,11 +64,11 @@ function errorText(err: unknown): string {
 }
 
 export interface FloodInfo {
-  /** Секунды ожидания; 0, если тип ошибки понятен, а число не разобрать. */
+  /** Wait seconds; 0 if the wait type is known but seconds cannot be parsed. */
   seconds: number;
   /**
-   * account: Telegram ограничил аккаунт (или метод); chat: медленный режим
-   * одного чата, остальным вызовам аккаунта он не мешает.
+   * account: account/method limit; chat: slow mode affecting one chat,
+   * without pausing the account's other calls.
    */
   scope: 'account' | 'chat';
 }
@@ -79,11 +79,11 @@ const WAIT_CODE = /(?:FLOOD_PREMIUM_WAIT|FLOOD_TEST_PHONE_WAIT|FLOOD_WAIT)[_ ]?(
 const SLOWMODE_CODE = /SLOWMODE_WAIT[_ ]?(\d+)/;
 
 /**
- * Разбор ошибки ожидания. Библиотека (teleproto) кладёт код сервера в
- * `errorMessage` (`FLOOD_WAIT_17`), число секунд в `seconds`, а в `message`
- * пишет фразу без кода. У базового класса ошибок 420 `errorMessage` просто
- * `FLOOD`. Разбираются обе формы и формы с кодом в тексте: так ошибки выглядят
- * в логах.
+ * Parse wait errors. teleproto stores the server code in
+ * `errorMessage` (`FLOOD_WAIT_17`), seconds in `seconds`, and a
+ * code-free explanation in `message`. Base 420 errors have
+ * `errorMessage` equal to `FLOOD`. Parse both forms and codes embedded
+ * in text, as seen in logs.
  */
 export function floodInfo(err: unknown): FloodInfo | null {
   const e = err as TelegramErrorLike | null;
@@ -96,7 +96,7 @@ export function floodInfo(err: unknown): FloodInfo | null {
   if (slowCode) return { seconds: parseInt(slowCode[1]!, 10), scope: 'chat' };
 
   const hasSeconds = typeof e.seconds === 'number' && Number.isFinite(e.seconds) && e.seconds >= 0;
-  // Базовая ошибка 420 без своего класса. MSG_WAIT тоже приходит с errorMessage FLOOD, но без seconds: это не ожидание.
+  // Base 420 error without a dedicated class. MSG_WAIT also has FLOOD but no seconds; it is not a wait.
   if (e.errorMessage === 'FLOOD' && hasSeconds) return { seconds: e.seconds!, scope: 'account' };
 
   const waitCode = text.match(WAIT_CODE);
@@ -107,7 +107,7 @@ export function floodInfo(err: unknown): FloodInfo | null {
   return null;
 }
 
-/** Код ошибки Telegram в верхнем регистре, если он есть в тексте. */
+/** Uppercase Telegram error code, if present in text. */
 export function telegramErrorCode(err: unknown): string | undefined {
   const e = err as TelegramErrorLike | null;
   if (e && typeof e === 'object' && typeof e.errorMessage === 'string' && e.errorMessage) {
@@ -173,7 +173,7 @@ const RULES: Rule[] = [
     message: 'The account is not allowed to write here.',
   },
   {
-    // INPUT_USER_DEACTIVATED это удалённый собеседник, а не наш аккаунт: его сюда не относим.
+    // INPUT_USER_DEACTIVATED refers to the deleted peer, not this account.
     match: /AUTH_KEY_UNREGISTERED|AUTH_KEY_DUPLICATED|SESSION_REVOKED|SESSION_EXPIRED|(?<!INPUT_)USER_DEACTIVATED|AUTH_KEY_INVALID/,
     code: 'ACCOUNT_UNAUTHORIZED',
     message: 'The Telegram session of this account is no longer valid. The owner has to log in again (tg-mcp login).',
@@ -185,7 +185,7 @@ const RULES: Rule[] = [
   },
 ];
 
-/** Превращает любую ошибку в GatewayError. Уже классифицированные возвращает как есть. */
+/** Convert any error to GatewayError; return classified errors unchanged. */
 export function classifyError(err: unknown, context: { write?: boolean } = {}): GatewayError {
   if (err instanceof GatewayError) return err;
 

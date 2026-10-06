@@ -1,63 +1,63 @@
-# Риски
+# Risks
 
-От самых дорогих к мелким.
+Ordered from highest impact to lower impact.
 
-## Высокие
+## High
 
-**Ограничение или бан аккаунта.** Автоматизацию через user-аккаунт Telegram терпит, пока она похожа на человека. Нужен отдельный номер, консервативные лимиты (в шлюзе 60 запросов в минуту и 500 мс между запросами на аккаунт), никаких массовых вступлений и рассылок. Кроме ограничений бывает заморозка аккаунта (только чтение, апелляция через @SpamBot). Заранее шлюз о ней не знает: он распознаёт ошибку Telegram и отдаёт агенту `ACCOUNT_FROZEN` с пояснением.
+**Account restriction or ban.** User-account automation can attract Telegram restrictions. Use a separate number, conservative limits (60 requests/minute and 500 ms spacing per account), and no bulk joins/messages. Accounts may be frozen read-only, with appeal through @SpamBot. The gateway does not detect this in advance: it recognizes Telegram errors and returns `ACCOUNT_FROZEN` with an explanation. Human-like behavior is not a guarantee against enforcement.
 
-**Сообщения незнакомым людям.** Самое рискованное действие для аккаунта: после жалоб Telegram оставляет только переписку со взаимными контактами (`PEER_FLOOD`). Лимит новых диалогов в день (по умолчанию 5, настраивается владельцем, решение 27), никаких рассылок, агент представляется помощником. Режим личных чатов `send` или `open` снимает только необходимость открывать каждый диалог: подтверждение каждого сообщения и дневной предел остаются.
+**Messaging strangers.** Complaints can cause `PEER_FLOOD`, restricting messaging to mutual contacts. The gateway caps new dialogs (default 5/day, owner-configurable under decision 27); no bulk messaging; the agent identifies itself as an assistant. Private-chat `send`/`open` removes individual grants only: per-message confirmation and daily limits remain.
 
-**Обязательства от имени владельца.** В переписке агент может пообещать лишнее. Шлюз в содержание не вмешивается: его защита в том, что ни одно сообщение не уходит без `tg_confirm`. Рамки переговоров (деньги, адрес, время встречи) задаёт и держит сам агент. Переводов денег шлюз не умеет вообще.
+**Commitments on the owner's behalf.** An agent may promise too much. The gateway does not interpret message content; sends require `tg_confirm`. The agent manages negotiation boundaries (money, address, meeting time). Money transfers are unsupported.
 
-**Ответы в чужих каналах.** Регулярные комментарии под каждым постом чужого канала быстро выглядят как спам: админы банят, антиспам Telegram ограничивает аккаунт. Шлюз держит дневные пределы сам (по умолчанию 20 ответов и 30 реакций), каждое действие идёт после подтверждения. Сколько раз отвечать под одним постом, решает владелец (решение 29).
+**Replies in other people's channels.** Frequent comments on every post can appear as spam, inviting admin bans or account restrictions. Default gateway caps are 20 replies and 30 reactions/day; each action requires confirmation. The owner decides repeat replies under one post (decision 29).
 
-**Правила Telegram про ИИ.** Content Licensing and AI Scraping (подробно в разделе «Правила Telegram» ниже) запрещает использовать данные платформы для работы ИИ без явного согласия всех участников конкретного чата. Формально под запрет попадает любой шлюз, который отдаёт модели чужие каналы и чаты, включая все похожие MCP-серверы. Для Business-ботов отдельно запрещена передача сообщений в сторонние API без разрешения пользователя. Это риск, который владелец принимает сознательно; снижают его личное использование, отсутствие массового сбора и работа только с теми чатами, которые владелец назвал сам.
+**Telegram AI terms.** Content Licensing and AI Scraping restrict AI use of platform data and define consent-based exceptions. Gateways exposing third-party chats to models face applicability questions, including similar MCP servers. Business bot terms separately restrict forwarding messages to third-party APIs without permission. This remains an unresolved publication gate in [open-source-plan.md](open-source-plan.md). Personal use, low volume, and an owner-selected chat do not establish the required consent.
 
-**Одна сессия в нескольких процессах.** Два процесса на одной сессии дают `AUTH_KEY_DUPLICATED`, и Telegram её сбрасывает. Сессиями владеет только демон: он держит блокировку (сокет в своей папке), stdio-прокладка сессий не открывает, а `doctor --connect` работает только при остановленном демоне. По той же причине у шлюза своя сессия, отдельная от сессий других проектов.
+**One session in multiple processes.** Concurrent session use causes `AUTH_KEY_DUPLICATED` and session revocation. Only the daemon owns sessions; it holds a socket lock. Stdio opens none; `doctor --connect` requires a stopped daemon. Gateway sessions are independent of other projects.
 
-**Кража сессии агентом.** Агенты работают с shell. Агент, которого увели через prompt injection, мог бы прочитать сессию вместе с ключом шифрования и получить аккаунт целиком. Поэтому демон работает под отдельным пользователем macOS: база, ключ и `.env` агентам недоступны, а код и Node, которые исполняет демон, принадлежат root (решения 17 и 22).
+**Agent theft of a session.** Shell-enabled agents compromised through prompt injection could read a session and encryption key, obtaining full account access. The daemon therefore runs as a separate macOS user with database/key/`.env` inaccessible to agents; root owns its code/Node (decisions 17 and 22).
 
-## Средние
+## Medium
 
-**Библиотека MTProto от одного автора.** GramJS архивирован, шлюз работает на его форке teleproto (решение 26). У форка один сопровождающий, а библиотека держит сессию аккаунта: вредоносное обновление могло бы её увести. Защита: версия закреплена точно, в lock-файле записан хэш пакета, установка идёт без скриптов (`--ignore-scripts`), у пакета нет установочных скриптов и посторонних сетевых адресов (проверено для 1.229.1). Обновление версии только вручную и с проверкой.
+**Single-maintainer MTProto library.** GramJS is archived; the gateway uses teleproto (decision 26). A malicious library update could steal a session. Mitigation: exact version pin, lock-file integrity hash, `--ignore-scripts` installation. Version 1.229.1 was checked for absence of installation scripts and unrelated network addresses. Updates require deliberate review and verification.
 
-**Охват поиска.** `messages.searchGlobal` ищет по чатам, где состоит аккаунт, а не по всему Telegram. Поиск по хэштегам (`channels.searchPosts`) работает по публичным постам. Полнотекстовый поиск по всем публичным постам Telegram открыл в урезанном виде (Premium, дневная квота); шлюз его не использует.
+**Incomplete search.** `messages.searchGlobal` searches account-member chats, not all Telegram. `channels.searchPosts` supports public hashtags. Telegram-wide full-text post search has Premium/quota restrictions and is not used by this gateway.
 
-**Prompt injection из чатов и от собеседников.** Защита: пометка чужого текста, отдельный набор `write`, запись в два шага с подтверждением через `tg_confirm` (решение 23), закрытые по умолчанию личные чаты, аудит. Агентов шлюз не запускает; если агент работает по расписанию без человека, за его разрешениями следит сам клиент.
+**Prompt injection from chats/peers.** Mitigations: untrusted-text labels, separate `write` toolset, preview/`tg_confirm` (decision 23), default-closed private chats, audit. The gateway does not start agents; the client manages permissions for unattended agent schedules.
 
-**Личные переписки.** Без ограничений агент видел бы всё, что видит аккаунт. Личные чаты закрыты по умолчанию; владелец открывает их по одному или режимом (`send`: только отправка, `open`: чтение и отправка, решение 27). В режиме `open` агенту доступна вся личная переписка аккаунта вместе с чужим текстом в ней.
+**Private conversations.** Unrestricted access would expose everything the account can see. Private chats require individual grants or `send`/`open` (decision 27). `open` exposes all account private conversations and their untrusted text.
 
-**Разделение пользователей.** Токены и файлы обоих пользователей лежат под одним пользователем macOS. Шлюз разделяет доступ по токену, но агент с shell может прочитать чужой токен из конфига Claude Code. Это защита от ошибок, а не от злого умысла.
+**User separation.** Both users' client tokens/files live under one macOS user. Gateway tokens separate logical access, but a shell-enabled agent could read another user's Claude Code token. This limits mistakes, not malicious same-user access.
 
-**Вступление в закрытые чаты.** В барахолках часто стоят боты-привратники: новому участнику дают около минуты на проверку. Само вступление её не проходит. Простую кнопку проверки можно нажать через `tg_press_button` с подтверждением (решение 31), но путь «предпросмотр, согласие, `tg_confirm`» часто дольше минуты: надёжнее нажать её руками. Картинки и задачи шлюз не решает.
+**Closed-chat gatekeepers.** Marketplace bots often allow about a minute for verification. Joining does not solve it. `tg_press_button` can press a simple owner-confirmed callback (decision 31), but preview/consent/confirmation may exceed the window; manual verification is more reliable. No image/task CAPTCHA solving.
 
-**Кнопки ботов.** Нажатие inline-кнопки может значить что угодно: голос, покупку внутри бота, удаление, согласие с условиями. Подпись пишет сам бот, и она может не совпадать с действием. Защита: нажатие идёт в два шага, как любая запись; предпросмотр показывает автора сообщения, подпись и место кнопки; перед нажатием шлюз читает сообщение заново и не нажимает, если кнопка сменилась; ссылки, оплату, вход на сайт и кнопки с паролем 2FA он не нажимает вовсе. Что стоит за кнопкой, шлюз знать не может: решение остаётся за владельцем.
+**Bot buttons.** A button can vote, buy, delete, or accept terms; bot-defined labels may not describe the real action. The two-step preview shows author, label, and position; confirmation reloads the message and rejects changed buttons. Links, payment, login, and 2FA-password buttons are unsupported. The gateway cannot infer the action behind a callback; the owner decides.
 
-**Персональные данные.** В объявлениях имена и телефоны продавцов. В выгрузке авторы хэшируются, телефоны маскируются, пока их явно не попросили. Локальный индекс (`tg_index`) хранит тексты проиндексированных чатов и имена авторов в базе шлюза: она лежит у пользователя демона и агентам недоступна, индекс удаляется командой или вместе с аккаунтом.
+**Personal data.** Listings can include seller names/phones. Exports hash authors and mask phones unless explicitly requested. `tg_index` stores chat text and author names in the daemon-owned database, inaccessible to agents; remove indexes by command or account deletion.
 
-**Пропущенные посты.** Шлюз за каналами не следит (решение 25). Если агент следит сам, он должен сравнивать id постов с последним прочитанным, а не полагаться на время: так перерыв в расписании не теряет постов.
+**Missed posts.** The gateway does not watch channels (decision 25). Agents should compare post IDs to the last read ID rather than rely on time, so schedule gaps do not lose posts.
 
-**Зависший запрос MTProto.** При сбоях сети вызов может не вернуться никогда. Без дедлайна встаёт вся очередь аккаунта, иногда на дни. В шлюзе дедлайн стоит на каждом вызове, при зависании процесс выходит и поднимается заново. teleproto это форк GramJS, поэтому поведение считается таким же, пока не доказано обратное.
+**Hung MTProto requests.** Network failures can leave calls unresolved indefinitely, blocking an account queue for days without deadlines. Every gateway call is time-bounded; hangs exit/restart the process. Treat teleproto behavior as inherited from GramJS until proven otherwise.
 
-**Платные действия.** Premium-пользователи могут брать Stars за сообщения от незнакомых (`ALLOW_PAYMENT_REQUIRED`), поиск по публичным постам сверх квоты тоже стоит Stars. Шлюз ничего не оплачивает: такой вызов возвращает агенту ошибку `PAYMENT_REQUIRED` с просьбой спросить владельца.
+**Paid actions.** Premium users may require Stars for stranger messages (`ALLOW_PAYMENT_REQUIRED`); public-post search above quota can also cost Stars. The gateway pays nothing and returns `PAYMENT_REQUIRED`, asking the agent to consult the owner.
 
-**Подтверждение без посредника.** Запись подтверждает агент владельца вызовом `tg_confirm` после его согласия (решение 23). Шлюз не видит, было ли согласие на самом деле, поэтому агент, которого увели через prompt injection, технически может подтвердить сам. Защита: в клиенте `tg_confirm` оставлен в режиме «спрашивать разрешение», а пределы шлюза (дневные числа, закрытые личные чаты) от агента не зависят.
+**Confirmation without an independent intermediary.** The owner's agent calls `tg_confirm` after consent (decision 23); the gateway cannot attest actual consent. A compromised agent could confirm itself. Keep `tg_confirm` in client ask-permission mode; gateway caps/private-chat policy remain independent of the agent.
 
-## Низкие
+## Low
 
-**Слишком большие ответы.** Клиенты режут или предупреждают о больших ответах инструментов (в Claude Code настраивается через `MAX_MCP_OUTPUT_TOKENS`). Лимит на символы в сообщении, 20 результатов по умолчанию, курсоры.
+**Oversized responses.** Clients truncate or warn about large tool responses (Claude Code: `MAX_MCP_OUTPUT_TOKENS`). Use per-message character limits, default 20 results, and cursors.
 
-**Картинки дорогие.** Каждая стоит модели сотни или тысячи токенов. По умолчанию превью.
+**Image cost.** Images consume hundreds/thousands of model tokens; thumbnails are the default.
 
-**Логи в stdout.** Библиотека MTProto по умолчанию пишет через `console.log`; в stdio-режиме это ломает протокол. Шлюз подменяет её логгер своим, который пишет в stderr (это проверяется тестом).
+**stdout logs.** MTProto library logging uses `console.log` by default and breaks stdio JSON-RPC. The gateway replaces it with a stderr logger, verified by a test.
 
-## Правила Telegram
+## Telegram rules
 
-На что опираются риски выше. Страницы сверялись 1 октября 2026.
+Sources behind the risks above were checked October 1, 2026. The publication plan records unresolved applicability/consent questions separately.
 
-- **Content Licensing and AI Scraping** ([telegram.org/tos/content-licensing](https://telegram.org/tos/content-licensing)): сбор и использование данных платформы для обучения и работы ИИ запрещены. Исключение: явное согласие всех участников, ограниченное конкретным чатом; согласие, полученное в одном чате, на другие не переносится. Даты у страницы нет.
-- **API Terms** ([core.telegram.org/api/terms](https://core.telegram.org/api/terms)): нельзя действовать от имени пользователя без его ведома и согласия.
-- **Спам-санкции.** После жалоб аккаунт может писать только своим контактам (`PEER_FLOOD`). Заморозка аккаунта (только чтение, апелляция через @SpamBot) видна в `help.getAppConfig` в полях `freeze_since_date`, `freeze_until_date`, `freeze_appeal_url` ([core.telegram.org/api/config](https://core.telegram.org/api/config)).
-- **Платные сообщения.** Premium-пользователи могут брать Stars за сообщения от незнакомых (`ALLOW_PAYMENT_REQUIRED`, параметр `allow_paid_stars`). Поиск по всем публичным постам сверх дневной квоты тоже стоит Stars.
-- **«Нейрокомментинг»:** коммерческие ИИ-комментарии под чужими постами с фермами аккаунтов, прогревом и имитацией набора. Telegram считает это спамом; приёмы «анти-бана» из этой среды в шлюз не переносятся.
+- **Content Licensing and AI Scraping** ([terms](https://telegram.org/tos/content-licensing)): restrict platform-data collection/use for AI training and operation. Consent exceptions are scoped to specific chats/content; consent in one chat does not transfer to another. The page has no date.
+- **API Terms** ([terms](https://core.telegram.org/api/terms)): no actions on a user's behalf without their knowledge and consent.
+- **Spam enforcement.** Complaints can trigger contact-only messaging (`PEER_FLOOD`). Freeze metadata (`freeze_since_date`, `freeze_until_date`, `freeze_appeal_url`) appears in `help.getAppConfig` ([configuration](https://core.telegram.org/api/config)); frozen accounts are read-only and appeal through @SpamBot.
+- **Paid messages.** Premium users may charge strangers Stars (`ALLOW_PAYMENT_REQUIRED`, `allow_paid_stars`); public-post search above daily quota also costs Stars.
+- **AI comment spam:** commercial automated comments using account farms, account warmup, and simulated typing. Telegram treats this as spam. Do not import supposed anti-ban techniques into the gateway.

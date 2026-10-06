@@ -1,13 +1,13 @@
 /**
- * Поиск сообщений: по всем чатам аккаунта, по хэштегу в публичных постах и
- * внутри одного чата.
+ * Message search across account chats, by hashtag in public posts, and
+ * within individual chats.
  *
- * Позиция глобального поиска это тройка offsetRate, offsetPeer, offsetId. Выдача
- * это сами сообщения, а не только чаты, в которых они нашлись.
+ * Global search positions use offsetRate, offsetPeer, and offsetId.
+ * Results contain actual messages rather than only their chats.
  *
- * Важно: `messages.SearchGlobal` ищет только по чатам аккаунта (каналы, группы или личные диалоги),
- * а `channels.SearchPosts` шлюз использует только для поиска по
- * хэштегу. Полнотекстового поиска по всему Telegram здесь нет.
+ * messages.SearchGlobal searches account chats (channels, groups, or private conversations);
+ * channels.SearchPosts is used only for hashtag searches.
+ * There is no Telegram-wide full-text search here.
  */
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
@@ -30,8 +30,8 @@ export interface GlobalSearchParams {
   minDate?: number;
   maxDate?: number;
   /**
-   * Где искать: в каналах, в группах или в личных чатах. Что из найденного в личных
-   * чатах отдать агенту, решает инструмент по скоупам: закрытые диалоги отбрасываются.
+   * Search channels, groups, or private chats. Tools check scopes before
+   * returning private results and discard closed conversations.
    */
   where: 'channels' | 'groups' | 'private';
   position?: GlobalPosition;
@@ -48,7 +48,7 @@ export interface ChatSearchParams {
   offsetId?: number;
   minDate?: number;
   maxDate?: number;
-  /** Только сообщения этого автора. */
+  /** Filter to messages from this author. */
   from?: EntityRecord;
   topicId?: number;
 }
@@ -90,11 +90,11 @@ export class SearchService {
       }),
       options,
     );
-    // В личных чатах свои сообщения приходят без автора и подписываются аккаунтом.
+    // Outgoing private messages omit authors and are attributed to the account.
     return this.globalPage(result, params.where === 'private' ? await this.tg.whoami(accountId) : undefined);
   }
 
-  /** Поиск по хэштегу в публичных постах каналов. */
+  /** Searches hashtags in public channel posts. */
   async hashtag(accountId: string, hashtag: string, limit: number, position?: GlobalPosition, options?: TgCallOptions): Promise<GlobalSearchPage> {
     const capped = Math.min(Math.max(1, limit), PAGE_MAX);
     const result = await this.tg.invoke(
@@ -133,7 +133,7 @@ export class SearchService {
       options,
     );
     const raw = Array.isArray((result as SliceLike).messages) ? ((result as SliceLike).messages as unknown[]) : [];
-    // Поиск в личном чате: свои сообщения приходят без fromId и подписываются аккаунтом.
+    // Private outgoing results omit fromId and are attributed to the account.
     const self = chat.kind === 'user' ? await this.tg.whoami(accountId) : undefined;
     const messages = normalizeMessages(result, chat.peerKey, self);
     const last = raw[raw.length - 1] as { id?: number } | undefined;
@@ -148,7 +148,7 @@ export class SearchService {
   private offsetPeer(accountId: string, position?: GlobalPosition): Api.TypeInputPeer {
     if (!position) return new Api.InputPeerEmpty();
     const entity = this.entities.get(accountId, position.offsetPeerKey);
-    // Без accessHash позицию не восстановить: начинаем с начала той же оценки.
+    // Without accessHash the peer position cannot be restored; resume from the same rate.
     return entity && (entity.kind === 'chat' || entity.accessHash !== null) ? toInputPeer(entity) : new Api.InputPeerEmpty();
   }
 
@@ -157,7 +157,7 @@ export class SearchService {
     const messages = normalizeMessages(result, undefined, self);
     const rawCount = Array.isArray(slice.messages) ? slice.messages.length : 0;
     const last = messages[messages.length - 1];
-    // Telegram может вернуть неполную страницу и при этом иметь продолжение: признак конца это отсутствие nextRate.
+    // Partial pages may have more results; only missing nextRate marks the end.
     const hasMore = rawCount > 0 && last !== undefined && typeof slice.nextRate === 'number';
     return {
       messages,

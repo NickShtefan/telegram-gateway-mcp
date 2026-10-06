@@ -29,8 +29,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('AccountLimiter: полоса и паузы', () => {
-  it('выполняет вызовы одного аккаунта строго по одному и с паузой между ними', async () => {
+describe('AccountLimiter: lane and pauses', () => {
+  it('serializes account calls with spacing between them', async () => {
     const { limiter } = makeLimiter({ minIntervalMs: 500 });
     const starts: number[] = [];
     let active = 0;
@@ -52,7 +52,7 @@ describe('AccountLimiter: полоса и паузы', () => {
     expect(starts[2]! - starts[1]!).toBeGreaterThanOrEqual(500);
   });
 
-  it('аккаунты не блокируют друг друга', async () => {
+  it('does not block unrelated accounts', async () => {
     const { limiter } = makeLimiter();
     const order: string[] = [];
     const slow = limiter.run('a', async () => {
@@ -70,7 +70,7 @@ describe('AccountLimiter: полоса и паузы', () => {
     expect(order).toEqual(['b', 'a']);
   });
 
-  it('вызов агента обгоняет фоновые в очереди', async () => {
+  it('prioritizes agent calls over queued background work', async () => {
     const { limiter } = makeLimiter({ minIntervalMs: 0 });
     const order: string[] = [];
     const mk = (name: string) => async () => {
@@ -86,11 +86,11 @@ describe('AccountLimiter: полоса и паузы', () => {
     ];
     await vi.advanceTimersByTimeAsync(1_000);
     await Promise.all(p);
-    // bg1 уже выполнялся, остальные перестроились: сначала агент, потом фон.
+    // bg1 was already running; the rest reorder: agent first, then background.
     expect(order).toEqual(['bg1', 'agent1', 'agent2', 'bg2', 'bg3']);
   });
 
-  it('держит лимит вызовов в минуту', async () => {
+  it('enforces calls per minute', async () => {
     const { limiter } = makeLimiter({ minIntervalMs: 0, perMinute: 3, interactiveWaitBudgetMs: 120_000 });
     const times: number[] = [];
     const p = Promise.all(
@@ -107,7 +107,7 @@ describe('AccountLimiter: полоса и паузы', () => {
 });
 
 describe('AccountLimiter: FLOOD_WAIT', () => {
-  it('короткую паузу пережидает и повторяет вызов', async () => {
+  it('waits through a short pause and retries', async () => {
     const { limiter } = makeLimiter();
     let calls = 0;
     const p = limiter.run('a', async () => {
@@ -123,7 +123,7 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
     expect(calls).toBe(2);
   });
 
-  it('паузу длиннее бюджета возвращает ошибкой с retry_after и не ждёт', async () => {
+  it('returns retry_after without waiting beyond the budget', async () => {
     const { limiter } = makeLimiter({ interactiveWaitBudgetMs: 15_000 });
     const p = limiter.run('a', async () => {
       throw floodError(120);
@@ -133,7 +133,7 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
     await assertion;
   });
 
-  it('пока аккаунт на паузе, следующий вызов агента отклоняется сразу', async () => {
+  it('immediately rejects another agent call while the account is paused', async () => {
     const { limiter } = makeLimiter();
     const first = limiter.run('a', async () => {
       throw floodError(200);
@@ -149,7 +149,7 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
     expect(err.retryAfter).toBeLessThanOrEqual(200);
   });
 
-  it('фоновый вызов ждёт паузу до предела, дольше предела пропускает', async () => {
+  it('background work waits up to the pause limit, then skips', async () => {
     const { limiter } = makeLimiter({ floodCapSeconds: 300 });
     let calls = 0;
     const waited = limiter.run('a', async () => {
@@ -168,7 +168,7 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
     await assertion;
   });
 
-  it('FLOOD_WAIT без числа ставит паузу по умолчанию', async () => {
+  it('uses the default pause for FLOOD_WAIT without seconds', async () => {
     const { limiter } = makeLimiter({ unknownFloodSeconds: 30, interactiveWaitBudgetMs: 1_000 });
     const p = limiter.run('a', async () => {
       throw new Error('FLOOD_WAIT');
@@ -178,7 +178,7 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
     await assertion;
   });
 
-  it('пауза одного аккаунта не трогает другой', async () => {
+  it('does not apply one account pause to another', async () => {
     const { limiter } = makeLimiter({ interactiveWaitBudgetMs: 1_000 });
     const paused = limiter.run('a', async () => {
       throw floodError(100);
@@ -192,11 +192,11 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
   });
 });
 
-describe('AccountLimiter: настоящие ошибки teleproto', () => {
+describe('AccountLimiter: real teleproto errors', () => {
   const real = (message: string, method: string): Error =>
     RPCMessageToError({ errorCode: 420, errorMessage: message } as never, { className: method } as never) as Error;
 
-  it('короткий FLOOD_WAIT от teleproto пережидается и вызов повторяется', async () => {
+  it('waits through a short teleproto FLOOD_WAIT and retries', async () => {
     const { limiter } = makeLimiter();
     let calls = 0;
     const p = limiter.run('a', async () => {
@@ -211,7 +211,7 @@ describe('AccountLimiter: настоящие ошибки teleproto', () => {
     expect(calls).toBe(2);
   });
 
-  it('долгая пауза закрывает только тот метод, который её получил', async () => {
+  it('a long pause blocks only the affected method', async () => {
     const { limiter } = makeLimiter({ floodCapSeconds: 300 });
     const first = limiter.run('a', async () => {
       throw real('FLOOD_WAIT_3600', 'contacts.ResolveUsername');
@@ -240,7 +240,7 @@ describe('AccountLimiter: настоящие ошибки teleproto', () => {
     expect(limiter.status('a').pausedMethods).toEqual([]);
   });
 
-  it('медленный режим чата не ставит аккаунт на паузу и не повторяется', async () => {
+  it('chat slow mode neither pauses the account nor retries', async () => {
     const { limiter } = makeLimiter();
     const op = vi.fn(async () => {
       throw real('SLOWMODE_WAIT_30', 'messages.SendMessage');
@@ -257,8 +257,8 @@ describe('AccountLimiter: настоящие ошибки teleproto', () => {
   });
 });
 
-describe('AccountLimiter: дедлайны и зависания', () => {
-  it('зависший вызов отдаёт TIMEOUT, требует перезапуск и освобождает полосу', async () => {
+describe('AccountLimiter: deadlines and hangs', () => {
+  it('a hung call returns TIMEOUT, requires restart, and releases the lane', async () => {
     const { limiter, onFatal } = makeLimiter({ defaultDeadlineMs: 20_000 });
     const hung = limiter.run('a', () => new Promise<never>(() => undefined), { label: 'messages.GetHistory' });
     const hungAssertion = expect(hung).rejects.toMatchObject({ code: 'TIMEOUT', outcomeUnknown: false });
@@ -271,7 +271,7 @@ describe('AccountLimiter: дедлайны и зависания', () => {
     await expect(next).resolves.toBe('after');
   });
 
-  it('таймаут записи сообщает, что исход неизвестен', async () => {
+  it('a write timeout reports an unknown outcome', async () => {
     const { limiter } = makeLimiter();
     const p = limiter.run('a', () => new Promise<never>(() => undefined), { label: 'messages.SendMessage', write: true, deadlineMs: 1_000 });
     const assertion = expect(p).rejects.toMatchObject({ code: 'TIMEOUT', outcomeUnknown: true });
@@ -279,7 +279,7 @@ describe('AccountLimiter: дедлайны и зависания', () => {
     await assertion;
   });
 
-  it('onHang=error не роняет процесс', async () => {
+  it('onHang=error does not terminate the process', async () => {
     const { limiter, onFatal } = makeLimiter();
     const p = limiter.run('a', () => new Promise<never>(() => undefined), { label: 'download', deadlineMs: 1_000, onHang: 'error' });
     const assertion = expect(p).rejects.toMatchObject({ code: 'TIMEOUT' });
@@ -288,7 +288,7 @@ describe('AccountLimiter: дедлайны и зависания', () => {
     expect(onFatal).not.toHaveBeenCalled();
   });
 
-  it('вызов, не дождавшийся очереди за бюджет, получает ошибку сам', async () => {
+  it('a call exceeding its queue budget fails independently', async () => {
     const { limiter } = makeLimiter({ interactiveWaitBudgetMs: 2_000 });
     const long = limiter.run('a', () => new Promise(r => setTimeout(() => r('long'), 10_000)), { label: 'long' });
     const op = vi.fn(async () => 'queued');
@@ -301,7 +301,7 @@ describe('AccountLimiter: дедлайны и зависания', () => {
     await expect(long).resolves.toBe('long');
   });
 
-  it('ошибки Telegram приходят классифицированными', async () => {
+  it('classifies Telegram errors', async () => {
     const { limiter } = makeLimiter();
     await expect(
       limiter.run('a', async () => {
@@ -310,7 +310,7 @@ describe('AccountLimiter: дедлайны и зависания', () => {
     ).rejects.toMatchObject({ code: 'CHAT_PRIVATE' });
   });
 
-  it('после shutdown очередь отклоняется, новые вызовы не принимаются', async () => {
+  it('shutdown rejects queued and new calls', async () => {
     const { limiter } = makeLimiter();
     const running = limiter.run('a', () => new Promise(r => setTimeout(() => r('x'), 1_000)), { label: 'running' });
     const queued = limiter.run('a', async () => 'y', { label: 'queued' });
@@ -324,7 +324,7 @@ describe('AccountLimiter: дедлайны и зависания', () => {
 });
 
 describe('recovery', () => {
-  it('fatal handler выходит с кодом 1 один раз', () => {
+  it('the fatal handler exits once with code 1', () => {
     const exit = vi.fn();
     const beforeExit = vi.fn();
     const fatal = createFatalHandler({ exit, beforeExit, log: silent });
@@ -335,7 +335,7 @@ describe('recovery', () => {
     expect(beforeExit).toHaveBeenCalledTimes(1);
   });
 
-  it('перед выходом ждущие вызовы получают ошибку и успевают её записать', async () => {
+  it('waiting calls receive errors and can record them before exit', async () => {
     const exit = vi.fn();
     const order: string[] = [];
     const fatal = createFatalHandler({ exit, log: silent, graceMs: 300, prepare: () => order.push('prepare'), beforeExit: () => order.push('beforeExit') });

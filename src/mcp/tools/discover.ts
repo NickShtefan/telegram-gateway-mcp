@@ -1,7 +1,7 @@
 /**
- * Набор `discover`: поиск новых каналов. По названию, по рекомендациям
- * Telegram и по источникам репостов. Всё это чтение; найденные каналы сразу
- * известны аккаунту, их можно открыть другими инструментами.
+ * `discover` toolset: finds channels by title, Telegram recommendations,
+ * and repost sources. These are read operations; discovered channels
+ * become known to the account and can be opened by other tools.
  */
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';
@@ -28,7 +28,7 @@ function foundLine(found: FoundChat): string {
     .join(' | ');
 }
 
-/** Чаты, закрытые владельцем, в выдачу не попадают. */
+/** Excludes chats blocked by the owner. */
 function visible(ctx: ToolContext, accountId: string, list: FoundChat[]): FoundChat[] {
   return list.filter(f => ctx.services.scopes.isAllowed(ctx.principal.userId, accountId, f.chat));
 }
@@ -40,7 +40,7 @@ const tgFindChannels = defineTool({
   description:
     'Searches public channels and groups by words in their title or username, plus matching chats of the account. Telegram matches names only, not post contents: search for a topic word the way a channel would be named. To find posts use tg_search_messages.',
   input: {
-    query: z.string().min(2).describe('Words from the title or username, for example "крипто новости" or "baraholka".'),
+    query: z.string().min(2).describe('Words from the title or username, for example "crypto news" or "marketplace".'),
     limit: z.number().int().optional().describe(`Default 20, max ${FIND_MAX}.`),
     account: accountArg,
   },
@@ -117,7 +117,7 @@ const tgForwardSources = defineTool({
     ].filter(Boolean);
     for (const source of result.sources) {
       const known = source.chat;
-      // Источник из списка запрета владельца не показывается.
+      // Do not show sources blocked by the owner.
       if (known && !ctx.services.scopes.isAllowed(ctx.principal.userId, accountId, known)) continue;
       const title = known ? safeLabel(known.title, 60) : '';
       lines.push(

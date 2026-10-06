@@ -1,10 +1,10 @@
 /**
- * Inline-кнопки под сообщением (решение 31). Агент видит вид кнопки, её подпись,
- * место в клавиатуре (ряд и позиция) и адрес, если кнопка ведёт по ссылке. Байты
- * callback в выдачу не попадают: нажатие шлюз собирает сам из свежего сообщения.
+ * Message inline buttons (decision 31). Agents see kinds, labels, keyboard
+ * positions, and destinations for URL buttons. Callback bytes are never
+ * exposed; the gateway constructs presses from a freshly read message.
  *
- * В слое 229 клавиатура это `ReplyInlineMarkup` с рядами `KeyboardInlineButtonRow`;
- * вид кнопки лежит в её поле `type` (`InlineButtonTypeCallback` и другие).
+ * Layer 229 represents keyboards as ReplyInlineMarkup with KeyboardInlineButtonRow;
+ * button kinds are in the type field (InlineButtonTypeCallback and others).
  */
 import { createHash } from 'node:crypto';
 
@@ -12,11 +12,11 @@ export type ButtonKind = 'callback' | 'url' | 'login' | 'webapp' | 'switch_inlin
 
 export interface ButtonDto {
   kind: ButtonKind;
-  /** Подпись кнопки: чужой текст. */
+  /** Untrusted button label. */
   text: string;
-  /** Кнопка callback, которая просит пароль 2FA аккаунта. */
+  /** Callback button requiring the account's 2FA password. */
   needsPassword: boolean;
-  /** Адрес у кнопок, которые ведут по ссылке: ссылка, вход на сайт, веб-приложение. Чужой текст. */
+  /** Untrusted destination for URL, web sign-in, or web-app buttons. */
   url: string | null;
 }
 
@@ -48,7 +48,7 @@ interface RawMarkup {
 function inlineRows(replyMarkup: unknown): RawButton[][] {
   const markup = replyMarkup as RawMarkup | null;
   if (!markup || typeof markup !== 'object' || markup.className !== 'ReplyInlineMarkup' || !Array.isArray(markup.rows)) return [];
-  // Ряды и позиции не пересчитываются: по ним же кнопка ищется при нажатии.
+  // Preserve row and column positions for execution-time lookup.
   return markup.rows.map(row => (Array.isArray(row?.buttons) ? row.buttons.map(b => b ?? {}) : []));
 }
 
@@ -61,19 +61,19 @@ function toDto(button: RawButton): ButtonDto {
   };
 }
 
-/** Inline-клавиатура сообщения рядами; пустой список, если её нет. */
+/** Message inline keyboard rows, or an empty list when absent. */
 export function normalizeButtons(replyMarkup: unknown): ButtonDto[][] {
   return inlineRows(replyMarkup).map(row => row.map(toDto));
 }
 
 export interface LocatedButton extends ButtonDto {
-  /** Байты callback; есть только у кнопки вида callback. */
+  /** Callback bytes, available only for callback buttons. */
   data: Buffer | null;
-  /** Отпечаток кнопки: по нему видно, что между предпросмотром и нажатием она не сменилась. */
+  /** Fingerprint detecting changes between preview and execution. */
   fingerprint: string;
 }
 
-/** Кнопка сырого сообщения по ряду и позиции (с единицы); null, если такой нет. */
+/** Raw message button at a one-based row/column, or null when absent. */
 export function buttonAt(rawMessage: unknown, row: number, position: number): LocatedButton | null {
   const raw = inlineRows((rawMessage as { replyMarkup?: unknown } | null)?.replyMarkup)[row - 1]?.[position - 1];
   if (!raw) return null;

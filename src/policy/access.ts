@@ -1,6 +1,6 @@
 /**
- * Пользователи и доступ (решение 16). Bearer-токен определяет пользователя,
- * пользователь видит только свои и общие аккаунты.
+ * Users and access (decision 16). Bearer tokens identify users;
+ * users see only personal and shared accounts.
  */
 import { safeEqualHex, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
@@ -9,14 +9,14 @@ import type { Storage } from '../storage/port.js';
 export interface Principal {
   userId: string;
   defaultAccount: string | null;
-  /** Аккаунты, доступные пользователю. */
+  /** Accounts accessible to the user. */
   accounts: string[];
 }
 
 export class AccessPolicy {
   constructor(private readonly storage: Storage) {}
 
-  /** Пользователь по токену. Ошибка одинакова для «нет токена» и «неверный токен». */
+  /** Resolve user by token; missing/invalid tokens produce the same error. */
   authenticate(token: string | null | undefined): Principal {
     const denied = (): never => {
       throw new GatewayError('ACCESS_DENIED', 'Missing or invalid gateway token.');
@@ -39,8 +39,8 @@ export class AccessPolicy {
   }
 
   /**
-   * Аккаунт для вызова: запрошенный или аккаунт по умолчанию. Чужой аккаунт
-   * и несуществующий дают одну и ту же ошибку: о чужих аккаунтах агент не узнаёт.
+   * Select a requested or default account. Inaccessible and nonexistent
+   * accounts produce the same error to avoid revealing other accounts.
    */
   resolveAccount(principal: Principal, requested?: string | null): string {
     const available = principal.accounts.length > 0 ? principal.accounts.join(', ') : 'none';
@@ -62,7 +62,7 @@ export class AccessPolicy {
     );
   }
 
-  /** Общий аккаунт: им пользуются несколько человек (решение 18). */
+  /** Shared account used by multiple people (decision 18). */
   isShared(accountId: string): boolean {
     return this.storage.accounts.usersOf(accountId).length > 1;
   }

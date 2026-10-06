@@ -1,6 +1,6 @@
 /**
- * Шифрование сессий и хэши токенов. AES-256-GCM: ключ выводится из секрета
- * через SHA-256, для каждой записи свой случайный iv.
+ * Session encryption and token hashing.
+ * AES-256-GCM with a random IV for every record.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
@@ -9,7 +9,7 @@ const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
 export interface Sealed {
-  /** hex: шифртекст и тег аутентификации через двоеточие. */
+  /** Hex ciphertext and authentication tag separated by a colon. */
   data: string;
   /** hex */
   iv: string;
@@ -40,7 +40,7 @@ export function unseal(sealed: Sealed, secret: string): string {
   return Buffer.concat([decipher.update(Buffer.from(encryptedHex, 'hex')), decipher.final()]).toString('utf8');
 }
 
-/** Новый случайный секрет: токен пользователя, ключ шифрования сессий, соль выгрузки. */
+/** Random secret: user token, session encryption key, or export salt. */
 export function randomToken(bytes = 32): string {
   return randomBytes(bytes).toString('base64url');
 }
@@ -49,7 +49,7 @@ export function sha256Hex(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-/** Сравнение хэшей за постоянное время. */
+/** Constant-time hash comparison. */
 export function safeEqualHex(a: string, b: string): boolean {
   const ba = Buffer.from(a, 'hex');
   const bb = Buffer.from(b, 'hex');

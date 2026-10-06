@@ -23,29 +23,29 @@ beforeEach(() => {
 afterEach(() => storage.close());
 
 describe('AccessPolicy', () => {
-  it('токен определяет пользователя и его аккаунты', () => {
+  it('resolves the user and account grants from the token', () => {
     expect(access.authenticate(nickToken)).toEqual({ userId: 'nick', defaultAccount: 'nick', accounts: ['agent', 'nick'] });
     expect(access.authenticate(partnerToken).userId).toBe('partner');
   });
 
-  it('пустой, короткий и чужой токен дают одну ошибку', () => {
+  it('returns the same error for empty, short, and invalid tokens', () => {
     for (const bad of [undefined, null, '', 'short', 'x'.repeat(43)]) {
       expect(() => access.authenticate(bad)).toThrow('Missing or invalid gateway token.');
     }
   });
 
-  it('аккаунт: по умолчанию, запрошенный свой, общий и чужой', () => {
+  it('handles default, requested, shared, and inaccessible accounts', () => {
     const nick = access.authenticate(nickToken);
     expect(access.resolveAccount(nick)).toBe('nick');
     expect(access.resolveAccount(nick, 'agent')).toBe('agent');
     expect(() => access.resolveAccount(nick, 'partner')).toThrow(/not available to you/);
-    // чужой и несуществующий неотличимы
+    // Inaccessible and nonexistent accounts are indistinguishable.
     expect(() => access.resolveAccount(nick, 'ghost')).toThrow(/not available to you/);
     expect(access.isShared('agent')).toBe(true);
     expect(access.isShared('nick')).toBe(false);
   });
 
-  it('без аккаунта по умолчанию просит указать account', () => {
+  it('asks for account when no default is configured', () => {
     storage.users.update('nick', { defaultAccount: null });
     const nick = access.authenticate(nickToken);
     expect(() => access.resolveAccount(nick)).toThrow(/Specify the "account" argument/);
@@ -58,7 +58,7 @@ describe('ScopePolicy', () => {
   const channel = { peerKey: '-1000000000500', kind: 'channel' as const, username: 'News' };
   const seller = { peerKey: '42', kind: 'user' as const, username: 'seller' };
 
-  it('каналы и группы открыты, личные чаты закрыты', () => {
+  it('opens channels/groups and closes private chats by default', () => {
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(true);
     expect(scopes.isAllowed('nick', 'agent', { peerKey: '-4321', kind: 'chat' })).toBe(true);
     const decision = scopes.decide('nick', 'agent', seller);
@@ -66,13 +66,13 @@ describe('ScopePolicy', () => {
     expect(() => scopes.assertAllowed('nick', 'agent', seller)).toThrow(GatewayError);
   });
 
-  it('служебные чаты закрыты всегда, даже правилом allow', () => {
+  it('always closes service chats, even with an allow rule', () => {
     storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '777000', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', { peerKey: '777000', kind: 'user' })).toBe(false);
     expect(scopes.isAllowed('nick', 'agent', { peerKey: '999', kind: 'user', username: 'BotFather' })).toBe(false);
   });
 
-  it('allow открывает один диалог одному пользователю на одном аккаунте', () => {
+  it('allow opens one dialog for one user/account', () => {
     storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '@Seller', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', seller)).toBe(true);
     expect(scopes.isAllowed('partner', 'agent', seller)).toBe(false);
@@ -81,9 +81,9 @@ describe('ScopePolicy', () => {
     expect(scopes.isAllowed('nick', 'agent', seller)).toBe(false);
   });
 
-  it('deny сильнее allow', () => {
+  it('deny overrides allow', () => {
     storage.scopes.put({ userId: 'nick', accountId: 'agent', target: channel.peerKey, effect: 'deny' });
-    // правило по id и правило по username относятся к одному чату
+    // ID and username rules refer to the same chat.
     storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'news', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(false);
     expect(storage.scopes.remove('nick', 'agent', channel.peerKey)).toBe(1);
@@ -91,12 +91,12 @@ describe('ScopePolicy', () => {
   });
 });
 
-describe('режим личных чатов', () => {
+describe('private-chat modes', () => {
   const seller = { peerKey: '42', kind: 'user' as const, username: 'seller' };
   const stranger = { peerKey: '77', kind: 'user' as const, username: null };
   const channel = { peerKey: '-1000000000500', kind: 'channel' as const, username: 'News' };
 
-  it('send: писать можно любому человеку, читать нельзя', () => {
+  it('send: allows sending to anyone without reading', () => {
     expect(scopes.privateMode('nick', 'agent')).toBe('closed');
     expect(scopes.isAllowed('nick', 'agent', stranger, 'write')).toBe(false);
 
@@ -108,20 +108,20 @@ describe('режим личных чатов', () => {
     expect(decision).toMatchObject({ allowed: false, code: 'private' });
     expect(decision.allowed === false && decision.reason).toContain('open for sending only');
 
-    // чат, открытый правилом, читается и в режиме send
+    // Individually allowed chats remain readable in send mode.
     storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow' });
     expect(scopes.isAllowed('nick', 'agent', seller)).toBe(true);
-    // каналам режим ничего не меняет
+    // Channel access is unaffected.
     expect(scopes.isAllowed('nick', 'agent', channel)).toBe(true);
   });
 
-  it('open: читать и писать можно в любой личный чат', () => {
+  it('open: allows reading and writing any private chat', () => {
     writePrivateMode(storage, 'nick', 'agent', 'open');
     expect(scopes.isAllowed('nick', 'agent', stranger)).toBe(true);
     expect(scopes.isAllowed('nick', 'agent', stranger, 'write')).toBe(true);
   });
 
-  it('служебные чаты и запрет владельца сильнее режима', () => {
+  it('service chats and owner denial override the mode', () => {
     writePrivateMode(storage, 'nick', 'agent', 'open');
     storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '42', effect: 'deny' });
     for (const action of ['read', 'write'] as const) {
@@ -131,7 +131,7 @@ describe('режим личных чатов', () => {
     }
   });
 
-  it('режим свой у каждой пары пользователь и аккаунт; новый режим заменяет старый', () => {
+  it('modes belong to each user/account pair and replace previous modes', () => {
     writePrivateMode(storage, 'nick', 'agent', 'open');
     expect(readPrivateMode(storage, 'partner', 'agent')).toBe('closed');
     expect(readPrivateMode(storage, 'nick', 'nick')).toBe('closed');
@@ -149,7 +149,7 @@ describe('режим личных чатов', () => {
 });
 
 describe('Audit', () => {
-  it('пишет вызов с длительностью, кодом ошибки и без секретов', () => {
+  it('audits duration and error codes without secrets', () => {
     let clock = 5_000;
     const audit = new Audit(storage, () => clock);
     clock = 5_250;
