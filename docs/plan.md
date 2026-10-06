@@ -63,7 +63,9 @@ Decision 45 selects voluntary maintenance as the owner's time and capacity allow
 
 Decision 46 selects GitHub private vulnerability reporting for the new repository. Enable and verify the form when opening access, and document the channel in the future `SECURITY.md`. The feature requires a public repository and explicit enablement; no GitHub setting was changed while recording this decision.
 
-Decision 47 accepts external contributions under MIT with the PR author's confirmation that they have the right to submit the contribution under that license. No separate CLA or mandatory DCO sign-off is required. Prepare the public `CONTRIBUTING.md` and PR template under this policy, retaining provenance review and required third-party notices. The next owner question is release procedures.
+Decision 47 accepts external contributions under MIT with the PR author's confirmation that they have the right to submit the contribution under that license. No separate CLA or mandatory DCO sign-off is required. Prepare the public `CONTRIBUTING.md` and PR template under this policy, retaining provenance review and required third-party notices.
+
+Decision 48 selects releases from a verified commit with prepared version metadata and release notes, followed by separate owner approval of the exact SHA and version. The tag, GitHub Release, and npm package must refer to that same commit. Document and implement the publishing procedure during preparation; no release was created while recording this decision. The first public version and stability designation, npm account, authentication, and publishing mechanism remain preparation questions. The next owner question is conduct rules.
 
 ## Code structure
 

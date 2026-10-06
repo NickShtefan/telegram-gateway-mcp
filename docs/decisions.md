@@ -428,7 +428,7 @@ Reason: owner instruction during open-source preparation. Language cleanup is a 
 
 After importing the initial vetted snapshot into `NickShtefan/telegram-mcp-gateway` under decisions 33 and 39, all development changes go through pull requests, including changes prepared by the owner or an agent. Required checks must succeed before merging, and the owner approves the merge. Agents may prepare and update PRs but must obtain the owner's explicit approval before merging. Direct development pushes to the new repository's `main` are not part of this workflow.
 
-Configure the new repository's `main` protection and required CI checks during preparation, and verify the actual settings before publication. This decision records the policy; the new repository, CI, and protection rules have not been created or configured by this step. Decision 45 defines the maintenance commitment, decision 46 selects the private vulnerability channel, and decision 47 defines contribution terms. Release procedures remain a separate question.
+Configure the new repository's `main` protection and required CI checks during preparation, and verify the actual settings before publication. This decision records the policy; the new repository, CI, and protection rules have not been created or configured by this step. Decision 45 defines the maintenance commitment, decision 46 selects the private vulnerability channel, decision 47 defines contribution terms, and decision 48 defines release approval and publication.
 
 Decision 19 remains in force for the current private `telegram-gateway-mcp`: completed, tested preparation steps are committed and pushed to its `main`. The initial parentless snapshot import remains governed by decisions 33 and 39.
 
@@ -438,7 +438,7 @@ Reason: the owner approved PRs with successful checks and retained approval of m
 
 The owner maintains the open-source project as time and capacity allow. There are no guaranteed deadlines for replies or fixes. Describe this maintenance model clearly in the future public README and contribution/security documentation; do not introduce a response or remediation SLA without a new owner decision.
 
-This defines the maintenance commitment. Decision 46 selects the reporting channel, and decision 47 defines contribution terms. Release procedures remain a separate question. PRs and merges continue to follow decision 44.
+This defines the maintenance commitment. Decision 46 selects the reporting channel, decision 47 defines contribution terms, and decision 48 defines release approval and publication. PRs and merges continue to follow decision 44.
 
 Reason: the owner explicitly confirmed maintenance according to their availability, without guaranteed response or fix timelines.
 
@@ -459,3 +459,13 @@ Document these terms in the future `CONTRIBUTING.md` and include the rights conf
 GitHub's default contribution terms apply the repository license and require the contributor to have the right to license the submitted content; a separate agreement can supersede that default. Source: [GitHub contributions under the repository license](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service#6-contributions-under-repository-license).
 
 Reason: the owner approved MIT contributions with a PR rights confirmation, without mandatory CLA or DCO.
+
+## 48. Owner-approved releases from one verified commit (accepted 2026-10-06)
+
+For releases from the new repository, prepare a verified candidate commit, version number, and release notes. Version metadata must already be in the candidate before verification. Present the exact commit SHA, version, changes, and relevant check results to the owner for separate release approval.
+
+After that approval, create the version tag at the approved commit, publish the GitHub Release for that tag, and publish the npm package from the same commit. Keep the released version and package contents tied to the verified SHA. Changes to the candidate require repeating affected checks and obtaining approval for the updated candidate. PR merge approval under decision 44 does not by itself authorize a release.
+
+Implement and document this procedure during release preparation. This decision records the workflow; no tag, GitHub Release, or npm publication was created by this step. The first public version and stability designation, publishing account, authentication, and execution mechanism remain preparation questions. The clean initial import and first publication continue to follow decisions 33 and 39.
+
+Reason: the owner approved preparing a checked commit, version, and change list, followed by separate owner approval and tag, GitHub Release, and npm publication from that same commit.
