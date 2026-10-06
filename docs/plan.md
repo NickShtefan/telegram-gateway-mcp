@@ -67,7 +67,9 @@ Decision 47 accepts external contributions under MIT with the PR author's confir
 
 Decision 48 selects releases from a verified commit with prepared version metadata and release notes, followed by separate owner approval of the exact SHA and version. The tag, GitHub Release, and npm package must refer to that same commit. Document and implement the publishing procedure during preparation; no release was created while recording this decision. The first public version and stability designation, npm account, authentication, and publishing mechanism remain preparation questions.
 
-Decision 49 selects a concise Code of Conduct: respectful communication, no insults, harassment, or spam, and moderation decisions by the owner. Prepare the public English `CODE_OF_CONDUCT.md` and link it from the contribution guide. The next owner question is the first public version and stability designation.
+Decision 49 selects a concise Code of Conduct: respectful communication, no insults, harassment, or spam, and moderation decisions by the owner. Prepare the public English `CODE_OF_CONDUCT.md` and link it from the contribution guide.
+
+On October 6, the owner deferred choosing the first public version and stability designation. The proposed `0.1.0` is not accepted, and the current private package version does not select the public release version. Resolve the choice before release-candidate verification and publication; other preparation can continue. The next owner question is whether to retain `tg-mcp` as the public CLI command.
 
 ## Code structure
 
