@@ -86,7 +86,7 @@ Never run `npx tg-mcp`: that npm name belongs to another package, which npx woul
 
 Reason: owner instruction.
 
-Decision 33 defines the move to a public repository, decision 35 its name, and decision 36 npm publication. Current naming, installation, and private mode apply until migration.
+Decision 33 defines the move to a public repository, decision 35 its name, decision 36 npm publication, and decision 50 retains the `tg-mcp` CLI command for the public project. Current installation and private mode apply until migration.
 
 ## 15. Read any channel (accepted 2026-10-01, amended by decision 25)
 
@@ -348,7 +348,7 @@ Repository: `telegram-mcp-gateway`. Display title: `Unofficial Telegram MCP Gate
 
 Reason: Telegram and MCP identify the category; gateway describes the shared-daemon architecture. The telegram-mcp substring fits official MCP Registry search. Research found no published exact-name GitHub/npm match; evidence and limitations are in [naming-research.md](naming-research.md). This guarantees neither ranking nor name reservation.
 
-This applies to the future open project. The owner creates the repository (33), under the selected account/address (38), following decision 39. npm publication and its name are selected in 36/37. CLI commands, state directories, and environment variables are not renamed by this decision. Current private names remain until the relevant preparation step.
+This applies to the future open project. The owner creates the repository (33), under the selected account/address (38), following decision 39. npm publication and its name are selected in 36/37; decision 50 retains the `tg-mcp` CLI command. State directories and environment variables are not renamed by these naming decisions. Current private package and repository names remain until the relevant preparation step.
 
 ## 36. First public release includes npm (accepted 2026-10-06)
 
@@ -477,3 +477,11 @@ Use a short project Code of Conduct: communicate respectfully; insults, harassme
 Prepare the English `CODE_OF_CONDUCT.md` and link it from the public contribution guide during publication preparation. This decision records the agreed rules and moderation responsibility; the public policy file has not been created by this step. Maintenance remains voluntary under decision 45.
 
 Reason: the owner approved concise conduct rules with respectful communication, no insults, harassment, or spam, and moderation decisions retained by the owner.
+
+## 50. Public CLI command remains tg-mcp (accepted 2026-10-06)
+
+Keep `tg-mcp` as the public CLI command, including `tg-mcp serve` and `tg-mcp stdio`. The npm package and new repository remain `telegram-mcp-gateway` under decisions 35 and 37. The existing command already uses this name, so no CLI rename is required.
+
+Retain the `tg-mcp` bin entry when preparing the public package, and verify that clean installation provides the command. Public installation instructions must use the selected npm package name; the prohibition on running the third-party `npx tg-mcp` remains in force. This decision does not rename the state directory or environment variables, change the installation/isolation model, or publish the package.
+
+Reason: the owner approved retaining the CLI command while using the agreed public package name.

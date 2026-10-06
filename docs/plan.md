@@ -69,7 +69,9 @@ Decision 48 selects releases from a verified commit with prepared version metada
 
 Decision 49 selects a concise Code of Conduct: respectful communication, no insults, harassment, or spam, and moderation decisions by the owner. Prepare the public English `CODE_OF_CONDUCT.md` and link it from the contribution guide.
 
-On October 6, the owner deferred choosing the first public version and stability designation. The proposed `0.1.0` is not accepted, and the current private package version does not select the public release version. Resolve the choice before release-candidate verification and publication; other preparation can continue. The next owner question is whether to retain `tg-mcp` as the public CLI command.
+On October 6, the owner deferred choosing the first public version and stability designation. The proposed `0.1.0` is not accepted, and the current private package version does not select the public release version. Resolve the choice before release-candidate verification and publication; other preparation can continue.
+
+Decision 50 retains `tg-mcp` as the public CLI command while the npm package and new repository use `telegram-mcp-gateway`. The existing bin entry already uses `tg-mcp`; preserve and verify it during public packaging and clean installation. No package metadata was changed or release published while recording this decision. The next owner question is the public installation and execution model, preserving session isolation.
 
 ## Code structure
 
