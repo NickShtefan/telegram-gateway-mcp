@@ -65,7 +65,9 @@ Decision 46 selects GitHub private vulnerability reporting for the new repositor
 
 Decision 47 accepts external contributions under MIT with the PR author's confirmation that they have the right to submit the contribution under that license. No separate CLA or mandatory DCO sign-off is required. Prepare the public `CONTRIBUTING.md` and PR template under this policy, retaining provenance review and required third-party notices.
 
-Decision 48 selects releases from a verified commit with prepared version metadata and release notes, followed by separate owner approval of the exact SHA and version. The tag, GitHub Release, and npm package must refer to that same commit. Document and implement the publishing procedure during preparation; no release was created while recording this decision. The first public version and stability designation, npm account, authentication, and publishing mechanism remain preparation questions. The next owner question is conduct rules.
+Decision 48 selects releases from a verified commit with prepared version metadata and release notes, followed by separate owner approval of the exact SHA and version. The tag, GitHub Release, and npm package must refer to that same commit. Document and implement the publishing procedure during preparation; no release was created while recording this decision. The first public version and stability designation, npm account, authentication, and publishing mechanism remain preparation questions.
+
+Decision 49 selects a concise Code of Conduct: respectful communication, no insults, harassment, or spam, and moderation decisions by the owner. Prepare the public English `CODE_OF_CONDUCT.md` and link it from the contribution guide. The next owner question is the first public version and stability designation.
 
 ## Code structure
 

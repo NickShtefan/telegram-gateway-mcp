@@ -469,3 +469,11 @@ After that approval, create the version tag at the approved commit, publish the 
 Implement and document this procedure during release preparation. This decision records the workflow; no tag, GitHub Release, or npm publication was created by this step. The first public version and stability designation, publishing account, authentication, and execution mechanism remain preparation questions. The clean initial import and first publication continue to follow decisions 33 and 39.
 
 Reason: the owner approved preparing a checked commit, version, and change list, followed by separate owner approval and tag, GitHub Release, and npm publication from that same commit.
+
+## 49. Concise conduct rules with owner moderation (accepted 2026-10-06)
+
+Use a short project Code of Conduct: communicate respectfully; insults, harassment, and spam are prohibited. The owner decides moderation actions in project discussions and reviews.
+
+Prepare the English `CODE_OF_CONDUCT.md` and link it from the public contribution guide during publication preparation. This decision records the agreed rules and moderation responsibility; the public policy file has not been created by this step. Maintenance remains voluntary under decision 45.
+
+Reason: the owner approved concise conduct rules with respectful communication, no insults, harassment, or spam, and moderation decisions retained by the owner.
