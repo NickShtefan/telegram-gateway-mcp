@@ -59,7 +59,9 @@ Decision 43 makes English the only repository language, with no Russian edition.
 
 Decision 44 requires PRs, successful required checks, and owner-approved merges for all development in the new repository after the initial snapshot import, including owner/agent changes. It explicitly revises decision 19 for that repository; the current private repository retains its tested commit-and-push workflow. CI and branch protection remain unconfigured.
 
-Decision 45 selects voluntary maintenance as the owner's time and capacity allow, without guaranteed reply or fix deadlines. Carry this policy into the future public README and contribution/security documentation. The next owner question is the private vulnerability-reporting channel.
+Decision 45 selects voluntary maintenance as the owner's time and capacity allow, without guaranteed reply or fix deadlines. Carry this policy into the future public README and contribution/security documentation.
+
+Decision 46 selects GitHub private vulnerability reporting for the new repository. Enable and verify the form when opening access, and document the channel in the future `SECURITY.md`. The feature requires a public repository and explicit enablement; no GitHub setting was changed while recording this decision. The next owner question is contribution terms, including whether CLA or DCO is required.
 
 ## Code structure
 
