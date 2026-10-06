@@ -428,8 +428,16 @@ Reason: owner instruction during open-source preparation. Language cleanup is a 
 
 After importing the initial vetted snapshot into `NickShtefan/telegram-mcp-gateway` under decisions 33 and 39, all development changes go through pull requests, including changes prepared by the owner or an agent. Required checks must succeed before merging, and the owner approves the merge. Agents may prepare and update PRs but must obtain the owner's explicit approval before merging. Direct development pushes to the new repository's `main` are not part of this workflow.
 
-Configure the new repository's `main` protection and required CI checks during preparation, and verify the actual settings before publication. This decision records the policy; the new repository, CI, and protection rules have not been created or configured by this step. Contribution terms, maintenance commitments, release procedures, and the private vulnerability channel remain separate questions.
+Configure the new repository's `main` protection and required CI checks during preparation, and verify the actual settings before publication. This decision records the policy; the new repository, CI, and protection rules have not been created or configured by this step. Decision 45 defines the maintenance commitment. Contribution terms, release procedures, and the private vulnerability channel remain separate questions.
 
 Decision 19 remains in force for the current private `telegram-gateway-mcp`: completed, tested preparation steps are committed and pushed to its `main`. The initial parentless snapshot import remains governed by decisions 33 and 39.
 
 Reason: the owner approved PRs with successful checks and retained approval of merges into the public project.
+
+## 45. Voluntary maintenance without guaranteed deadlines (accepted 2026-10-06)
+
+The owner maintains the open-source project as time and capacity allow. There are no guaranteed deadlines for replies or fixes. Describe this maintenance model clearly in the future public README and contribution/security documentation; do not introduce a response or remediation SLA without a new owner decision.
+
+This defines the maintenance commitment, not the reporting channel, contribution terms, or release procedure. Those questions remain separate. PRs and merges continue to follow decision 44.
+
+Reason: the owner explicitly confirmed maintenance according to their availability, without guaranteed response or fix timelines.

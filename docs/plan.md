@@ -57,7 +57,9 @@ Decision 42 recommends Node 24 LTS, or a newer LTS after gateway verification, a
 
 Decision 43 makes English the only repository language, with no Russian edition. Repository-wide translation includes documentation, agent instructions, comments, tests, examples, and scripts. Language cleanup is complete: documentation, comments, tool examples, tests, scripts, agent instructions, and .gitignore are English. All 110 tracked text files were scanned, with no remaining Cyrillic or literal em dash. Build, typecheck, all 694 tests in 21 files, installer syntax, and local documentation links passed on macOS with Node 24.10.0. Production-token comparison against the pre-translation commit found identical behavior in 62 files and only translated tool-description examples in two; SQL statements and filename character ranges remain equivalent. Unicode sanitization and accented full-text search coverage are retained. No lab deployment or live Telegram action was performed. Communication with the owner stays in Russian.
 
-Decision 44 requires PRs, successful required checks, and owner-approved merges for all development in the new repository after the initial snapshot import, including owner/agent changes. It explicitly revises decision 19 for that repository; the current private repository retains its tested commit-and-push workflow. CI and branch protection remain unconfigured. The next owner question is the maintenance commitment.
+Decision 44 requires PRs, successful required checks, and owner-approved merges for all development in the new repository after the initial snapshot import, including owner/agent changes. It explicitly revises decision 19 for that repository; the current private repository retains its tested commit-and-push workflow. CI and branch protection remain unconfigured.
+
+Decision 45 selects voluntary maintenance as the owner's time and capacity allow, without guaranteed reply or fix deadlines. Carry this policy into the future public README and contribution/security documentation. The next owner question is the private vulnerability-reporting channel.
 
 ## Code structure
 
