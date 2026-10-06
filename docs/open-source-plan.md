@@ -4,7 +4,7 @@ Prepared October 5, 2026; updated with subsequent owner decisions.
 
 Goal: publish source code that lets an external user understand the gateway's limits, install a verified version with their own credentials, and contribute through a clear process. Before publication, audit the selected snapshot and new repository materials, apply MIT, prepare installation, and prove release behavior.
 
-The publication method, license, copyright line, name, npm distribution, package name, repository owner and address, cleanup and transfer order, target platforms, Node policy, English-only repository language, the PR/merge policy, maintenance commitment, private vulnerability channel, contribution terms, release approval workflow, conduct rules, and public CLI command have been selected. Remaining questions are in [open-questions.md](open-questions.md). Repository-wide language cleanup is complete and locally verified; see [plan.md](plan.md). General code cleanup, snapshot audit, license files, and publication remain ahead.
+The publication method, license, copyright line, name, npm distribution, package name, repository owner and address, cleanup and transfer order, target platforms, Node policy, English-only repository language, the PR/merge policy, maintenance commitment, private vulnerability channel, contribution terms, release approval workflow, conduct rules, and public CLI command have been selected. The owner concluded the initial question review on October 6, 2026. Deferred choices and preparation follow-ups are recorded in [open-questions.md](open-questions.md). Repository-wide language cleanup is complete and locally verified; see [plan.md](plan.md). General code cleanup, snapshot audit, license files, and publication remain ahead.
 
 ## Baseline
 
@@ -64,6 +64,8 @@ The owner selected native Windows and offered a Windows computer for testing (de
 
 **Deliverable:** agreed first-release scope and decisions in `decisions.md`, explicitly revising decisions 14 and 19 if needed.
 
+The owner concluded the initial one-by-one question review on October 6, 2026. Decisions 33 through 50 record the selected policy. The following items carry into preparation; do not continue the initial questionnaire by default or treat closure as selecting the previously deferred version or installation proposals.
+
 Decisions 33 through 50 select the publication method, MIT, copyright line, naming, npm publication, package name, repository owner and address, cleanup and transfer order, platforms, native Windows, Node policy, repository language, PR/merge rules, voluntary maintenance without guaranteed deadlines, GitHub private vulnerability reporting, MIT contributions with a PR rights confirmation without mandatory CLA or DCO, owner-approved releases from a verified commit, concise conduct rules with owner moderation, and the public CLI command. Repository: `NickShtefan/telegram-mcp-gateway`; npm package: `telegram-mcp-gateway`; CLI: `tg-mcp`; public title: `Unofficial Telegram MCP Gateway`. Clean the current repository, transfer a vetted snapshot to the new private repository, verify the release, then open access. Remaining matters:
 
 - **npm account and execution.** The account is unconfirmed: on October 6 the owner said they probably do not have one. Verify/recover an existing account or register a new one before publishing, and record the package owner's username. The owner requested more consideration of the public installation model on October 6 because frequent `sudo` use would be inconvenient. The proposed isolated default with same-user execution reserved for development is not accepted. Compare installation, routine use, administration, and updates before selecting a public model. Current lab decisions 17 and 22 remain in force; revise them explicitly if their scope changes. Decision 50 retains the `tg-mcp` CLI command; use `telegram-mcp-gateway` as the npm package name.
@@ -75,7 +77,7 @@ Separately agree documented Telegram data scenarios. The [Content Licensing Term
 
 For each public scenario, identify the data the agent receives, whose consent is required, and how its scope is respected. Owning a channel does not establish consent from every comment author. Initial demonstrations use synthetic data and controlled test chats with appropriate participant consent. Review the [API Terms](https://core.telegram.org/api/terms) for applicability: action consent, own `api_id`, app naming and presentation, and sponsored messages when accessing channels. Source licensing does not itself authorize use of other people's content.
 
-**Completion:** the owner has selected licensing, publication, and maintenance models; Telegram terms and applicability questions are resolved for proposed public scenarios. Unresolved questions remain blockers for the associated claims and demonstrations.
+**Review status:** the initial owner review is complete, with licensing, publication, contribution, maintenance, and release policies recorded. Resolve deferred choices during their preparation stages. Verify Telegram terms and applicability before adopting public scenarios; associated claims and demonstrations remain subject to that review.
 
 ## 2 Current repository cleanup and snapshot audit
 
@@ -198,7 +200,8 @@ After stage 1, audit, licensing, docs, and CI can progress independently where d
 
 ## Publication gates
 
-- [ ] Owner decisions recorded; changes to decisions 14 and 19 explicit.
+- [x] Initial owner question review concluded; decisions 33 through 50 recorded.
+- [ ] Deferred first-release choices resolved during preparation; any revisions to decisions 14, 17, 19, and 22 explicit.
 - [ ] Current repository cleaned before transfer; removed paths/reasons listed; build/tests prove behavior.
 - [x] English-only repository content under decision 43; no Russian edition or remaining Russian prose in tracked files.
 - [ ] Snapshot and new-repository materials audited; initial commit has no parents/old refs; personal data removed or authorized; necessary secret revocations resolved.
@@ -211,4 +214,4 @@ After stage 1, audit, licensing, docs, and CI can progress independently where d
 - [ ] npm owner identified, email verified, publishing authentication prepared.
 - [ ] Owner approves publication of the exact SHA and knows which materials become public.
 
-Owner questions are resolved one at a time. Decisions through 50 establish publication, licensing, naming, npm distribution, repository ownership, cleanup/transfer, platforms, native Windows, Node, English-only content, PR/merge rules, voluntary maintenance, GitHub private vulnerability reporting, MIT contribution terms without mandatory CLA or DCO, owner-approved releases from one verified commit, concise conduct rules with owner moderation, and the `tg-mcp` public CLI command. npm account verification/registration and publishing authentication/mechanism remain preparation questions. The owner deferred the first public version and stability designation; resolve this before candidate verification and publication. The public installation model also remains open pending comparison of ergonomics, privilege prompts, and session/code protection. Current lab decisions remain in force. Repository-wide language cleanup is complete; general cleanup and snapshot audit follow with a report containing no secret values. Publication happens at the release stage.
+The owner concluded the one-by-one question review on October 6, 2026. Decisions through 50 establish publication, licensing, naming, npm distribution, repository ownership, cleanup/transfer, platforms, native Windows, Node, English-only content, PR/merge rules, voluntary maintenance, GitHub private vulnerability reporting, MIT contribution terms without mandatory CLA or DCO, owner-approved releases from one verified commit, concise conduct rules with owner moderation, and the `tg-mcp` public CLI command. npm account verification/registration and publishing authentication/mechanism carry into preparation. The first public version and installation model were deferred; resolve them during preparation with concrete evidence and any required owner selection. Current lab decisions remain in force. Repository-wide language cleanup is complete; general cleanup and snapshot audit follow with a report containing no secret values. Publication happens at the release stage after candidate verification and approval.

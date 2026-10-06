@@ -6,6 +6,8 @@ Numbers remain stable because code and other documents reference them. Supersede
 
 Changes must be explicit: record a new decision and explain why the previous one no longer applies.
 
+The owner concluded the initial open-source question review on October 6, 2026, after decisions 33 through 50. The first public version and public installation model were deferred during that review and remain preparation follow-ups. Closing the review does not select either earlier proposal; see [open-questions.md](open-questions.md) and [open-source-plan.md](open-source-plan.md).
+
 ## 1. One process owns sessions (proposed)
 
 The `tg-mcp serve` daemon owns MTProto connections, the request queue, and caches. Agents connect over Streamable HTTP. For stdio-only clients, `tg-mcp stdio` forwards JSON-RPC to the daemon without opening sessions. A Unix socket in the gateway directory enforces single-process ownership.

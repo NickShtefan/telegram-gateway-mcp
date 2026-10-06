@@ -43,7 +43,7 @@ Tests: 694 tests using a Telegram double. Telegram errors use the library's real
 
 The [open-source plan](open-source-plan.md) covers owner decisions, private-repository cleanup and snapshot audit, licensing, general installation, CI and contributions, candidate verification, and publication. It was prepared from the code and GitHub settings on October 5, 2026, then updated with owner decisions. Build, typecheck, and all 694 tests passed on Node 24.10.0 during the initial review.
 
-On October 5 the owner chose a clean new repository without private history, with further development there (decision 33), and MIT (decision 34). On October 6 the copyright line was agreed: `Copyright (c) 2026 NickShtefan`. The current repository remains private. Open questions are handled one at a time. Snapshot audit, license files, and publication remain incomplete.
+On October 5 the owner chose a clean new repository without private history, with further development there (decision 33), and MIT (decision 34). On October 6 the copyright line was agreed: `Copyright (c) 2026 NickShtefan`. The current repository remains private. Owner questions were reviewed one at a time; the owner concluded that review on October 6 after decisions 33 through 50. Snapshot audit, license files, and publication remain incomplete.
 
 The October 6 [naming research](naming-research.md) examined GitHub and npm collisions, MCP Registry search, and platform guidance. The owner chose `telegram-mcp-gateway` and the public title `Unofficial Telegram MCP Gateway` (decision 35), npm publication in the first release (decision 36), the unscoped package name `telegram-mcp-gateway` (decision 37), and the personal repository `NickShtefan/telegram-mcp-gateway` (decision 38).
 
@@ -74,6 +74,8 @@ On October 6, the owner deferred choosing the first public version and stability
 Decision 50 retains `tg-mcp` as the public CLI command while the npm package and new repository use `telegram-mcp-gateway`. The existing bin entry already uses `tg-mcp`; preserve and verify it during public packaging and clean installation. No package metadata was changed or release published while recording this decision.
 
 On October 6, the owner requested further consideration of the public installation model because frequent `sudo` use would be inconvenient. No public default or development-only restriction for same-user startup was accepted. Read-only review of the current installer and deployment guide confirms that ordinary MCP calls do not require `sudo`; installation, updates, and owner administration (login, users/accounts, scopes, doctor) do. The open-source plan compares the existing model, a proposed owner administration interface for an isolated daemon, and same-user execution. Evaluate usability, independent owner authorization, session/code protection, and platform feasibility before asking for a choice. No installer, permissions, deployed service, or lab policy was changed by this review.
+
+The owner then closed the initial question review. The plan is ready as the preparation roadmap. Carry the deferred version and installation choices, npm setup, and scenario/terms review into their preparation stages rather than continuing the questionnaire. This closure records the end of planning discussion; no cleanup phase, migration, deployment, or publication was started by this step.
 
 ## Code structure
 
