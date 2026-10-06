@@ -428,7 +428,7 @@ Reason: owner instruction during open-source preparation. Language cleanup is a 
 
 After importing the initial vetted snapshot into `NickShtefan/telegram-mcp-gateway` under decisions 33 and 39, all development changes go through pull requests, including changes prepared by the owner or an agent. Required checks must succeed before merging, and the owner approves the merge. Agents may prepare and update PRs but must obtain the owner's explicit approval before merging. Direct development pushes to the new repository's `main` are not part of this workflow.
 
-Configure the new repository's `main` protection and required CI checks during preparation, and verify the actual settings before publication. This decision records the policy; the new repository, CI, and protection rules have not been created or configured by this step. Decision 45 defines the maintenance commitment, and decision 46 selects the private vulnerability channel. Contribution terms and release procedures remain separate questions.
+Configure the new repository's `main` protection and required CI checks during preparation, and verify the actual settings before publication. This decision records the policy; the new repository, CI, and protection rules have not been created or configured by this step. Decision 45 defines the maintenance commitment, decision 46 selects the private vulnerability channel, and decision 47 defines contribution terms. Release procedures remain a separate question.
 
 Decision 19 remains in force for the current private `telegram-gateway-mcp`: completed, tested preparation steps are committed and pushed to its `main`. The initial parentless snapshot import remains governed by decisions 33 and 39.
 
@@ -438,7 +438,7 @@ Reason: the owner approved PRs with successful checks and retained approval of m
 
 The owner maintains the open-source project as time and capacity allow. There are no guaranteed deadlines for replies or fixes. Describe this maintenance model clearly in the future public README and contribution/security documentation; do not introduce a response or remediation SLA without a new owner decision.
 
-This defines the maintenance commitment. Decision 46 selects the reporting channel; contribution terms and release procedures remain separate questions. PRs and merges continue to follow decision 44.
+This defines the maintenance commitment. Decision 46 selects the reporting channel, and decision 47 defines contribution terms. Release procedures remain a separate question. PRs and merges continue to follow decision 44.
 
 Reason: the owner explicitly confirmed maintenance according to their availability, without guaranteed response or fix timelines.
 
@@ -449,3 +449,13 @@ Use GitHub's private vulnerability reporting for the future `NickShtefan/telegra
 GitHub's reporting feature requires a public repository and explicit enablement; adding `SECURITY.md` does not enable it. Source: [GitHub private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately). This decision selects the channel; activation and verification remain publication tasks.
 
 Reason: the owner approved GitHub's private form for vulnerability reports, to be enabled when opening the new repository.
+
+## 47. MIT contributions with a PR rights confirmation (accepted 2026-10-06)
+
+Accept external contributions to the future public project under the same MIT license selected in decision 34. The PR author confirms that they have the right to submit the contribution under MIT. Do not require a separate contributor license agreement (CLA) or mandatory Developer Certificate of Origin (DCO) sign-off for each commit.
+
+Document these terms in the future `CONTRIBUTING.md` and include the rights confirmation in the PR template. Review material provenance and preserve required third-party attribution and license notices. The PR and merge workflow remains governed by decision 44. Public contribution files and templates have not been created by this step.
+
+GitHub's default contribution terms apply the repository license and require the contributor to have the right to license the submitted content; a separate agreement can supersede that default. Source: [GitHub contributions under the repository license](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service#6-contributions-under-repository-license).
+
+Reason: the owner approved MIT contributions with a PR rights confirmation, without mandatory CLA or DCO.

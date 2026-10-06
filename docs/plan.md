@@ -61,7 +61,9 @@ Decision 44 requires PRs, successful required checks, and owner-approved merges 
 
 Decision 45 selects voluntary maintenance as the owner's time and capacity allow, without guaranteed reply or fix deadlines. Carry this policy into the future public README and contribution/security documentation.
 
-Decision 46 selects GitHub private vulnerability reporting for the new repository. Enable and verify the form when opening access, and document the channel in the future `SECURITY.md`. The feature requires a public repository and explicit enablement; no GitHub setting was changed while recording this decision. The next owner question is contribution terms, including whether CLA or DCO is required.
+Decision 46 selects GitHub private vulnerability reporting for the new repository. Enable and verify the form when opening access, and document the channel in the future `SECURITY.md`. The feature requires a public repository and explicit enablement; no GitHub setting was changed while recording this decision.
+
+Decision 47 accepts external contributions under MIT with the PR author's confirmation that they have the right to submit the contribution under that license. No separate CLA or mandatory DCO sign-off is required. Prepare the public `CONTRIBUTING.md` and PR template under this policy, retaining provenance review and required third-party notices. The next owner question is release procedures.
 
 ## Code structure
 
