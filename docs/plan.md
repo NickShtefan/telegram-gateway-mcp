@@ -71,7 +71,9 @@ Decision 49 selects a concise Code of Conduct: respectful communication, no insu
 
 On October 6, the owner deferred choosing the first public version and stability designation. The proposed `0.1.0` is not accepted, and the current private package version does not select the public release version. Resolve the choice before release-candidate verification and publication; other preparation can continue.
 
-Decision 50 retains `tg-mcp` as the public CLI command while the npm package and new repository use `telegram-mcp-gateway`. The existing bin entry already uses `tg-mcp`; preserve and verify it during public packaging and clean installation. No package metadata was changed or release published while recording this decision. The next owner question is the public installation and execution model, preserving session isolation.
+Decision 50 retains `tg-mcp` as the public CLI command while the npm package and new repository use `telegram-mcp-gateway`. The existing bin entry already uses `tg-mcp`; preserve and verify it during public packaging and clean installation. No package metadata was changed or release published while recording this decision.
+
+On October 6, the owner requested further consideration of the public installation model because frequent `sudo` use would be inconvenient. No public default or development-only restriction for same-user startup was accepted. Read-only review of the current installer and deployment guide confirms that ordinary MCP calls do not require `sudo`; installation, updates, and owner administration (login, users/accounts, scopes, doctor) do. The open-source plan compares the existing model, a proposed owner administration interface for an isolated daemon, and same-user execution. Evaluate usability, independent owner authorization, session/code protection, and platform feasibility before asking for a choice. No installer, permissions, deployed service, or lab policy was changed by this review.
 
 ## Code structure
 
