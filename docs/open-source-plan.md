@@ -112,6 +112,8 @@ The owner requested that this workstream take priority on October 7, 2026, befor
 
 Decision 52 selects a prompt-to-agent installation entry and installer-managed Node prerequisites. The design includes protected human participation for system approval and Telegram login, secret-safe progress/resume, token transfer without agent-visible stdout and verification after client reload. See the installation plan for the proposed contract and remaining implementation work.
 
+Decision 53 requires the same installer to support complete independent installation. A human wizard and agent-facing progress share one implementation, protections and defaults. Installation itself requires no agent, model provider credentials or AI subscription; gateway readiness and model-client verification remain separate. Prepare and verify both public instruction paths.
+
 ### Installation ergonomics: model selected October 7, 2026
 
 The owner wants further consideration of repeated `sudo` use. Review of [deploy.md](deploy.md) and [lab-install.sh](../scripts/lab-install.sh) confirms that the agent's stdio command runs as its caller, while `tg-mcp-admin` requires root and switches to the service user. Ordinary HTTP/stdio MCP calls do not require `sudo`; installation, updates, login, user/account administration, scopes, and doctor do in the existing lab workflow.

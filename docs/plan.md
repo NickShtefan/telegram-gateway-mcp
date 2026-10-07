@@ -91,6 +91,8 @@ The owner prioritized installation preparation before main-Mac setup. The [insta
 
 The owner then selected a prompt-to-agent installation entry with installer-managed Node prerequisites (decision 52). The plan now proposes protected owner handoffs for system authorization and Telegram credentials/code/2FA, resumable secret-safe progress, direct client token handoff and separate service/SDK/model-client verification. Current CLI token printing and lack of a setup/status contract are implementation gaps. Official Telegram and Codex documentation were checked; QR is a future candidate rather than selected or implemented gateway login. No setup execution or live authentication occurred during this design step.
 
+Decision 53 adds a complete independent entry through the same installer. The wizard must guide and verify installation without an agent or model provider, with optional client configuration and accurate readiness reporting. The plan includes separate acceptance evidence for independent and agent-assisted entry, retaining one shared setup implementation and the same protections/defaults. This remains scenario design, not implemented installer behavior.
+
 ## Code structure
 
 One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.

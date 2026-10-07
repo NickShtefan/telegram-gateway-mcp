@@ -43,7 +43,29 @@ The owner selected the separate service identity with convenient management on O
 
 The current lab's decisions 17/22 remain in force. The interface and authorization design should follow the selected model rather than introducing an admin UI by assumption. Interface selection and a proof of independent owner authorization remain open design work. Decision 52 adds an agent-assisted entry and installer-managed Node prerequisites without selecting an owner-entry interface.
 
-## Agent-assisted installation
+## One installer, two ways to start
+
+Decision 53 requires a complete independent installation alongside decision 52's preferred agent-assisted entry. Both use one implementation and the same safe defaults and service/session protections.
+
+| Entry | User action | Installer responsibility |
+| --- | --- | --- |
+| Independent | Launch the installer and follow the wizard | Explain and execute every stage, request necessary owner input and verify the result |
+| Agent-assisted | Give an installation request to an external agent | Execute the same stages, return structured safe progress and hand protected inputs to the owner |
+
+The independent path must be usable without an agent, provider credentials or an AI subscription. Neither path requires Node/npm to be installed beforehand. Human-readable prompts and machine-readable progress are presentations of the same setup flow, not two installation codebases.
+
+### Proposed independent sequence
+
+1. Follow concise public instructions to launch the verified installer for the selected release/platform.
+2. Read the installer's preflight summary: version, intended service/paths, existing state and any necessary system authorization. The installer prepares prerequisites and the protected service.
+3. Follow the wizard's instructions to obtain own Telegram application credentials if needed, then enter them and complete Telegram login through the protected owner interaction. Explain each action without depending on an agent to translate errors or find the next step.
+4. Choose initial account access and, optionally, a supported MCP client. The installer creates the gateway user, prepares client credentials/configuration and preserves unrelated settings. A client can also be connected later.
+5. Let the installer run service and authenticated MCP/SDK checks. Report gateway readiness separately from client configuration, client reload and actual model-client tool availability. Gateway setup can complete without a configured model provider.
+6. Show a concise completion result or a concrete resumable next action. Cancellation and subsequent reruns preserve completed steps, sessions and existing tokens under the same rules as agent-assisted setup.
+
+The exact human interface remains open design work. Both paths need their own end-to-end evidence, including an installation completed by a person following only the public guide. Do not label independent setup complete while an undocumented agent action remains necessary.
+
+## Agent-assisted sequence
 
 On October 7 the owner requested a prompt-to-agent workflow as the preferred entry (decision 52). The agent can perform technical work while the owner completes protected interactions. Codes and 2FA do not require abandoning the workflow: setup can pause and resume. The protocol below is proposed design, not implemented behavior.
 
@@ -115,7 +137,7 @@ Suggested command names such as `setup`, `service`, `update` and `uninstall` are
 | 4 | Implement onboarding and first client connection | Owner-created main-Mac session; user/account grants; secret-safe token transfer; authenticated SDK check and actual Codex Desktop tool call; no second session client |
 | 5 | Implement service lifecycle, update, recovery and uninstall | Supervisor restart; second-process rejection; staged release switch; failed-update recovery; consistent backup; retain-data removal; explicit deletion path |
 | 6 | Adapt Linux and native Windows | Platform service/identity adapters; equivalent real access protection, locking and safe file operations; native Windows tests on the owner's computer, independent of WSL |
-| 7 | Finish public guide and platform/client verification | Clean installation from exact archive/version; supported Node matrix; documented privileges and data lifecycle; declared clients pass their prepared scenarios |
+| 7 | Finish both installation guides and platform/client verification | Independent and agent-assisted clean installation from exact archive/version, including a machine without Node/npm; supported Node matrix; documented privileges and data lifecycle; declared clients pass their prepared scenarios |
 
 Keep generic workflow/state handling separate from platform-specific service registration and permissions. Do not disable Unix safeguards to make Windows tests pass. Do not add an administrative API to the agent's MCP surface.
 

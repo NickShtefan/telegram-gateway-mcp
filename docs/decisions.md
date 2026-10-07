@@ -509,3 +509,15 @@ The owner accepts that system authorization, Telegram application credentials, l
 The exact bootstrap artifact, protected owner-entry mechanism, status interface, token handoff and client adapters remain implementation/design work. This decision does not choose a browser panel, QR login or any existing command as the complete installer. It does not authorize running installation or logging in during scenario planning.
 
 Reason: the owner broadly accepted installer-managed prerequisites and requested that a prompt to an agent be the preferred installation experience, while recognizing necessary credential/OTP/2FA steps.
+
+## 53. The same installer works without an agent (accepted 2026-10-07)
+
+Support two complete installation entries: the user starts the installer directly and follows its guidance, or asks an external agent to perform the technical steps through that same installer. Agent assistance remains the preferred convenience path under decision 52, not a prerequisite or the only complete path.
+
+Use the same release acquisition, prerequisite handling, protected service setup, login, access defaults, client configuration, verification and resume logic. Provide human-readable guidance for independent installation and structured, secret-safe progress for agents. Do not maintain separate installation implementations with different protections or results.
+
+Independent installation must not require an agent, a model provider key or an AI subscription. The wizard itself explains each required owner action and runs gateway/MCP checks. A user may configure a chosen MCP client or complete gateway setup and connect a client later; report these readiness states separately. Actual model-client compatibility remains a release verification requirement, not a dependency of the installer.
+
+Prepare instructions and acceptance checks for both entries, including a fresh machine without Node/npm and interruption/resume. Protected owner participation and the separate service identity remain required under decisions 51/52. The exact human interface remains design work; no installation was executed by this decision.
+
+Reason: the owner explicitly required that users be able to launch and finish installation themselves without an agent.
