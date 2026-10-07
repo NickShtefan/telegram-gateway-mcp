@@ -193,7 +193,6 @@ const tgLocalSearch = defineTool({
     const stalest = targets.reduce<number | null>((min, t) => (t.item.syncedAt === null ? min : min === null ? t.item.syncedAt : Math.min(min, t.item.syncedAt)), null);
     const more = offset + found.messages.length < found.total && found.messages.length > 0;
     const hints = [stalest !== null ? `Index last synced: ${formatDate(Math.floor(stalest / 1000))} UTC. Newer messages need tg_index.` : ''];
-    if (found.approximate) hints.push('Query words shorter than 3 characters were checked only within the first matches.');
 
     return {
       count: found.messages.length,

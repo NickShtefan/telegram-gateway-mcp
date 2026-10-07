@@ -15,3 +15,5 @@ Baseline: `5c203d9ec0c0e511c0e797a288ee842f267823d8`, clean main checkout. The e
 This cleanup does not select the first public version or installation/isolation model. MIT holder/provenance/notices, full snapshot secrets/PII audit, target-platform verification, CI, release approval and new repository transfer remain separate preparation work.
 
 Stage 2.1 (F1): removed the unsafe hang exception from media and limiter options. Deadlines shut down every lane before requesting supervisor restart. Regression coverage exercises MediaService, TgGateway, limiter and the runtime watchdog with a synthetic session and fake exit.
+
+Stage 2.1 validation: build, typecheck, 694 tests passed; commit `9f2fe5a`. Stage 2.2 (F2): filter short terms in SQLite before counts and pagination, using JavaScript Unicode case folding. MCP regression covers alternating and sparse matches, all pages and long-only queries.

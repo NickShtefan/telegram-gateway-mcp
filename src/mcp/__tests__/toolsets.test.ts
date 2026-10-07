@@ -492,13 +492,39 @@ describe('index toolset: local indexing and search', () => {
     const short = await agent.call('tg_local_search', { query: 'iphone us' });
     expect(short.isError, short.text).toBe(false);
     expect(short.text).toContain('#109');
-    expect(short.text).toContain('shorter than 3 characters');
+    expect(short.text).toContain('1 of 1 matches');
     expect((await agent.call('tg_local_search', { query: 'iphone 15' })).text).toContain('#109');
     expect((await agent.call('tg_local_search', { query: 'us' })).text).toContain('at least one query word of 3 or more characters');
     // FTS operators remain literal text.
     const odd = await agent.call('tg_local_search', { query: '"bicycle" OR NEAR( * selling' });
     expect(odd.isError, odd.text).toBe(false);
     expect(buildMatch('a"b  bicycle')).toEqual({ match: '"a""b" "bicycle"', short: [] });
+  });
+
+  it.each(['alternating', 'sparse'])('paginates %s short-word matches without repeats or missing rows', async pattern => {
+    feed = Array.from({ length: 40 }, (_, i) => {
+      const id = 140 - i;
+      const matches = pattern === 'alternating' ? i % 2 === 0 : i === 31 || i === 37;
+      return msg(id, 1 + i / 100, `bicycle ${matches ? 'ÉX' : 'listing'}`);
+    });
+    await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    const expected = feed.filter(m => String(m.message).includes('ÉX')).map(m => m.id);
+    const received: number[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const reply = await agent.call('tg_local_search', { query: 'bicycle éx', limit: 3, cursor });
+      expect(reply.isError, reply.text).toBe(false);
+      expect(reply.text).toContain(`of ${expected.length} matches`);
+      received.push(...Array.from(reply.text.matchAll(/#(\d+)/g), m => Number(m[1])));
+      cursor = reply.text.match(/next_cursor: (\S+)/)?.[1];
+      if (!cursor) break;
+    }
+    expect(received).toEqual(expected);
+    expect(new Set(received).size).toBe(received.length);
+    expect(cursor).toBeUndefined();
+    // No short words: FTS pagination still covers every row.
+    const all = await agent.call('tg_local_search', { query: 'bicycle', limit: 100 });
+    expect(all.text).toContain('40 of 40 matches');
   });
 
   it('refreshes new and edited messages with few Telegram calls on repeated runs', async () => {

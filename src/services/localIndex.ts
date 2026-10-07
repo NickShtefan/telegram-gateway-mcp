@@ -45,7 +45,10 @@ export class IndexStore {
   constructor(
     private readonly storage: SqliteStorage,
     private readonly now: () => number = () => Date.now(),
-  ) {}
+  ) {
+    // JavaScript case folding preserves Unicode behavior for short words.
+    this.storage.db.function('tg_lower', { deterministic: true }, value => String(value ?? '').toLowerCase());
+  }
 
   private map(r: Row): IndexedChat {
     return {
@@ -130,6 +133,7 @@ export class IndexStore {
   search(params: {
     targets: Array<{ accountId: string; chatKey: string }>;
     match: string;
+    shortTerms?: string[];
     minDate?: number;
     maxDate?: number;
     limit: number;
@@ -146,9 +150,14 @@ export class IndexStore {
       where.push('m.date <= ?');
       args.push(params.maxDate);
     }
+    // Apply every short word before counting and paginating candidates.
+    for (const term of params.shortTerms ?? []) {
+      where.push("instr(tg_lower(json_extract(m.dto, '$.text')), ?) > 0");
+      args.push(term);
+    }
     const from = `FROM indexed_fts JOIN indexed_messages m ON m.rowid = indexed_fts.rowid WHERE ${where.join(' AND ')}`;
     const total = Number((this.storage.db.prepare(`SELECT COUNT(*) AS n ${from}`).get(...args) as Row).n);
-    const rows = this.storage.db.prepare(`SELECT m.account_id, m.dto ${from} ORDER BY m.date DESC, m.message_id DESC LIMIT ? OFFSET ?`).all(...args, params.limit, params.offset) as Row[];
+    const rows = this.storage.db.prepare(`SELECT m.account_id, m.dto ${from} ORDER BY m.date DESC, m.message_id DESC, m.account_id, m.chat_key LIMIT ? OFFSET ?`).all(...args, params.limit, params.offset) as Row[];
     return { messages: rows.map(r => ({ accountId: String(r.account_id), message: JSON.parse(String(r.dto)) as MessageDto })), total };
   }
 }
@@ -304,15 +313,9 @@ export class LocalIndexService {
   search(
     chats: Array<{ accountId: string; chat: EntityRecord }>,
     params: { query: string; minDate?: number; maxDate?: number; limit: number; offset: number },
-  ): { messages: Array<{ accountId: string; message: MessageDto }>; total: number; approximate: boolean } {
+  ): { messages: Array<{ accountId: string; message: MessageDto }>; total: number } {
     const { match, short } = buildMatch(params.query);
     const targets = chats.map(c => ({ accountId: c.accountId, chatKey: c.chat.peerKey }));
-    if (short.length === 0) {
-      return { ...this.deps.store.search({ targets, match, minDate: params.minDate, maxDate: params.maxDate, limit: params.limit, offset: params.offset }), approximate: false };
-    }
-    // Overfetch candidates and keep messages containing all short query words.
-    const wide = this.deps.store.search({ targets, match, minDate: params.minDate, maxDate: params.maxDate, limit: params.limit * 5, offset: params.offset });
-    const kept = wide.messages.filter(({ message }) => short.every(t => message.text.toLowerCase().includes(t))).slice(0, params.limit);
-    return { messages: kept, total: wide.total, approximate: true };
+    return this.deps.store.search({ targets, match, shortTerms: short, minDate: params.minDate, maxDate: params.maxDate, limit: params.limit, offset: params.offset });
   }
 }
