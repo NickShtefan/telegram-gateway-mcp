@@ -1,15 +1,16 @@
 /**
- * Enforce one process owning gateway sessions. The daemon listens on a Unix
- * socket in its home; while it responds, no second process opens sessions.
- *
- * A socket avoids stale PID files and PID reuse by unrelated processes.
- * A dead process leaves a nonresponding socket
- * (ECONNREFUSED), which can be detected immediately.
+ * The permanent kernel lease owns sessions; the Unix socket is a liveness
+ * endpoint retained for compatibility with older daemons. Serialize stale
+ * socket reclamation under the lease so concurrent restarts cannot unlink
+ * a newly acquired owner's socket. Kernel ownership ends on process death.
  */
 import { existsSync, unlinkSync } from 'node:fs';
 import { connect, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { GatewayError } from './errors.js';
+import { acquireFileLease, isFileLeaseHeld } from './fileLease.js';
+
+const LEASE_NAME = 'sessions.lock';
 
 export function lockPath(home: string): string {
   return join(home, 'daemon.sock');
@@ -30,7 +31,7 @@ function pathTooLong(home: string): GatewayError {
 }
 
 /** Whether a live process answers on the lock socket. */
-export function isLockHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
+function isSocketHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
   const path = lockPath(home);
   // The path cannot host a socket, so it cannot have an owner.
   if (!pathFits(path)) return Promise.resolve(false);
@@ -48,13 +49,17 @@ export function isLockHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
   });
 }
 
+export async function isLockHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
+  if (await isSocketHeld(home, timeoutMs)) return true;
+  return isFileLeaseHeld(home, LEASE_NAME);
+}
+
 export interface DaemonLock {
   release(): Promise<void>;
 }
 
 /**
- * Acquire the lock or throw if a live process owns it.
- * Remove and rebind a dead process's socket.
+ * Acquire kernel ownership before probing/reclaiming the compatibility socket.
  */
 export async function acquireLock(home: string): Promise<DaemonLock> {
   const path = lockPath(home);
@@ -64,6 +69,8 @@ export async function acquireLock(home: string): Promise<DaemonLock> {
       'UNAVAILABLE',
       `Another tg-mcp process already owns the Telegram sessions in ${home}. Only one process may open them (AUTH_KEY_DUPLICATED otherwise).`,
     );
+
+  const lease = await acquireFileLease(home, LEASE_NAME);
 
   const listen = (): Promise<Server> =>
     new Promise<Server>((resolve, reject) => {
@@ -75,43 +82,26 @@ export async function acquireLock(home: string): Promise<DaemonLock> {
       server.listen(path, () => resolve(server));
     });
 
-  // Try binding first: bind is atomic, so two processes cannot own the socket.
-  // Probe the owner only if the socket path is already occupied.
   let server: Server;
   try {
-    server = await listen();
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
-    if (await isLockHeld(home)) throw held();
-    // The socket belonged to a dead process.
-    try {
-      unlinkSync(path);
-    } catch {
-      // Another process may already have removed it.
-    }
     try {
       server = await listen();
-    } catch (again) {
-      if ((again as NodeJS.ErrnoException).code === 'EADDRINUSE') throw held();
-      throw again;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
+      // Old versions own only the socket, so they must still block new clients.
+      if (await isSocketHeld(home)) throw held();
+      unlinkSync(path);
+      server = await listen();
     }
-  }
+  } catch (err) { await lease.release(); throw err; }
   server.unref();
 
-  let released = false;
+  let released: Promise<void> | undefined;
   return {
-    release: () =>
-      new Promise<void>(resolve => {
-        if (released) return resolve();
-        released = true;
-        server.close(() => {
-          try {
-            if (existsSync(path)) unlinkSync(path);
-          } catch {
-            // Already removed.
-          }
-          resolve();
-        });
-      }),
+    // Node removes its own socket on close. Do not unlink again afterward:
+    // an older daemon could already have bound a fresh compatibility socket.
+    release: () => released ??= new Promise<void>((resolve, reject) => {
+      server.close(err => err ? reject(err) : resolve());
+    }).finally(() => lease.release()),
   };
 }

@@ -447,6 +447,14 @@
     {
       "source": "src/setup/__tests__/setup.test.ts",
       "destination": "src/setup/__tests__/setup.test.ts"
+    },
+    {
+      "source": "src/core/fileLease.ts",
+      "destination": "src/core/fileLease.ts"
+    },
+    {
+      "source": "src/core/__tests__/lock.test.ts",
+      "destination": "src/core/__tests__/lock.test.ts"
     }
   ],
   "excludedTrackedFiles": [

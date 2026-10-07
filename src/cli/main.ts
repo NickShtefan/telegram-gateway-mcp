@@ -38,7 +38,7 @@ const VERSION = '0.1.0';
 const HELP = `tg-mcp ${VERSION}: Telegram MCP gateway
 
 Usage:
-  tg-mcp setup preflight [--json] [--port <n>] [--client none|codex]  inspect without changing gateway state
+  tg-mcp setup preflight [--json] [--port <n>] [--client none|codex|claude|opencode|hermes]  inspect without changing gateway state
   tg-mcp setup status --setup-id <uuid> [--json]  read cached safe installer progress
   tg-mcp serve [--host <h>] [--port <n>] [--toolsets core,...] [--files-dir <path>]
                                                    run the daemon that owns the Telegram sessions

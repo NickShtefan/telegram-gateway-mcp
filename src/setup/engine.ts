@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   emptyChecks, parseSafe, planSchema, safeError, SetupError, statusSchema,
-  type SetupPlan, type SetupStatus,
+  type SetupPlan, type SetupStatus, type ClientSelection,
 } from './contract.js';
 
 export const journalSchema = z.strictObject({
@@ -24,7 +24,7 @@ export const evidenceSchema = z.strictObject({
 });
 export type SetupEvidence = z.infer<typeof evidenceSchema>;
 
-/** Implemented by a protected native adapter, not by MCP callers or progress readers. */
+/** Implemented by a protected platform adapter, not by MCP callers or progress readers. */
 export interface SetupAdapter {
   withExclusive<T>(work: () => Promise<T>): Promise<T>;
   readJournal(): Promise<unknown | null>;
@@ -37,7 +37,7 @@ function initial(plan: SetupPlan, revision: number): SetupStatus {
   return {
     format_version: 1, setup_id: plan.setup_id, revision,
     stage: 'needs_system_approval', outcome: 'waiting_for_owner', error_code: null,
-    next_action: 'open_protected_owner_application', checks: emptyChecks(plan.client),
+    next_action: 'open_owner_terminal', checks: emptyChecks(plan.client),
   };
 }
 
@@ -115,13 +115,13 @@ export async function resumeSetup(adapter: SetupAdapter, plan: SetupPlan, action
   }
 }
 
-/** Switching client selection needs an explicitly approved new plan and is handled by the native adapter. */
+/** Switching client selection needs an explicitly approved new plan and is handled by the platform adapter. */
 export function createPlan(input: Omit<SetupPlan, 'format_version' | 'setup_id'>): SetupPlan {
   return parseSafe(planSchema, { ...input, format_version: 1, setup_id: randomUUID() }, 'invalid_request');
 }
 
 /** Called only after owner approval; changing a client never issues a token or repeats login. */
-export async function selectClient(adapter: SetupAdapter, plan: SetupPlan, client: 'none' | 'codex'): Promise<SetupStatus> {
+export async function selectClient(adapter: SetupAdapter, plan: SetupPlan, client: ClientSelection): Promise<SetupStatus> {
   const p = parseSafe(planSchema, { ...plan, client }, 'invalid_request');
   let status = initial(p, 0);
   try {

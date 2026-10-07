@@ -2,7 +2,8 @@
 import { z } from 'zod';
 
 export const setupIdSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-export const clientSchema = z.enum(['none', 'codex']);
+export const clientSchema = z.enum(['none', 'codex', 'claude', 'opencode', 'hermes']);
+export type ClientSelection = z.infer<typeof clientSchema>;
 export const stageSchema = z.enum([
   'preflight_ready', 'needs_system_approval', 'needs_api_credentials', 'needs_telegram_login',
   'needs_access_selection', 'needs_client_configuration', 'needs_service_verification',
@@ -38,7 +39,7 @@ export const statusSchema = z.strictObject({
   outcome: z.enum(['waiting_for_owner', 'pending', 'complete', 'cancelled', 'failed']),
   error_code: errorSchema.nullable(),
   next_action: z.enum([
-    'review_plan', 'open_protected_owner_application', 'verify_service', 'configure_client',
+    'review_plan', 'open_owner_terminal', 'verify_service', 'configure_client',
     'reload_client', 'verify_client_tools', 'resume_setup', 'review_existing_installation',
     'use_update_workflow', 'retry_inspection', 'wait_for_setup', 'none',
   ]),
@@ -88,7 +89,7 @@ export function safeError(err: unknown): SetupErrorCode {
   return err instanceof SetupError && errorSchema.safeParse(err.code).success ? err.code : 'adapter_failed';
 }
 
-export function emptyChecks(client: 'none' | 'codex'): Checks {
+export function emptyChecks(client: ClientSelection): Checks {
   return {
     artifact: 'not_checked', installation: 'not_checked', service: 'not_checked', authenticated_mcp: 'not_checked',
     client_configuration: client === 'none' ? 'not_selected' : 'pending',

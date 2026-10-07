@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { open, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { acquireFileLease, FileLeaseBusyError } from '../core/fileLease.js';
 import { parseSafe, SetupError } from './contract.js';
 import { journalSchema, type SetupJournal } from './engine.js';
 
@@ -13,25 +13,16 @@ export class FileSetupJournal {
   constructor(private readonly directory: string, private readonly assertProtected: () => Promise<void>) {}
 
   async withExclusive<T>(work: () => Promise<T>): Promise<T> {
-    if (process.platform !== 'darwin') throw new SetupError('unsupported_platform');
+    if (process.platform !== 'darwin' && process.platform !== 'linux') throw new SetupError('unsupported_platform');
     await this.assertProtected();
-    // flock follows the shared open-file description. lockf on inherited fd 3
-    // acquires the kernel lock; our descriptor retains it after lockf exits.
-    // Keep the inode permanently: unlink/recreate would allow overlapping holders.
-    const lock = await open(join(this.directory, 'setup.lock'), constants.O_RDONLY | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+    let lock;
     try {
-      const st = await lock.stat();
-      if (!st.isFile() || st.nlink !== 1 || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) throw new SetupError('protection_unverified');
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn('/usr/bin/lockf', ['-s', '-t', '0', '3'], {
-          stdio: ['ignore', 'ignore', 'ignore', lock.fd], env: { PATH: '/usr/bin:/bin' },
-        });
-        child.once('error', () => reject(new SetupError('adapter_failed')));
-        child.once('exit', code => code === 0 ? resolve() : reject(new SetupError(code === 75 ? 'setup_busy' : 'adapter_failed')));
-      });
-      this.leased = true;
-      try { return await work(); } finally { this.leased = false; }
-    } finally { await lock.close(); }
+      lock = await acquireFileLease(this.directory, 'setup.lock');
+    } catch (err) {
+      throw new SetupError(err instanceof FileLeaseBusyError ? 'setup_busy' : 'protection_unverified');
+    }
+    this.leased = true;
+    try { return await work(); } finally { this.leased = false; await lock.release(); }
   }
 
   async readJournal(): Promise<unknown | null> {

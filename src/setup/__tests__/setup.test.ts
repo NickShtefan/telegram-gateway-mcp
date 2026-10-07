@@ -57,6 +57,10 @@ describe('read-only preflight and CLI', () => {
     expect(JSON.stringify(result)).not.toContain('fixture-secret');
     expect(result.error_code).toBe('inspection_failed');
   });
+  it.each(['codex', 'claude', 'opencode', 'hermes'] as const)('allows selected client %s without assuming its config path', async client => {
+    const p = probe({ clientConfiguration: async () => 'not_inspected' });
+    expect(await preflight({ port: 7777, client }, p)).toMatchObject({ phase: 'preflight_ready', client, client_configuration: 'not_inspected' });
+  });
   it('bypasses config, database, credentials and IO prompts even with secret environment inputs', async () => {
     const root = directory();
     const home = join(root, 'must-not-exist');
@@ -170,7 +174,7 @@ describe('progress validation', () => {
   });
 });
 
-describe.skipIf(process.platform !== 'darwin')('protected journal primitives', () => {
+describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('protected journal primitives', () => {
   it('persists and resumes atomically in an already-provisioned directory', async () => {
     const dir = directory(); const storage = new FileSetupJournal(dir, async () => undefined);
     const adapter: SetupAdapter = { withExclusive: f => storage.withExclusive(f), readJournal: () => storage.readJournal(), writeJournal: j => storage.writeJournal(j), inspect: async () => complete };
@@ -199,7 +203,7 @@ describe.skipIf(process.platform !== 'darwin')('protected journal primitives', (
   });
   it('excludes a second process and recovers after its crash without deleting the journal', async () => {
     const dir = directory(); const storage = new FileSetupJournal(dir, async () => undefined);
-    const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const result=spawnSync('/usr/bin/lockf',['-s','-t','0','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
+    const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const mac=process.platform==='darwin';const result=spawnSync(mac?'/usr/bin/lockf':'/usr/bin/flock',mac?['-s','-t','0','3']:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
     const child = spawn(process.execPath, ['--input-type=module', '-e', script, join(dir, 'setup.lock')], { stdio: ['ignore', 'pipe', 'pipe'] });
     try {
       await once(child.stdout!, 'data');
@@ -220,7 +224,7 @@ describe.skipIf(process.platform !== 'darwin')('protected journal primitives', (
   it('concurrent crash recovery never overlaps setup workers', async () => {
     for (let attempt = 0; attempt < 10; attempt++) {
       const dir = directory();
-      const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const result=spawnSync('/usr/bin/lockf',['-s','-t','0','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
+      const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const mac=process.platform==='darwin';const result=spawnSync(mac?'/usr/bin/lockf':'/usr/bin/flock',mac?['-s','-t','0','3']:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
       const child = spawn(process.execPath, ['--input-type=module', '-e', script, join(dir, 'setup.lock')], { stdio: ['ignore', 'pipe', 'pipe'] });
       await once(child.stdout!, 'data');
       const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited;

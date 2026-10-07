@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { release } from 'node:os';
 import { z } from 'zod';
-import { clientSchema, parseSafe, safeError, SetupError, type SetupErrorCode } from './contract.js';
+import { clientSchema, parseSafe, safeError, SetupError, type SetupErrorCode, type ClientSelection } from './contract.js';
 
 // Provisional new-installation profile; never reuse the existing lab layout automatically.
 export const SETUP_ROOT = '/Library/Application Support/TelegramMCPGateway';
@@ -20,7 +20,7 @@ export interface PreflightProbe {
   darwinMajor: number;
   installation(): Promise<'absent' | 'present' | 'legacy'>;
   portAvailable(port: number): Promise<boolean>;
-  clientConfiguration(): Promise<'absent' | 'present' | 'not_inspected'>;
+  clientConfiguration(client: Exclude<ClientSelection, 'none'>): Promise<'absent' | 'present' | 'not_inspected'>;
 }
 
 export interface PreflightResult {
@@ -30,7 +30,7 @@ export interface PreflightResult {
   next_action: 'review_plan' | 'review_existing_installation' | 'retry_inspection';
   architecture: 'arm64' | 'x64' | null;
   port: number;
-  client: 'none' | 'codex';
+  client: ClientSelection;
   client_configuration: 'not_selected' | 'absent' | 'present' | 'not_inspected';
   artifact: 'requires_verified_package';
   runtime: 'installer_managed';
@@ -58,8 +58,8 @@ export async function preflight(options: PreflightOptions, probe: PreflightProbe
     const installed = await probe.installation();
     if (installed !== 'absent') throw new SetupError('existing_installation_requires_review');
     if (!await probe.portAvailable(o.port)) throw new SetupError('port_unavailable');
-    if (o.client === 'codex') {
-      const client = await probe.clientConfiguration();
+    if (o.client !== 'none') {
+      const client = await probe.clientConfiguration(o.client);
       if (!['absent', 'present', 'not_inspected'].includes(client)) throw new SetupError('inspection_failed');
       result.client_configuration = client;
     }

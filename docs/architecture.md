@@ -39,7 +39,7 @@ The [setup foundation](setup.md) is independent of MCP and does not execute a mo
 
 - **HTTP** (`transport/http.ts`): stateless Streamable HTTP on `127.0.0.1`. Checks `Host` against DNS rebinding and rejects browser `Origin`; body limit 1 MB; only `POST /mcp`. `/healthz` needs no token and reveals no account information. Non-localhost binding requires `TG_MCP_ALLOW_REMOTE=1`.
 - **stdio** (`transport/stdio.ts`): reads stdin JSON-RPC, forwards it to the daemon with `TG_MCP_TOKEN`, writes responses to stdout. Opens no sessions itself.
-- **Lock** (`core/lock.ts`): the daemon listens on `daemon.sock` in its directory. A responding Unix socket prevents a second process from opening sessions: duplicate session use causes `AUTH_KEY_DUPLICATED`.
+- **Lock** (`core/lock.ts`): POSIX session ownership uses a permanent-inode kernel lease (`core/fileLease.ts`). Stale `daemon.sock` cleanup occurs only while that lease is held; the socket remains a liveness endpoint and excludes still-running older daemons. A killed owner releases the kernel lease without unlinking its file. Native Windows locking remains platform-adapter work. Duplicate session use causes `AUTH_KEY_DUPLICATED`.
 
 ## MCP layer
 
@@ -126,4 +126,4 @@ Without a tool call, the daemon only maintains existing account connections; it 
 
 Keep daemon credentials, database and session key inaccessible to agent shells. Public installation will use a separate service identity with protected code/runtime and convenient owner management; the workflow remains to be implemented and verified. Running everything under the same user cannot enforce this boundary. HTTP tokens enforce logical account access, not OS separation. Shared exports/media must be readable by authorized clients without exposing account state.
 
-The current lock uses a Unix socket. Native Windows and the full target-platform matrix need release verification.
+The current session lock combines a POSIX kernel lease with a compatibility socket. Native Windows and the full target-platform matrix need platform implementation and release verification.

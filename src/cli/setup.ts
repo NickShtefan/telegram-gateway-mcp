@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import type { CliIo } from './io.js';
 import { preflight, type PreflightProbe } from '../setup/preflight.js';
 import { decodeProgress, readProgress, type ProgressSnapshot } from '../setup/progress.js';
-import { parseSafe, safeError, SetupError, setupIdSchema } from '../setup/contract.js';
+import { clientSchema, parseSafe, safeError, SetupError, setupIdSchema } from '../setup/contract.js';
 
 export interface SetupCliDeps {
   probe?: PreflightProbe;
@@ -18,8 +18,7 @@ export async function runSetup(args: string[], io: CliIo, deps: SetupCliDeps = {
         json: { type: 'boolean' }, port: { type: 'string' }, client: { type: 'string' },
       } });
       if (values.port !== undefined && !/^\d{1,5}$/.test(values.port)) throw new SetupError('invalid_request');
-      if (values.client !== undefined && values.client !== 'none' && values.client !== 'codex') throw new SetupError('invalid_request');
-      const result = await preflight({ port: Number(values.port ?? 7777), client: values.client ?? 'none' }, deps.probe);
+      const result = await preflight({ port: Number(values.port ?? 7777), client: parseSafe(clientSchema, values.client ?? 'none', 'invalid_request') }, deps.probe);
       io.out(values.json ? JSON.stringify(result) : [
         `Setup preflight: ${result.phase}.`,
         `Artifact: verified macOS package required; Node is installer-managed.`,
