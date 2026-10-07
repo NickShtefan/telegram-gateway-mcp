@@ -23,3 +23,5 @@ Stage 2.2 validation: build, typecheck, 696 tests passed. Stage 2.3 (F3): enforc
 Stage 2.3 validation: build, typecheck, 699 tests passed. Stage 2.4 (F5): validate calendar components before date parsing; reject normalized impossible dates while preserving leap days, relative periods, Unix seconds and timezone conversion.
 
 Stage 2.4 validation: build, typecheck, 714 tests passed. Stage 2.5 (F4): reject inherited log-level keys; tests verify fallback filtering and every supported level.
+
+Stage 2.5 validation: build, typecheck, 725 tests passed. Stage 2.6 (F6): display explicit timestamp zero independently of an absent boundary.

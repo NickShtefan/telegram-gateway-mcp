@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEnvelope } from '../../policy/envelope.js';
 import type { MessageDto } from '../../services/messages.js';
-import { parseWindow } from '../args.js';
+import { describeWindow, parseWindow } from '../args.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import { compactNumber, formatCard, formatDate, formatDuration, formatMessage, formatMessageList, formatReactions } from '../format.js';
 
@@ -209,5 +209,14 @@ describe('date arguments', () => {
   it('preserves relative periods and Unix seconds', () => {
     expect(parseWindow('2d', undefined, 1_000_000_000)).toEqual({ minDate: 1_000_000 - 172800, maxDate: undefined });
     expect(parseWindow('1700000000', undefined, 0).minDate).toBe(1700000000);
+  });
+});
+
+describe('date window headers', () => {
+  it('renders an explicit zero boundary and omits absent boundaries', () => {
+    expect(describeWindow({ minDate: 0 })).toBe(' since 1970-01-01 00:00');
+    expect(describeWindow({ maxDate: 0 })).toBe(' until 1970-01-01 00:00');
+    expect(describeWindow({ minDate: 0, maxDate: 60 })).toBe(' from 1970-01-01 00:00 to 1970-01-01 00:01');
+    expect(describeWindow({})).toBe('');
   });
 });

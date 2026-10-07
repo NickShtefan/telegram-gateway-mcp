@@ -73,9 +73,9 @@ export function clampLimit(value: number | undefined, fallback: number, max: num
 /** Human-readable date window for response headers. */
 export function describeWindow(window: DateWindow): string {
   const fmt = (s: number): string => new Date(s * 1000).toISOString().slice(0, 16).replace('T', ' ');
-  if (window.minDate && window.maxDate) return ` from ${fmt(window.minDate)} to ${fmt(window.maxDate)}`;
-  if (window.minDate) return ` since ${fmt(window.minDate)}`;
-  if (window.maxDate) return ` until ${fmt(window.maxDate)}`;
+  if (window.minDate !== undefined && window.maxDate !== undefined) return ` from ${fmt(window.minDate)} to ${fmt(window.maxDate)}`;
+  if (window.minDate !== undefined) return ` since ${fmt(window.minDate)}`;
+  if (window.maxDate !== undefined) return ` until ${fmt(window.maxDate)}`;
   return '';
 }
 
