@@ -29,8 +29,11 @@ Writes follow the same path twice: preparation stores the request and returns a 
 | Core | `src/core` | Client pool, limiter, watchdog, login, session encryption, entity cache, configuration, daemon lock |
 | Storage | `src/storage` | Storage port and SQLite implementation with migrations |
 | CLI | `src/cli` | `serve`, `stdio`, `login`, `doctor`, users, accounts, scopes |
+| Setup | `src/setup` | Read-only preflight/progress, shared reconciliation and protected-adapter journal primitives |
 
 `core` and `services` do not import `mcp` or `transport`. Dependencies are explicitly injected (`src/runtime.ts`, `src/services/index.ts`), allowing a Telegram double and in-memory database in tests.
+
+The [setup foundation](setup.md) is independent of MCP and does not execute a model, watch Telegram, start services or perform login. `setup preflight/status` bypass configuration/storage initialization. Mutating setup stages require the unfinished native owner/service adapters; no administrative MCP/HTTP API is exposed.
 
 ## Transport
 

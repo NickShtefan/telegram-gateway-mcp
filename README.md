@@ -55,3 +55,5 @@ State defaults to `~/.tg-mcp`, or `TG_MCP_HOME`. Use only sessions created by th
 | docs | Architecture, tool contracts, connections, risks and synthetic scenarios |
 
 The source checkout contains the detailed documents; they are not part of the runtime npm archive. Contributor agent instructions live in `AGENTS.md`.
+
+Read-only `tg-mcp setup preflight` and cached `setup status` plus a shared setup engine are implemented; see the [setup foundation](docs/setup.md). The no-Node installer and protected owner/service/client adapters remain unfinished, so this is not a complete installation workflow.

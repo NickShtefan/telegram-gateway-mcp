@@ -415,6 +415,38 @@
     {
       "source": "docs/public-agent-instructions.md",
       "destination": "AGENTS.md"
+    },
+    {
+      "source": "docs/setup.md",
+      "destination": "docs/setup.md"
+    },
+    {
+      "source": "src/cli/setup.ts",
+      "destination": "src/cli/setup.ts"
+    },
+    {
+      "source": "src/setup/contract.ts",
+      "destination": "src/setup/contract.ts"
+    },
+    {
+      "source": "src/setup/engine.ts",
+      "destination": "src/setup/engine.ts"
+    },
+    {
+      "source": "src/setup/journal.ts",
+      "destination": "src/setup/journal.ts"
+    },
+    {
+      "source": "src/setup/preflight.ts",
+      "destination": "src/setup/preflight.ts"
+    },
+    {
+      "source": "src/setup/progress.ts",
+      "destination": "src/setup/progress.ts"
+    },
+    {
+      "source": "src/setup/__tests__/setup.test.ts",
+      "destination": "src/setup/__tests__/setup.test.ts"
     }
   ],
   "excludedTrackedFiles": [
@@ -473,6 +505,10 @@
     {
       "path": "docs/public-transfer-manifest.json",
       "reason": "Private cleanup preparation record"
+    },
+    {
+      "path": "docs/installer-trust-design.md",
+      "reason": "Private installer design and owner-review evidence; public guide follows verified implementation"
     }
   ],
   "excludedLocalPaths": [

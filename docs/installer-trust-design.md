@@ -170,3 +170,9 @@ Apple documentation checked October 7, 2026:
 - [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice): service registration/control on macOS 13+, subject to approval. Exact broker packaging/lifecycle still needs a native prototype.
 
 These sources support available OS mechanisms. The package topology, peer/operation binding, separate human login, shared engine and handoff above are engineering proposals. They need implementation and hostile-client tests; documentation review is not platform or live-login proof.
+
+## Implementation findings: shared setup foundation
+
+The [setup foundation](setup.md) implements the independent shared-engine work for #5. Native provisioning, protected owner input and progress publication remain open; no accepted decisions changed. Safe status readers do not acquire a setup lease or read the service journal.
+
+A synthetic concurrent-crash-recovery probe reproduced overlapping holders when reusing `core/lock.ts`: both processes can observe a dead Unix socket and unlink/rebind it concurrently. The new setup journal therefore uses a kernel file lock with a retained inode, with cross-process death/concurrent-recovery tests. The existing gateway session lock remains unchanged. Its stale-socket recovery needs a separate root-cause fix and regression before relying on automatic daemon/login concurrency in owner qualification (#7/#13). No real MTProto client was involved and no lab deployment occurred.

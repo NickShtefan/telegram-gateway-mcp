@@ -95,6 +95,10 @@ Decision 53 adds a complete independent entry through the same installer. The wi
 
 Installer milestone #2 begins with the [trust and owner-handoff design for #3](installer-trust-design.md), based on `8681293c68fbbe625b3102306a3e71745af50f12`. The design maps privileges, artifact verification, protected input, safe progress, resume and child-task proof requirements. Native signed-package distribution and a separate human OS login are proposed for owner review; signing access and screen/input isolation have not been verified. No installer implementation, service/client mutation or Telegram login is recorded by this design task.
 
+The next step implements the independent [shared setup foundation for #5](setup.md): read-only CLI routing, macOS preflight, strict safe progress, prerequisite reconciliation, cancellation/resume/later client selection and protected-adapter journal primitives. Setup uses a retained-inode kernel lease rather than stale Unix-socket deletion. Native package/service/owner/client adapters remain pending, so #5 and the milestone are not marked complete. A synthetic overlapping-recovery probe exposed an existing session-lock race, recorded in the trust design as an owner-qualification gate; the deployed gateway and session-lock implementation were not changed.
+
+Foundation verification on October 8: build/typecheck and all 773 tests in 22 files pass on macOS 26.6.2 arm64 / Node 24.10.0, including 47 new setup cases. Built CLI preflight leaves a nonexistent `TG_MCP_HOME` absent and suppresses synthetic secret-bearing invalid inputs. Safe status returns `status_unavailable` without a native publisher. Changed-document links/language, diff whitespace and the updated public-transfer selection pass. These are synthetic/common-engine checks, not no-Node, root/service isolation, independent owner login or actual Codex-tool proof. No MCP tools changed, so the model-client scenario matrix was not rerun for this step.
+
 ## Code structure
 
 One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.

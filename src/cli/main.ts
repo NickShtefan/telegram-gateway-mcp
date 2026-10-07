@@ -31,12 +31,15 @@ import { runServe } from './serve.js';
 import { createLogger } from '../core/log.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../core/config.js';
 import { runStdioProxy } from '../transport/stdio.js';
+import { runSetup, type SetupCliDeps } from './setup.js';
 
 const VERSION = '0.1.0';
 
 const HELP = `tg-mcp ${VERSION}: Telegram MCP gateway
 
 Usage:
+  tg-mcp setup preflight [--json] [--port <n>] [--client none|codex]  inspect without changing gateway state
+  tg-mcp setup status --setup-id <uuid> [--json]  read cached safe installer progress
   tg-mcp serve [--host <h>] [--port <n>] [--toolsets core,...] [--files-dir <path>]
                                                    run the daemon that owns the Telegram sessions
   tg-mcp stdio [--url <http://127.0.0.1:7777/mcp>] stdio MCP server for agents: proxies to the daemon, token in TG_MCP_TOKEN
@@ -64,6 +67,7 @@ export interface CliDeps {
   /** Tests inject ready configuration/storage instead of disk files. */
   config?: GatewayConfig;
   storage?: Storage;
+  setup?: SetupCliDeps;
 }
 
 function need(value: string | undefined, what: string): string {
@@ -83,6 +87,9 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     io.out(VERSION);
     return 0;
   }
+
+  // These read-only commands must never create TG_MCP_HOME or initialize SQLite.
+  if (command === 'setup') return runSetup(rest, io, deps.setup);
 
   if (command === 'stdio') {
     // The proxy runs as the agent user and never touches the gateway home.
