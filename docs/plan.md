@@ -1,6 +1,6 @@
 # Status and plan
 
-Updated October 6, 2026. Live verification below reflects October 2 results; it was not repeated while preparing the open-source plan.
+Updated October 7, 2026. Live verification below reflects October 2 results; it was not repeated while preparing the open-source plan or repository inventory.
 
 ## Implemented
 
@@ -76,6 +76,8 @@ Decision 50 retains `tg-mcp` as the public CLI command while the npm package and
 On October 6, the owner requested further consideration of the public installation model because frequent `sudo` use would be inconvenient. No public default or development-only restriction for same-user startup was accepted. Read-only review of the current installer and deployment guide confirms that ordinary MCP calls do not require `sudo`; installation, updates, and owner administration (login, users/accounts, scopes, doctor) do. The open-source plan compares the existing model, a proposed owner administration interface for an isolated daemon, and same-user execution. Evaluate usability, independent owner authorization, session/code protection, and platform feasibility before asking for a choice. No installer, permissions, deployed service, or lab policy was changed by this review.
 
 The owner then closed the initial question review. The plan is ready as the preparation roadmap. Carry the deferred version and installation choices, npm setup, and scenario/terms review into their preparation stages rather than continuing the questionnaire. This closure records the end of planning discussion; no cleanup phase, migration, deployment, or publication was started by this step.
+
+On October 7, the owner requested a full repository inventory before selecting cleanup scope. The [repository inventory and cleanup review](repository-audit.md) covers all 110 files at source SHA `66fb7e18ae64161322b0c0e4360dfec03a9d3ae3`, current module relationships, tests, dependencies, documentation, local artifacts, and npm file selection. All 64 production modules are reachable from the CLI, including the storage type contract. Main `dist/` retains 42 outputs from 14 deleted modules. A registered older worktree under `.claude/worktrees/` contains 95 reference snapshot files. The npm dry run includes 203 files from that worktree and all 42 obsolete outputs. Build, typecheck, 694 tests, installer syntax, local documentation links and language checks passed on macOS with Node 24.10.0. No cleanup or packaging fix was applied; the report records options for owner selection. No lab deployment or Telegram action was performed.
 
 ## Code structure
 
