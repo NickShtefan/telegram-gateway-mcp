@@ -5,6 +5,9 @@ import { RPCMessageToError } from 'teleproto/errors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeTg } from '../../__tests__/helpers/fakeTg.js';
 import { GatewayError } from '../../core/errors.js';
+import { loadConfig } from '../../core/config.js';
+import { seal } from '../../core/crypto.js';
+import { createRuntime } from '../../runtime.js';
 import { createLogger } from '../../core/log.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
 import { csvCell, slugify } from '../export.js';
@@ -131,6 +134,43 @@ describe('MediaService', () => {
     const result = await media.download('agent', '-1000000000500', [photoMessage(1), photoMessage(2)], 'thumb');
     expect(result.skipped).toEqual([{ messageId: 1, reason: 'download timed out' }]);
     expect(result.files.map(f => f.messageId)).toEqual([2]);
+  });
+
+  it('stops the runtime after a hung download and exits with code 1', async () => {
+    vi.useFakeTimers();
+    const storage = new SqliteStorage({ path: ':memory:' });
+    storage.accounts.upsert({ id: 'agent' });
+    storage.sessions.put('agent', seal('synthetic-session', 'synthetic-secret'));
+    const downloadMedia = vi.fn(() => new Promise<Buffer>(() => undefined));
+    const invoke = vi.fn(async () => ({ ok: true }));
+    const exit = vi.fn();
+    const runtime = createRuntime({ ...loadConfig({ TG_MCP_HOME: dir }), apiId: 1, apiHash: 'synthetic' }, {
+      storage, sessionSecret: 'synthetic-secret', log: silent, exit, fatalGraceMs: 10,
+      limiter: { minIntervalMs: 0 },
+      clientFactory: () => ({
+        connect: async () => undefined,
+        getMe: async () => ({ id: 1001n, firstName: 'Fixture' }),
+        downloadMedia, invoke, destroy: async () => undefined,
+      }) as never,
+    });
+    try {
+      const media = new MediaService({ tg: runtime.tg, filesDir: dir, log: silent });
+      const result = media.download('agent', '42', [photoMessage(1), photoMessage(2)], 'thumb');
+      await vi.advanceTimersByTimeAsync(1);
+      const queuedOp = vi.fn(async () => 'queued');
+      const queued = expect(runtime.tg.withClient('agent', 'queued', queuedOp, { waitBudgetMs: 70_000 })).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+      await vi.advanceTimersByTimeAsync(60_020);
+      await queued;
+      expect((await result).files).toEqual([]);
+      expect(downloadMedia).toHaveBeenCalledTimes(1);
+      expect(queuedOp).not.toHaveBeenCalled();
+      expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+      await expect(runtime.tg.withClient('agent', 'new', queuedOp)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    } finally {
+      await runtime.close();
+      storage.close();
+      vi.useRealTimers();
+    }
   });
 
   it('refuses reads and writes through planted symlinks', async () => {

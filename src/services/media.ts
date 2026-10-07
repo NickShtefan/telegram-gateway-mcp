@@ -207,8 +207,8 @@ export class MediaService {
           if (!data) return null;
           return Buffer.isBuffer(data) ? data : Buffer.from(data as string, 'binary');
         },
-        // Downloads take longer than ordinary calls; their timeouts must not kill the process.
-        { deadlineMs: 60_000, onHang: 'error', ...options },
+        // Downloads get a longer deadline; a hang still requires supervisor restart.
+        { deadlineMs: 60_000, ...options },
       );
 
     try {

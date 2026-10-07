@@ -3,7 +3,7 @@
  *
  * - one queue/lane per account session: 60 requests/minute and 500 ms
  *   between calls;
- * - deadline INSIDE the lane: a hung call releases it when time expires,
+ * - deadline INSIDE the lane: a hung call shuts down all lanes when time expires,
  *   and the process exits on a hang;
  * - account pause on FLOOD_WAIT, retries within the limit;
  * - wait budget: when the pause exceeds what the caller can wait,
@@ -42,8 +42,6 @@ export interface CallOptions {
   priority?: Priority;
   deadlineMs?: number;
   waitBudgetMs?: number;
-  /** Behavior when a call misses its deadline; default: process restart. */
-  onHang?: 'restart' | 'error';
   /** The call mutates Telegram state; timeout means an unknown outcome. */
   write?: boolean;
 }
@@ -67,7 +65,6 @@ interface Item {
   deadlineMs: number;
   /** Latest time at which the call may start. */
   startBy: number;
-  onHang: 'restart' | 'error';
   write: boolean;
   retries: number;
   expiryTimer: ReturnType<typeof setTimeout> | null;
@@ -139,7 +136,6 @@ export class AccountLimiter {
         priority,
         deadlineMs: options.deadlineMs ?? this.defaultDeadlineMs,
         startBy: now + budget,
-        onHang: options.onHang ?? 'restart',
         write: options.write ?? false,
         retries: 0,
         expiryTimer: null,
@@ -328,9 +324,9 @@ export class AccountLimiter {
       if (err instanceof DeadlineError) {
         this.log.error('call timed out', { account: accountId, label: item.label, deadlineMs: item.deadlineMs });
         item.reject(classifyError(err, { write: item.write }));
-        if (item.onHang === 'restart') {
-          this.onFatal(`${item.label} did not return in ${item.deadlineMs}ms (account ${accountId})`);
-        }
+        // The original promise is still running. No lane may start more work.
+        this.shutdown();
+        this.onFatal(`${item.label} did not return in ${item.deadlineMs}ms (account ${accountId})`);
         return;
       }
 

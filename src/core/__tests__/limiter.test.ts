@@ -258,17 +258,20 @@ describe('AccountLimiter: real teleproto errors', () => {
 });
 
 describe('AccountLimiter: deadlines and hangs', () => {
-  it('a hung call returns TIMEOUT, requires restart, and releases the lane', async () => {
+  it('a hung call returns TIMEOUT and shuts down every lane before restart', async () => {
     const { limiter, onFatal } = makeLimiter({ defaultDeadlineMs: 20_000 });
     const hung = limiter.run('a', () => new Promise<never>(() => undefined), { label: 'messages.GetHistory' });
     const hungAssertion = expect(hung).rejects.toMatchObject({ code: 'TIMEOUT', outcomeUnknown: false });
-    const next = limiter.run('a', async () => 'after', { label: 'next', waitBudgetMs: 60_000 });
+    const nextOp = vi.fn(async () => 'after');
+    const next = expect(limiter.run('a', nextOp, { label: 'next', waitBudgetMs: 60_000 })).rejects.toMatchObject({ code: 'UNAVAILABLE' });
     await vi.advanceTimersByTimeAsync(20_001);
     await hungAssertion;
     expect(onFatal).toHaveBeenCalledTimes(1);
     expect(onFatal.mock.calls[0]![0]).toContain('messages.GetHistory');
     await vi.advanceTimersByTimeAsync(1_000);
-    await expect(next).resolves.toBe('after');
+    await next;
+    expect(nextOp).not.toHaveBeenCalled();
+    await expect(limiter.run('b', nextOp, { label: 'other account' })).rejects.toMatchObject({ code: 'UNAVAILABLE' });
   });
 
   it('a write timeout reports an unknown outcome', async () => {
@@ -277,15 +280,6 @@ describe('AccountLimiter: deadlines and hangs', () => {
     const assertion = expect(p).rejects.toMatchObject({ code: 'TIMEOUT', outcomeUnknown: true });
     await vi.advanceTimersByTimeAsync(1_001);
     await assertion;
-  });
-
-  it('onHang=error does not terminate the process', async () => {
-    const { limiter, onFatal } = makeLimiter();
-    const p = limiter.run('a', () => new Promise<never>(() => undefined), { label: 'download', deadlineMs: 1_000, onHang: 'error' });
-    const assertion = expect(p).rejects.toMatchObject({ code: 'TIMEOUT' });
-    await vi.advanceTimersByTimeAsync(1_001);
-    await assertion;
-    expect(onFatal).not.toHaveBeenCalled();
   });
 
   it('a call exceeding its queue budget fails independently', async () => {
