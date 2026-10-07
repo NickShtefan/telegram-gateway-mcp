@@ -89,6 +89,8 @@ The owner authorized cleanup stages 1-5. Implementation and source selection are
 
 The owner prioritized installation preparation before main-Mac setup. The [installation redesign plan](installation-plan.md), linked from section 4 of the open-source plan, records a fresh inspection of the macOS lab installer, CLI/configuration, diagnostics, session locking, file protections and connection guide at source SHA `d57f0ae581845a4876edd9b03ccf90396d3abcfa`. It identifies fragmented onboarding, private source acquisition, platform gaps, active-file replacement before service shutdown, and health failure reported only as a warning. The owner selected a separate service with convenient management (decision 51); its interface and authorization mechanism remain design work. No installer execution, service/client configuration change, credential access or Telegram call occurred during inspection. Current lab decisions 17/22 remain in force.
 
+The owner then selected a prompt-to-agent installation entry with installer-managed Node prerequisites (decision 52). The plan now proposes protected owner handoffs for system authorization and Telegram credentials/code/2FA, resumable secret-safe progress, direct client token handoff and separate service/SDK/model-client verification. Current CLI token printing and lack of a setup/status contract are implementation gaps. Official Telegram and Codex documentation were checked; QR is a future candidate rather than selected or implemented gateway login. No setup execution or live authentication occurred during this design step.
+
 ## Code structure
 
 One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.

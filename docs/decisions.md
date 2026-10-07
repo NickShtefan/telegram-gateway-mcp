@@ -499,3 +499,13 @@ Current lab decisions 17/22 remain in force. Keep its installation working while
 The [installation redesign plan](installation-plan.md) records the current implementation, gaps, proposed user journey and acceptance checks. This decision authorizes the chosen design direction; it does not record an executed installation, a live login, platform proof or publication.
 
 Reason: the owner chose a separate service with convenient management when asked to resolve the previously deferred installation model.
+
+## 52. Agent-assisted installation with protected owner steps (accepted 2026-10-07)
+
+The preferred installation entry is a prompt given to the user's agent. The agent follows versioned project instructions, inspects the computer, prepares installation, connects the selected MCP client and verifies the result. The installer supplies the service's protected Node runtime; external users should not need to install Node.js/npm separately just to set up the gateway. This extends the isolated service direction in decision 51 and retains npm distribution under decision 36.
+
+The owner accepts that system authorization, Telegram application credentials, login codes and 2FA require human participation. Design resumable handoffs so these steps do not require restarting installation or sending secrets to the agent conversation. Keep the gateway pure MCP: the installation agent remains an external client, with no embedded model, provider key or agent execution added to the gateway.
+
+The exact bootstrap artifact, protected owner-entry mechanism, status interface, token handoff and client adapters remain implementation/design work. This decision does not choose a browser panel, QR login or any existing command as the complete installer. It does not authorize running installation or logging in during scenario planning.
+
+Reason: the owner broadly accepted installer-managed prerequisites and requested that a prompt to an agent be the preferred installation experience, while recognizing necessary credential/OTP/2FA steps.

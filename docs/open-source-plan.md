@@ -110,6 +110,8 @@ For each public scenario, identify the data the agent receives, whose consent is
 
 The owner requested that this workstream take priority on October 7, 2026, before installing the gateway on the main Mac. The [installation redesign plan](installation-plan.md) records the inspected implementation, concrete gaps, proposed user journey, implementation sequence and acceptance checks. Source inspection is complete. The owner selected a separate service with convenient management (decision 51); the owner interface and authorization mechanism remain design work.
 
+Decision 52 selects a prompt-to-agent installation entry and installer-managed Node prerequisites. The design includes protected human participation for system approval and Telegram login, secret-safe progress/resume, token transfer without agent-visible stdout and verification after client reload. See the installation plan for the proposed contract and remaining implementation work.
+
 ### Installation ergonomics: model selected October 7, 2026
 
 The owner wants further consideration of repeated `sudo` use. Review of [deploy.md](deploy.md) and [lab-install.sh](../scripts/lab-install.sh) confirms that the agent's stdio command runs as its caller, while `tg-mcp-admin` requires root and switches to the service user. Ordinary HTTP/stdio MCP calls do not require `sudo`; installation, updates, login, user/account administration, scopes, and doctor do in the existing lab workflow.
