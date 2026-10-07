@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GatewayError } from './errors.js';
+import { acquireWindowsLease, isWindowsLeaseHeld } from './windowsLease.js';
 
 export interface FileLease { release(): Promise<void>; }
 export class FileLeaseBusyError extends GatewayError {
@@ -62,6 +63,7 @@ async function trustedFile(home: string, filename: string, create: boolean): Pro
 }
 
 export async function acquireFileLease(home: string, filename: string): Promise<FileLease> {
+  if (process.platform === 'win32') return acquireWindowsLease(home, filename);
   const file = await trustedFile(home, filename, true);
   if (!file) throw new GatewayError('UNAVAILABLE', 'The kernel-lock file is missing.');
   try {
@@ -73,6 +75,7 @@ export async function acquireFileLease(home: string, filename: string): Promise<
 
 /** Read-only probe; absence does not create a file. Errors conservatively mean held/unsafe. */
 export async function isFileLeaseHeld(home: string, filename: string): Promise<boolean> {
+  if (process.platform === 'win32') return isWindowsLeaseHeld(home, filename);
   let file: FileHandle | null = null;
   try {
     file = await trustedFile(home, filename, false);

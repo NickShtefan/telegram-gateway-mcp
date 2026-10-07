@@ -503,6 +503,54 @@
     {
       "source": "src/install/__tests__/artifacts.test.ts",
       "destination": "src/install/__tests__/artifacts.test.ts"
+    },
+    {
+      "source": "docs/install-platforms.md",
+      "destination": "docs/install-platforms.md"
+    },
+    {
+      "source": ".github/workflows/platform-checks.yml",
+      "destination": ".github/workflows/platform-checks.yml"
+    },
+    {
+      "source": "scripts/install/provision-windows.ps1",
+      "destination": "scripts/install/provision-windows.ps1"
+    },
+    {
+      "source": "scripts/install/service-host.cs",
+      "destination": "scripts/install/service-host.cs"
+    },
+    {
+      "source": "src/core/windowsLease.ts",
+      "destination": "src/core/windowsLease.ts"
+    },
+    {
+      "source": "src/core/__tests__/windowsLease.test.ts",
+      "destination": "src/core/__tests__/windowsLease.test.ts"
+    },
+    {
+      "source": "src/install/platform.ts",
+      "destination": "src/install/platform.ts"
+    },
+    {
+      "source": "src/install/provision.ts",
+      "destination": "src/install/provision.ts"
+    },
+    {
+      "source": "src/install/posixBackend.ts",
+      "destination": "src/install/posixBackend.ts"
+    },
+    {
+      "source": "src/install/posixIdentity.ts",
+      "destination": "src/install/posixIdentity.ts"
+    },
+    {
+      "source": "src/install/posixPermissions.ts",
+      "destination": "src/install/posixPermissions.ts"
+    },
+    {
+      "source": "src/install/__tests__/provision.test.ts",
+      "destination": "src/install/__tests__/provision.test.ts"
     }
   ],
   "excludedTrackedFiles": [

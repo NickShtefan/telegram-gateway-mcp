@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Invoked only from an authenticated candidate. No service activation in this entry.
-import { constants, openSync, closeSync, fstatSync, readSync, mkdirSync } from 'node:fs';
+import { constants, openSync, closeSync, fstatSync, readSync, mkdirSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -21,7 +21,7 @@ function read(name, max) {
 try {
   const { values } = parseArgs({ options: {
     version: { type: 'string' }, 'source-sha': { type: 'string' }, 'signer-sha256': { type: 'string' },
-    extract: { type: 'boolean', default: false },
+    extract: { type: 'boolean', default: false }, 'verify-extracted': { type: 'boolean', default: false },
   } });
   const policy = { version: values.version, sourceSha: values['source-sha'], signerSha256: values['signer-sha256'], platform: process.platform, architecture: process.arch };
   const manifest = verifyManifest(read('manifest.tsv', 8192), read('manifest.sig', 384), read('signer.der', 16384), policy);
@@ -33,6 +33,18 @@ try {
   }
   if (!application) throw new Error('missing_application');
   const files = decodeApplicationArchive(application);
+  if (values['verify-extracted']) {
+    const expected=new Map(files.map(file=>['application/'+file.path,file.data]));
+    function inspect(directory) {
+      for(const name of readdirSync(join(root,directory))) {
+        const path=directory+'/'+name;const stat=lstatSync(join(root,path));
+        if(stat.isSymbolicLink())throw new Error('invalid_extracted');
+        if(stat.isDirectory()){if(![...expected.keys()].some(file=>file.startsWith(path+'/')))throw new Error('invalid_extracted');inspect(path)}
+        else {const bytes=expected.get(path);if(!bytes||!read(path,bytes.length).equals(bytes))throw new Error('invalid_extracted');expected.delete(path)}
+      }
+    }
+    inspect('application');if(expected.size!==0)throw new Error('invalid_extracted');
+  }
   if (values.extract) {
     const target = join(root, 'application'); mkdirSync(target, { mode: 0o700 });
     await extractApplicationArchive(application, target);

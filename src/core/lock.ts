@@ -9,10 +9,12 @@ import { connect, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { GatewayError } from './errors.js';
 import { acquireFileLease, isFileLeaseHeld } from './fileLease.js';
+import { windowsLeasePath } from './windowsLease.js';
 
 const LEASE_NAME = 'sessions.lock';
 
 export function lockPath(home: string): string {
+  if (process.platform === 'win32') return windowsLeasePath(home, LEASE_NAME);
   return join(home, 'daemon.sock');
 }
 
@@ -67,6 +69,7 @@ function probeSocket(home: string, timeoutMs = 1_000): Promise<'live' | 'stale' 
 }
 
 export async function isLockHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
+  if (process.platform === 'win32') return isFileLeaseHeld(home, LEASE_NAME);
   const socket = await probeSocket(home, timeoutMs);
   if (socket === 'live' || socket === 'unsafe') return true;
   return isFileLeaseHeld(home, LEASE_NAME);
@@ -80,6 +83,7 @@ export interface DaemonLock {
  * Acquire kernel ownership before probing/reclaiming the compatibility socket.
  */
 export async function acquireLock(home: string): Promise<DaemonLock> {
+  if (process.platform === 'win32') return acquireFileLease(home, LEASE_NAME);
   const path = lockPath(home);
   if (!pathFits(path)) throw pathTooLong(home);
   const held = (): GatewayError =>
@@ -94,7 +98,7 @@ export async function acquireLock(home: string): Promise<DaemonLock> {
     new Promise<Server>((resolve, reject) => {
       const server: Server = createServer(socket => {
         // The socket only proves liveness; close connections immediately.
-        socket.end();
+        socket.destroy();
       });
       server.once('error', reject);
       server.listen(path, () => resolve(server));
