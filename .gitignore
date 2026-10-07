@@ -19,3 +19,12 @@ exports/
 # Local tool configuration.
 .claude/settings.local.json
 .codeboard/
+
+# Local session encryption keys, logs, backups, and managed checkouts.
+session.key
+*.log
+*.log.*
+*.bak
+*.backup
+backups/
+.claude/worktrees/
