@@ -455,6 +455,54 @@
     {
       "source": "src/core/__tests__/lock.test.ts",
       "destination": "src/core/__tests__/lock.test.ts"
+    },
+    {
+      "source": "docs/install-artifacts.md",
+      "destination": "docs/install-artifacts.md"
+    },
+    {
+      "source": "scripts/build-native.mjs",
+      "destination": "scripts/build-native.mjs"
+    },
+    {
+      "source": "scripts/install/installer.mjs",
+      "destination": "scripts/install/installer.mjs"
+    },
+    {
+      "source": "scripts/install/fetch-runtime.mjs",
+      "destination": "scripts/install/fetch-runtime.mjs"
+    },
+    {
+      "source": "scripts/install/lease-helper.c",
+      "destination": "scripts/install/lease-helper.c"
+    },
+    {
+      "source": "scripts/install/build-bundle.mjs",
+      "destination": "scripts/install/build-bundle.mjs"
+    },
+    {
+      "source": "scripts/install/bootstrap-windows.ps1",
+      "destination": "scripts/install/bootstrap-windows.ps1"
+    },
+    {
+      "source": "scripts/install/bootstrap-posix.sh",
+      "destination": "scripts/install/bootstrap-posix.sh"
+    },
+    {
+      "source": "scripts/install/runtime-catalog.json",
+      "destination": "scripts/install/runtime-catalog.json"
+    },
+    {
+      "source": "src/install/archive.ts",
+      "destination": "src/install/archive.ts"
+    },
+    {
+      "source": "src/install/manifest.ts",
+      "destination": "src/install/manifest.ts"
+    },
+    {
+      "source": "src/install/__tests__/artifacts.test.ts",
+      "destination": "src/install/__tests__/artifacts.test.ts"
     }
   ],
   "excludedTrackedFiles": [

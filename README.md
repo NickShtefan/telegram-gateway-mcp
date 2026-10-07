@@ -28,7 +28,7 @@ MIT is the selected license; the license file, provenance review and any require
 
 ## Development
 
-Requires Node.js 22.13 or later and npm. The release policy is to recommend a tested LTS branch and verify the minimum Node version separately. Cleanup checks currently run on macOS with Node 24.10.0.
+Requires Node.js 22.13 or later and npm. macOS source builds also need the Xcode Command Line Tools to build the small universal kernel-lease helper; the release installer will bundle it, so target users need no compiler. The release policy is to recommend a tested LTS branch and verify the minimum Node version separately. Cleanup checks currently run on macOS with Node 24.10.0.
 
 ```bash
 npm ci --ignore-scripts
@@ -57,3 +57,5 @@ State defaults to `~/.tg-mcp`, or `TG_MCP_HOME`. Use only sessions created by th
 The source checkout contains the detailed documents; they are not part of the runtime npm archive. Contributor agent instructions live in `AGENTS.md`.
 
 Read-only `tg-mcp setup preflight` and cached `setup status` plus a shared setup engine are implemented; see the [setup foundation](docs/setup.md). The no-Node terminal installer and owner/service/client adapters remain unfinished, so this is not a complete installation workflow.
+
+The [artifact foundation](docs/install-artifacts.md) verifies signed version/platform-bound candidates and provides no-Node verification entries. It prepares development candidates only until the owner trust and protected platform installation gates are qualified.

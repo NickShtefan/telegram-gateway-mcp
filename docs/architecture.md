@@ -29,6 +29,7 @@ Writes follow the same path twice: preparation stores the request and returns a 
 | Core | `src/core` | Client pool, limiter, watchdog, login, session encryption, entity cache, configuration, daemon lock |
 | Storage | `src/storage` | Storage port and SQLite implementation with migrations |
 | CLI | `src/cli` | `serve`, `stdio`, `login`, `doctor`, users, accounts, scopes |
+| Installation artifacts | `src/install`, `scripts/install` | Pinned manifest/runtime verification and bounded application archive; no service activation |
 | Setup | `src/setup` | Read-only preflight/progress, shared reconciliation and protected-adapter journal primitives |
 
 `core` and `services` do not import `mcp` or `transport`. Dependencies are explicitly injected (`src/runtime.ts`, `src/services/index.ts`), allowing a Telegram double and in-memory database in tests.

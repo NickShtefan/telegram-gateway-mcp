@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, open, type FileHandle } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { GatewayError } from './errors.js';
 
 export interface FileLease { release(): Promise<void>; }
@@ -14,7 +15,8 @@ async function kernelLock(file: FileHandle): Promise<boolean> {
   const darwin = process.platform === 'darwin';
   if (!darwin && process.platform !== 'linux') throw new GatewayError('UNAVAILABLE', 'This platform needs a native session-lock adapter.');
   return new Promise((resolve, reject) => {
-    const child = spawn(darwin ? '/usr/bin/lockf' : '/usr/bin/flock', darwin ? ['-s', '-t', '0', '3'] : ['-n', '3'], {
+    const helper = darwin ? fileURLToPath(new URL('../../dist/native/lease-darwin', import.meta.url)) : '/usr/bin/flock';
+    const child = spawn(helper, darwin ? [] : ['-n', '3'], {
       stdio: ['ignore', 'ignore', 'ignore', file.fd], env: { PATH: '/usr/bin:/bin' },
       timeout: 5000, killSignal: 'SIGKILL',
     });

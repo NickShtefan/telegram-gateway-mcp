@@ -1,7 +1,7 @@
 import { chmodSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { acquireLock, isLockHeld, lockPath } from '../lock.js';
 import { acquireFileLease, isFileLeaseHeld } from '../fileLease.js';
@@ -24,9 +24,9 @@ function home(): string {
 async function childOwner(directory: string, lease: boolean): Promise<ChildProcess> {
   const script = `import {openSync,constants} from 'node:fs'; import {spawnSync} from 'node:child_process'; import {createServer} from 'node:net';
     if(process.argv[2]==='lease') { const fd=openSync(process.argv[1]+'/sessions.lock',constants.O_RDWR|constants.O_CREAT,0o600);
-      const mac=process.platform==='darwin'; const r=spawnSync(mac?'/usr/bin/lockf':'/usr/bin/flock',mac?['-s','-t','0','3']:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(r.status!==0) process.exit(2); }
+      const mac=process.platform==='darwin'; const r=spawnSync(mac?process.argv[3]:'/usr/bin/flock',mac?[]:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(r.status!==0) process.exit(2); }
     createServer(s=>s.end()).listen(process.argv[1]+'/daemon.sock',()=>process.stdout.write('ready\\n'));`;
-  const child = spawn(process.execPath, ['--input-type=module', '-e', script, directory, lease ? 'lease' : 'legacy'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script, directory, lease ? 'lease' : 'legacy', resolve('dist/native/lease-darwin')], { stdio: ['ignore', 'pipe', 'ignore'] });
   children.push(child);
   await Promise.race([
     once(child.stdout!, 'data'),

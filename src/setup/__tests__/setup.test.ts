@@ -1,7 +1,7 @@
 import { lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPlan, reconcile, resumeSetup, selectClient, type SetupAdapter, type SetupEvidence, type SetupJournal } from '../engine.js';
@@ -218,8 +218,8 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
   });
   it('excludes a second process and recovers after its crash without deleting the journal', async () => {
     const dir = directory(); const storage = new FileSetupJournal(dir, async () => undefined);
-    const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const mac=process.platform==='darwin';const result=spawnSync(mac?'/usr/bin/lockf':'/usr/bin/flock',mac?['-s','-t','0','3']:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
-    const child = spawn(process.execPath, ['--input-type=module', '-e', script, join(dir, 'setup.lock')], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const mac=process.platform==='darwin';const result=spawnSync(mac?process.argv[2]:'/usr/bin/flock',mac?[]:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script, join(dir, 'setup.lock'), resolve('dist/native/lease-darwin')], { stdio: ['ignore', 'pipe', 'pipe'] });
     try {
       await once(child.stdout!, 'data');
       await expect(storage.withExclusive(async () => undefined)).rejects.toThrow('setup_busy');
@@ -239,8 +239,8 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
   it('concurrent crash recovery never overlaps setup workers', async () => {
     for (let attempt = 0; attempt < 10; attempt++) {
       const dir = directory();
-      const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const mac=process.platform==='darwin';const result=spawnSync(mac?'/usr/bin/lockf':'/usr/bin/flock',mac?['-s','-t','0','3']:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
-      const child = spawn(process.execPath, ['--input-type=module', '-e', script, join(dir, 'setup.lock')], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const script = "import {openSync} from 'node:fs'; import {spawnSync} from 'node:child_process'; const fd=openSync(process.argv[1],'a',0o600); const mac=process.platform==='darwin';const result=spawnSync(mac?process.argv[2]:'/usr/bin/flock',mac?[]:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(result.status!==0)process.exit(1);process.stdout.write('locked\\n');setInterval(()=>{},1000);";
+      const child = spawn(process.execPath, ['--input-type=module', '-e', script, join(dir, 'setup.lock'), resolve('dist/native/lease-darwin')], { stdio: ['ignore', 'pipe', 'pipe'] });
       await once(child.stdout!, 'data');
       const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited;
       let active = 0; let peak = 0;
