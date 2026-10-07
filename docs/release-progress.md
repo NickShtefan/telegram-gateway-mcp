@@ -8,6 +8,8 @@ Finish each stage's implementation and required checks, commit its review candid
 
 Synthetic fixtures and local reversible work proceed autonomously. Real owner terminal input/elevation, Telegram writes, merge/release approval and deferred repository/npm onboarding remain separate gates. Never publish an unqualified build or turn a review timeout into approval.
 
+The final stage has an explicit ordering exception: qualify the exact candidate, perform its single independent review before publication, fix findings and reverify, obtain the applicable exact owner merge/release approvals, publish, then run anonymous published-artifact checks. If merging changes the candidate SHA, reverify the actual merged commit and obtain release approval for that SHA. No tag, public visibility change, GitHub Release or npm publish precedes the review/corrections and owner release approval. A post-publication failure blocks release completion and requires an owner-approved remediation; do not silently change the released candidate or publish another version.
+
 ## Stages
 
 | Stage | Scope | Completion gate | Status |
@@ -19,7 +21,7 @@ Synthetic fixtures and local reversible work proceed autonomously. Real owner te
 | 5: owner login and account access | Direct owner terminal steps, exclusive worker lifecycle, safe credentials/login/grants and pending token handoff | Fake Telegram secrecy/cancel/repeat tests; no session copying or token printing; one review round | Pending |
 | 6: four client adapters and readiness | Codex Desktop, Claude Code, OpenCode, Hermes; config preservation, direct token delivery, truthful verification | Actual-version contracts, synthetic config/secrecy/conflict checks; one review round; actual model tools still qualification work | Pending |
 | 7: candidate packaging, CI and public material | Version 0.2.0 metadata, license/provenance/notices, selected clean snapshot, required workflows, both guides | Build/package/matrix/audit checks; one review round; owner creates new private repo/npm access before dependent remote gates | Pending |
-| 8: qualification and release | Fresh no-Node independent/agent entries on declared platforms; owner test login, client tools; new snapshot SHA and remote CI; exact approvals; GitHub/npm release | All declared environments proved, one review round and corrections, separate owner merge/release approval, anonymous published-artifact checks | Pending |
+| 8: qualification and release | Fresh no-Node independent/agent entries; owner test login/client tools; final snapshot SHA/CI; review and corrections before exact approvals/publication | Qualify candidate, review once, correct/reverify, obtain exact approvals, publish, then anonymous checks; post-publication failure requires approved remediation | Pending |
 
 Stages extend issue #2 with required Linux (#14), native Windows (#15), four clients (#19), public acquisition (#20) and the accepted public roadmap. The narrower issue checklist is not silently declared complete. Safe updates/backups (#16), destructive uninstall (#18) and broader admin (#17) remain follow-ups, unless a defect makes the initial release unsafe.
 
@@ -28,5 +30,7 @@ The signed-manifest production trust anchor needs independent owner establishmen
 ## Stage evidence
 
 Stage 1: decisions 54-60 and the terminal trust design replace the earlier proposal. No code/service/client change or real authentication is part of this design stage. Review candidate, report and corrected SHA are recorded after its one review round.
+
+Stage 1 review: `/root/stage1_review` reviewed `fe902145911411a3449dbcec490493a32635d33e` once, read-only. One medium finding: the generic finish-checks-before-review rule put the final stage's review after publication. Corrected by explicitly requiring qualified-candidate review and corrections before approvals/publication; anonymous post-publication checks are last, and a failure requires owner-approved remediation. No high/critical/low findings. Documentation links/language, manifest and diff checks passed after correction; the reviewed source tree's build/typecheck/773 tests passed before this documentation-only correction. Corrected commit follows in Git history; no second independent round.
 
 Prior unreviewed foundation: `e3815b6` passes build/typecheck and 773 tests (47 setup cases) on macOS arm64 / Node 24.10.0. Include it in stage 2 review; do not treat those tests as an independent review or live installation proof.
