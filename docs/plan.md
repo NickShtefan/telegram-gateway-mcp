@@ -93,6 +93,8 @@ The owner then selected a prompt-to-agent installation entry with installer-mana
 
 Decision 53 adds a complete independent entry through the same installer. The wizard must guide and verify installation without an agent or model provider, with optional client configuration and accurate readiness reporting. The plan includes separate acceptance evidence for independent and agent-assisted entry, retaining one shared setup implementation and the same protections/defaults. This remains scenario design, not implemented installer behavior.
 
+Installer milestone #2 begins with the [trust and owner-handoff design for #3](installer-trust-design.md), based on `8681293c68fbbe625b3102306a3e71745af50f12`. The design maps privileges, artifact verification, protected input, safe progress, resume and child-task proof requirements. Native signed-package distribution and a separate human OS login are proposed for owner review; signing access and screen/input isolation have not been verified. No installer implementation, service/client mutation or Telegram login is recorded by this design task.
+
 ## Code structure
 
 One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.

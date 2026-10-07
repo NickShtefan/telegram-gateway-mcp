@@ -13,6 +13,10 @@ Decisions 20, 22, and 24 were proposed by an agent during implementation. They a
 
 1. **Premium for the agent account.** Telegram-wide public-post full-text search requires Premium and has a daily quota. Is it needed?
 
+## Installer design review (#3)
+
+The [bootstrap trust and owner-handoff candidate](installer-trust-design.md) makes two concrete proposals for review: a Developer ID-signed/notarized native macOS package with bundled Node, and protected owner steps in a separate human OS login from the agent UID. Confirm the distribution direction and establish a trusted signing identity before qualifying #4. Confirm the human-login requirement or explicitly review the weaker same-user screen/input boundary before qualifying #7/#13. Neither proposal is accepted by decisions 51-53 yet. Independent shared-engine/progress work may proceed without either choice; no live setup or secrets are needed for that work.
+
 ## Open-source owner review completed
 
 On October 6, 2026, the owner concluded the one-by-one question review and stated that the discussion was complete. Accepted decisions 33 through 50 are recorded. Do not continue the initial questionnaire by default. The items below are preparation follow-ups, including the deferred first public version and installation preparation. Closing the earlier review did not select its installation proposal; decision 51 subsequently selects an isolated service with convenient management on October 7.
