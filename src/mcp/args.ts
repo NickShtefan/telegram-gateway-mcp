@@ -8,6 +8,16 @@ const RELATIVE_RE = /^(\d{1,4})\s*(m|min|h|d|w|mo|y)$/i;
 /** `m` means minutes; `mo` means a 30-day month, and a year is 365 days. */
 const UNIT_SECONDS: Record<string, number> = { m: 60, min: 60, h: 3600, d: 86_400, w: 604_800, mo: 30 * 86_400, y: 365 * 86_400 };
 
+/** Validate calendar components before Date.parse can normalize them. */
+function validCalendarDate(text: string): boolean {
+  const year = Number(text.slice(0, 4));
+  const month = Number(text.slice(5, 7));
+  const day = Number(text.slice(8, 10));
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]!;
+}
+
 /**
  * Timestamp: `30d`, `12h`, `2w`, `6mo`, `1y` (relative to now), a date
  * such as `2026-09-01`, an ISO datetime, or Unix seconds. Returns Unix seconds.
@@ -27,10 +37,12 @@ export function parseWhen(value: string, nowMs: number, argName: string): number
   }
   if (/^\d{9,11}$/.test(text)) return Number(text);
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    if (!validCalendarDate(text)) return fail();
     const ms = Date.parse(`${text}T00:00:00Z`);
     return Number.isNaN(ms) ? fail() : Math.floor(ms / 1000);
   }
   if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(text)) {
+    if (!validCalendarDate(text)) return fail();
     // Treat dates without a timezone as UTC, matching gateway output.
     const iso = text.replace(' ', 'T');
     const ms = Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`);

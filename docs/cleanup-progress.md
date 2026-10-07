@@ -19,3 +19,5 @@ Stage 2.1 (F1): removed the unsafe hang exception from media and limiter options
 Stage 2.1 validation: build, typecheck, 694 tests passed; commit `9f2fe5a`. Stage 2.2 (F2): filter short terms in SQLite before counts and pagination, using JavaScript Unicode case folding. MCP regression covers alternating and sparse matches, all pages and long-only queries.
 
 Stage 2.2 validation: build, typecheck, 696 tests passed. Stage 2.3 (F3): enforce actual full-buffer and cache-file sizes, including photos and missing document metadata. Tests cover exact boundary, oversized files, cache and uncapped previews. This does not cap memory during download.
+
+Stage 2.3 validation: build, typecheck, 699 tests passed. Stage 2.4 (F5): validate calendar components before date parsing; reject normalized impossible dates while preserving leap days, relative periods, Unix seconds and timezone conversion.

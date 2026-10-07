@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEnvelope } from '../../policy/envelope.js';
 import type { MessageDto } from '../../services/messages.js';
+import { parseWindow } from '../args.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import { compactNumber, formatCard, formatDate, formatDuration, formatMessage, formatMessageList, formatReactions } from '../format.js';
 
@@ -191,5 +192,22 @@ describe('cursor', () => {
     expect(() => decodeCursor('history', 'garbage')).toThrow(/Invalid cursor/);
     expect(() => decodeCursor('history', 'c1.!!!!')).toThrow(/Invalid cursor/);
     expect(() => decodeCursor('history', 'c1.' + Buffer.from('[1,2,3]').toString('base64url'))).toThrow(/Invalid cursor/);
+  });
+});
+
+describe('date arguments', () => {
+  it.each(['2026-02-30', '2026-02-29', '1900-02-29', '2026-04-31', '2026-00-01', '2026-12-00', '2026-02-30T12:00:00Z', '2026-02-30T23:00:00-03:00'])('rejects the impossible calendar date %s', value => {
+    expect(() => parseWindow(value, undefined, 0)).toThrow(expect.objectContaining({ code: 'INVALID_ARGUMENT' }));
+    expect(() => parseWindow(undefined, value, 0)).toThrow(expect.objectContaining({ code: 'INVALID_ARGUMENT' }));
+  });
+
+  it.each(['2024-02-29', '2000-02-29', '2026-04-30', '2024-02-29T23:30:00-03:00', '2026-04-30T12:30:00+02:00', '2026-04-30 12:30:00'])('preserves supported valid dates and timezones: %s', value => {
+    const iso = value.length === 10 ? `${value}T00:00:00Z` : value.replace(' ', 'T') + (value.includes('+') || /[TZ].*-/.test(value) || value.endsWith('Z') ? '' : 'Z');
+    expect(parseWindow(value, undefined, 0).minDate).toBe(Date.parse(iso) / 1000);
+  });
+
+  it('preserves relative periods and Unix seconds', () => {
+    expect(parseWindow('2d', undefined, 1_000_000_000)).toEqual({ minDate: 1_000_000 - 172800, maxDate: undefined });
+    expect(parseWindow('1700000000', undefined, 0).minDate).toBe(1700000000);
   });
 });
