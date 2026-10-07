@@ -31,7 +31,7 @@ try {
       const path=join(directory,name); const relative=prefix?`${prefix}/${name}`:name;
       if(name==='.env'||name.startsWith('.env.')||name==='session.key'||name==='.git'||name==='.npmrc'||name==='.tg-mcp'||/\.(sqlite|db|session)$/i.test(name))throw new Error();
       const child=lstatSync(path); if(child.isSymbolicLink())throw new Error();
-      if(child.isDirectory())walk(path,relative); else if(child.isFile())files.push({path:relative,data:readRegular(path,33554432)}); else throw new Error();
+      if(child.isDirectory())walk(path,relative); else if(child.isFile())files.push({path:relative,data:readRegular(path,33554432),...(relative==='dist/native/lease-darwin'?{executable:true}:{})}); else throw new Error();
     }
   }
   walk(app);

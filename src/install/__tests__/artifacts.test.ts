@@ -1,6 +1,6 @@
 import { constants, createHash, createPrivateKey, sign, X509Certificate } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { constants as fsConstants, openSync, closeSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
@@ -85,6 +85,23 @@ describe('application archive safety', () => {
     expect(readFileSync(join(path,'dist/cli/index.js'),'utf8')).toBe('fixture');
     await expect(extractApplicationArchive(good(),path)).rejects.toThrow('unsafe_archive');
   });
+  it('does not grant execution permission to arbitrary archive files', () => {
+    expect(()=>encodeApplicationArchive([{path:'dist/cli/index.js',data:Buffer.from('fixture'),executable:true}])).toThrow('unsafe_archive');
+  });
+  it.skipIf(process.platform !== 'darwin')('executes the extracted native helper and preserves descriptor lease exclusion/release', async () => {
+    const path=root();const bytes=readFileSync(resolve('dist/native/lease-darwin'));
+    await extractApplicationArchive(encodeApplicationArchive([{path:'dist/native/lease-darwin',data:bytes,executable:true}]),path);
+    const helper=join(path,'dist/native/lease-darwin');const lock=join(path,'lease');
+    expect(lstatSync(helper).mode&0o100).toBe(0o100);
+    let first: number|undefined=openSync(lock,fsConstants.O_RDWR|fsConstants.O_CREAT,0o600);let second: number|undefined;
+    try {
+      expect(spawnSync(helper,[],{stdio:['ignore','ignore','ignore',first]}).status).toBe(0);
+      second=openSync(lock,fsConstants.O_RDWR);
+      expect(spawnSync(helper,[],{stdio:['ignore','ignore','ignore',second]}).status).toBe(75);
+      closeSync(first);first=undefined;
+      expect(spawnSync(helper,[],{stdio:['ignore','ignore','ignore',second]}).status).toBe(0);
+    } finally {if(first!==undefined)closeSync(first);if(second!==undefined)closeSync(second);}
+  });
 });
 
 describe.skipIf(process.platform === 'win32')('pinned signatures and no-Node POSIX entry', () => {
@@ -115,6 +132,21 @@ describe.skipIf(process.platform === 'win32')('pinned signatures and no-Node POS
     expect(result.status,result.stderr).toBe(0);expect(readdirSync(bundle)).not.toContain('fixture-key.pem');
     const invoke=()=>spawnSync('/bin/sh',[resolve('scripts/install/bootstrap-posix.sh'),bundle,signerSha256,sourceSha,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});
     const verified=invoke();expect(verified.status,verified.stderr).toBe(0);expect(JSON.parse(verified.stdout)).toMatchObject({phase:'candidate_verified',installed:false,node_version:process.versions.node,version:'0.2.0'});
+    // Deterministic adversarial interleavings after pathname prechecks and
+    // before snapshot sysopen. The injected code is a local test shim only.
+    const original=readFileSync(resolve('scripts/install/bootstrap-posix.sh'),'utf8');
+    const installer=join(bundle,'installer.mjs');const originalInstaller=readFileSync(installer);
+    for(const kind of ['fifo','oversized'] as const) {
+      const shim=join(directory,`snapshot-${kind}.sh`);
+      const attack=kind==='fifo'
+        ? '/bin/rm -f "$1"; /usr/bin/mkfifo -m 600 "$1"'
+        : `/usr/bin/perl -e 'open(my $f,"+<",$ARGV[0]) or die; truncate($f,2000000) or die;' "$1"`;
+      const script=original.replace('snapshot() {',`snapshot() {\n  case "$1" in */installer.mjs) ${attack} ;; esac`);
+      writeFileSync(shim,script);
+      const attacked=spawnSync('/bin/sh',[shim,bundle,signerSha256,sourceSha,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:5000});
+      expect(attacked.error).toBeUndefined();expect(attacked.status).toBe(1);expect(attacked.stderr).toContain('bootstrap_verification_failed');
+      rmSync(installer);writeFileSync(installer,originalInstaller,{mode:0o600});
+    }
     writeFileSync(join(bundle,'application.tar.gz'),'tampered');const rejected=invoke();expect(rejected.status).toBe(1);expect(rejected.stdout).toBe('');
     expect(rejected.stderr).not.toContain(keyPath);expect(rejected.stderr).toContain('bootstrap_verification_failed');
   },30000);

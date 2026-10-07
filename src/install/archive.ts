@@ -4,7 +4,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-export interface ApplicationFile { path: string; data: Buffer; }
+export interface ApplicationFile { path: string; data: Buffer; executable?: boolean; }
 export class ArchiveError extends Error { constructor() { super('unsafe_archive'); } }
 const MAX_OUTPUT = 268_435_456;
 const MAX_FILE = 33_554_432;
@@ -17,11 +17,12 @@ function validPath(path: string): void {
     if (!part || part === '.' || part === '..' || part.endsWith('.') || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part)) bad();
   }
 }
+function executableAllowed(path: string): boolean { return path === 'dist/native/lease-darwin'; }
 function topology(files: ApplicationFile[]): void {
   if (files.length === 0 || files.length > MAX_FILES) bad();
   const seen = new Map<string, 'file' | 'directory'>(); const spelling = new Map<string, string>();
   for (const f of files) {
-    validPath(f.path); if (f.data.length > MAX_FILE) bad();
+    validPath(f.path); if (f.data.length > MAX_FILE || (f.executable && !executableAllowed(f.path))) bad();
     const parts = f.path.split('/');
     for (let i = 1; i <= parts.length; i++) {
       const path = parts.slice(0, i).join('/'); const key = path.toLowerCase(); const kind = i === parts.length ? 'file' : 'directory';
@@ -57,7 +58,7 @@ export function encodeApplicationArchive(input: ApplicationFile[]): Buffer {
     }
     if (name.length > 100 || prefix.length > 155) bad();
     header.write(name, 0, 100, 'ascii'); header.write(prefix, 345, 155, 'ascii');
-    octal(header, 100, 8, 0o644); octal(header, 108, 8, 0); octal(header, 116, 8, 0);
+    octal(header, 100, 8, f.executable ? 0o755 : 0o644); octal(header, 108, 8, 0); octal(header, 116, 8, 0);
     octal(header, 124, 12, f.data.length); octal(header, 136, 12, 0);
     header.fill(32, 148, 156); header[156] = 48; header.write('ustar\0', 257, 6, 'ascii'); header.write('00', 263, 2, 'ascii');
     const checksum = header.reduce((sum, b) => sum + b, 0);
@@ -83,14 +84,16 @@ export function decodeApplicationArchive(compressed: Buffer): ApplicationFile[] 
     const expected = number(header, 148, 8);
     const checksum = header.reduce((sum, b, i) => sum + (i >= 148 && i < 156 ? 32 : b), 0);
     if (checksum !== expected || header.subarray(257, 263).toString('ascii') !== 'ustar\0' || header.subarray(263, 265).toString('ascii') !== '00') bad();
-    if (header[156] !== 48 || header.subarray(157, 257).some(b => b !== 0) || number(header, 100, 8) !== 0o644
+    const mode = number(header, 100, 8);
+    if (header[156] !== 48 || header.subarray(157, 257).some(b => b !== 0) || (mode !== 0o644 && mode !== 0o755)
       || number(header, 108, 8) !== 0 || number(header, 116, 8) !== 0) bad();
     const name = text(header, 0, 100); const prefix = text(header, 345, 155);
     const path = prefix ? `${prefix}/${name}` : name; const size = number(header, 124, 12);
     if (size > MAX_FILE || files.length >= MAX_FILES || offset + 512 + size > bytes.length) bad();
     const start = offset + 512; const next = start + Math.ceil(size / 512) * 512;
     if (next > bytes.length || bytes.subarray(start + size, next).some(b => b !== 0)) bad();
-    files.push({ path, data: bytes.subarray(start, start + size) }); offset = next;
+    if (mode === 0o755 && !executableAllowed(path)) bad();
+    files.push({ path, data: bytes.subarray(start, start + size), ...(mode === 0o755 ? { executable: true } : {}) }); offset = next;
   }
   if (!ended) bad(); topology(files); return files;
 }
@@ -109,7 +112,7 @@ export async function extractApplicationArchive(compressed: Buffer, target: stri
       const st = await lstat(directory);
       if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid()) || (st.mode & 0o022) !== 0) bad();
     }
-    const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, entry.executable ? 0o700 : 0o600);
     try { await file.writeFile(entry.data); await file.sync(); } finally { await file.close(); }
   }
   return files.length;

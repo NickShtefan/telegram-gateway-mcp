@@ -22,17 +22,34 @@ case "$(/usr/bin/uname -s)" in
   *) fail ;;
 esac
 case "$(/usr/bin/uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64) arch=x64 ;; *) fail ;; esac
-[ -x /usr/bin/openssl ] || fail
+[ -x /usr/bin/openssl ] && [ -x /usr/bin/perl ] || fail
 regular() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat_links "$1")" -eq 1 ]; }
 for name in manifest.tsv manifest.sig signer.der; do regular "$bundle/$name" || fail; done
 [ "$(stat_size "$bundle/manifest.tsv")" -le 8192 ] && [ "$(stat_size "$bundle/manifest.sig")" -eq 384 ] && [ "$(stat_size "$bundle/signer.der")" -le 16384 ] || fail
 openssl_clean() { /usr/bin/env -i PATH=/usr/bin:/bin OPENSSL_CONF=/dev/null /usr/bin/openssl "$@"; }
-[ "$(openssl_clean dgst -sha256 "$bundle/signer.der" 2>/dev/null | /usr/bin/awk '{print $NF}')" = "$pin" ] || fail
 stage=$(/usr/bin/mktemp -d "$base/tg-mcp-candidate.XXXXXX") || fail
 keep=0
+snapshot() {
+  /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/perl -e '
+    use strict; use Fcntl qw(:DEFAULT :mode);
+    $SIG{ALRM}=sub{die}; alarm 15;
+    my($source,$target,$maximum)=@ARGV;
+    die unless defined($maximum) && $maximum =~ /^[1-9][0-9]{0,8}$/;
+    sysopen(my $input,$source,O_RDONLY|O_NOFOLLOW|O_NONBLOCK) or die;
+    my @state=stat($input); die unless @state && S_ISREG($state[2]) && $state[3]==1 && $state[7]<=$maximum;
+    sysopen(my $output,$target,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600) or die;
+    my $total=0;
+    while(1){my $count=sysread($input,my $data,65536);die unless defined($count);last if $count==0;$total+=$count;die if $total>$maximum;
+      my $offset=0;while($offset<$count){my $written=syswrite($output,$data,$count-$offset,$offset);die unless defined($written)&&$written>0;$offset+=$written;}}
+    close($input) or die;close($output) or die;alarm 0;
+  ' "$1" "$2" "$3" 2>/dev/null || fail
+}
 trap '[ "$keep" -eq 1 ] || /bin/rm -rf "$stage"' EXIT HUP INT TERM
 # Work on private snapshots; source substitution is rechecked on copied bytes.
-for name in manifest.tsv manifest.sig signer.der; do /bin/cp "$bundle/$name" "$stage/$name" || fail; /bin/chmod 600 "$stage/$name"; done
+snapshot "$bundle/manifest.tsv" "$stage/manifest.tsv" 8192
+snapshot "$bundle/manifest.sig" "$stage/manifest.sig" 384
+snapshot "$bundle/signer.der" "$stage/signer.der" 16384
+[ "$(stat_size "$stage/manifest.sig")" -eq 384 ] || fail
 [ "$(openssl_clean dgst -sha256 "$stage/signer.der" 2>/dev/null | /usr/bin/awk '{print $NF}')" = "$pin" ] || fail
 openssl_clean x509 -inform DER -in "$stage/signer.der" -pubkey -noout > "$stage/public.pem" 2>/dev/null || fail
 case "$(openssl_clean rsa -pubin -in "$stage/public.pem" -text -noout 2>/dev/null)" in *'(3072 bit)'*) ;; *) fail ;; esac
@@ -63,7 +80,7 @@ for name in node installer.mjs manifest.mjs archive.mjs application.tar.gz NODE_
   expected_size=$(/usr/bin/awk -F '\t' -v n="$name" '$1=="file" && $3==n {print $4}' "$stage/manifest.tsv")
   expected_sha=$(/usr/bin/awk -F '\t' -v n="$name" '$1=="file" && $3==n {print $5}' "$stage/manifest.tsv")
   [ "$(stat_size "$bundle/$name")" -eq "$expected_size" ] || fail
-  /bin/cp "$bundle/$name" "$stage/$name" || fail
+  snapshot "$bundle/$name" "$stage/$name" "$expected_size"
   /bin/chmod 600 "$stage/$name"
   [ "$(stat_size "$stage/$name")" -eq "$expected_size" ] || fail
   [ "$(openssl_clean dgst -sha256 "$stage/$name" 2>/dev/null | /usr/bin/awk '{print $NF}')" = "$expected_sha" ] || fail
