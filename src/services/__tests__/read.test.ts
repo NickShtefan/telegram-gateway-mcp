@@ -35,27 +35,27 @@ describe('Resolver', () => {
   it('resolves usernames once and then uses the account cache', async () => {
     seedChannel(500);
     const resolver = new Resolver({ tg, entities: storage.entities, now: () => clock });
-    const first = await resolver.resolve(ACC, 'https://t.me/Stonksnws/123?comment=45');
+    const first = await resolver.resolve(ACC, 'https://t.me/Fixture_Channel/123?comment=45');
     expect(first.parsed).toMatchObject({ messageId: 123, commentId: 45 });
-    expect(first.chat).toMatchObject({ peerKey: '-1000000000500', kind: 'channel', username: 'stonksnws' });
-    await resolver.resolve(ACC, '@stonksnws');
+    expect(first.chat).toMatchObject({ peerKey: '-1000000000500', kind: 'channel', username: 'fixture_channel' });
+    await resolver.resolve(ACC, '@fixture_channel');
     expect(tg.callsOf('contacts.ResolveUsername')).toHaveLength(1);
   });
 
   it('keeps accessHash in a separate cache for each account', async () => {
     seedChannel(500);
     const resolver = new Resolver({ tg, entities: storage.entities, now: () => clock });
-    await resolver.resolve(ACC, '@stonksnws');
-    await resolver.resolve('other', '@stonksnws');
+    await resolver.resolve(ACC, '@fixture_channel');
+    await resolver.resolve('other', '@fixture_channel');
     expect(tg.callsOf('contacts.ResolveUsername').map(c => c.accountId)).toEqual([ACC, 'other']);
   });
 
   it('revalidates stale cache entries', async () => {
     seedChannel(500);
     const resolver = new Resolver({ tg, entities: storage.entities, now: () => clock });
-    await resolver.resolve(ACC, '@stonksnws');
+    await resolver.resolve(ACC, '@fixture_channel');
     clock += 8 * 24 * 60 * 60 * 1000;
-    await resolver.resolve(ACC, '@stonksnws');
+    await resolver.resolve(ACC, '@fixture_channel');
     expect(tg.callsOf('contacts.ResolveUsername')).toHaveLength(2);
   });
 
@@ -70,11 +70,11 @@ describe('Resolver', () => {
     seedChannel(500, { left: true, verified: true });
     tg.on('channels.GetFullChannel', () => ({
       fullChat: { about: 'Market news', participantsCount: 15_000, linkedChatId: 600n },
-      chats: [rawChannel(500, { username: 'stonksnws', left: true, verified: true }), rawChannel(600, { broadcast: false, megagroup: true, title: 'Chat' })],
+      chats: [rawChannel(500, { username: 'fixture_channel', left: true, verified: true }), rawChannel(600, { broadcast: false, megagroup: true, title: 'Chat' })],
       users: [],
     }));
     const resolver = new Resolver({ tg, entities: storage.entities });
-    const { chat } = await resolver.resolve(ACC, '@stonksnws');
+    const { chat } = await resolver.resolve(ACC, '@fixture_channel');
     const card = await resolver.card(ACC, chat);
     expect(card).toMatchObject({
       type: 'channel',
@@ -84,7 +84,7 @@ describe('Resolver', () => {
       verified: true,
       linkedChatKey: '-1000000000600',
       commentsEnabled: true,
-      link: 'https://t.me/stonksnws',
+      link: 'https://t.me/fixture_channel',
     });
     // The discussion group and its accessHash are also cached.
     expect(storage.entities.get(ACC, '-1000000000600')?.accessHash).not.toBeNull();
@@ -92,9 +92,9 @@ describe('Resolver', () => {
 
   it('distinguishes forums and supergroups by flags', async () => {
     seedChannel(700, { broadcast: false, megagroup: true, forum: true });
-    tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: 900, slowmodeSeconds: 30 }, chats: [rawChannel(700, { username: 'baraholka', broadcast: false, megagroup: true, forum: true })] }));
+    tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: 900, slowmodeSeconds: 30 }, chats: [rawChannel(700, { username: 'fixture_market', broadcast: false, megagroup: true, forum: true })] }));
     const resolver = new Resolver({ tg, entities: storage.entities });
-    const { chat } = await resolver.resolve(ACC, '@baraholka');
+    const { chat } = await resolver.resolve(ACC, '@fixture_market');
     expect(await resolver.card(ACC, chat)).toMatchObject({ type: 'forum', isMember: true, commentsEnabled: null, slowmodeSeconds: 30 });
   });
 
@@ -111,7 +111,7 @@ describe('Resolver', () => {
   it('forgets stale cache entries after CHAT_NOT_FOUND', async () => {
     seedChannel(500);
     const resolver = new Resolver({ tg, entities: storage.entities });
-    const { chat } = await resolver.resolve(ACC, '@stonksnws');
+    const { chat } = await resolver.resolve(ACC, '@fixture_channel');
     tg.on('channels.GetFullChannel', () => {
       throw new GatewayError('CHAT_NOT_FOUND', 'gone');
     });
@@ -121,7 +121,7 @@ describe('Resolver', () => {
 });
 
 describe('HistoryService', () => {
-  const chat = { accountId: ACC, peerKey: '-1000000000500', kind: 'channel' as const, accessHash: '77', username: 'stonksnws', title: 'Stonks', meta: {}, updatedAt: 0 };
+  const chat = { accountId: ACC, peerKey: '-1000000000500', kind: 'channel' as const, accessHash: '77', username: 'fixture_channel', title: 'Fixture Channel', meta: {}, updatedAt: 0 };
   const page = (ids: number[], extra: Record<string, unknown> = {}) => ({ count: 240, messages: ids.map(id => rawMessage(500, id)), chats: [rawChannel(500)], users: [], ...extra });
 
   it('returns history pages with next-page cursors', async () => {
@@ -225,7 +225,7 @@ describe('HistoryService', () => {
 });
 
 describe('SearchService', () => {
-  const chat = { accountId: ACC, peerKey: '-1000000000700', kind: 'channel' as const, accessHash: '5', username: 'baraholka', title: 'Marketplace', meta: {}, updatedAt: 0 };
+  const chat = { accountId: ACC, peerKey: '-1000000000700', kind: 'channel' as const, accessHash: '5', username: 'fixture_market', title: 'Marketplace', meta: {}, updatedAt: 0 };
 
   it('returns global search messages with the next-page position', async () => {
     tg.on('messages.SearchGlobal', () => ({
@@ -294,7 +294,7 @@ describe('SearchService', () => {
 });
 
 describe('CommentsService', () => {
-  const channel = { accountId: ACC, peerKey: '-1000000000500', kind: 'channel' as const, accessHash: '77', username: 'stonksnws', title: 'Stonks', meta: {}, updatedAt: 0 };
+  const channel = { accountId: ACC, peerKey: '-1000000000500', kind: 'channel' as const, accessHash: '77', username: 'fixture_channel', title: 'Fixture Channel', meta: {}, updatedAt: 0 };
   const comment = (id: number, likes: number) =>
     rawMessage(600, id, { fromId: { className: 'PeerUser', userId: 42n }, reactions: { results: [{ reaction: { emoticon: '👍' }, count: likes }] } });
   const group = rawChannel(600, { broadcast: false, megagroup: true });
@@ -355,7 +355,7 @@ describe('CommentsService', () => {
 });
 
 describe('TopicsService', () => {
-  const forum = { accountId: ACC, peerKey: '-1000000000700', kind: 'channel' as const, accessHash: '5', username: 'baraholka', title: 'Marketplace', meta: { forum: true }, updatedAt: 0 };
+  const forum = { accountId: ACC, peerKey: '-1000000000700', kind: 'channel' as const, accessHash: '5', username: 'fixture_market', title: 'Marketplace', meta: { forum: true }, updatedAt: 0 };
 
   it('lists topics without deleted entries', async () => {
     tg.on('messages.GetForumTopics', () => ({

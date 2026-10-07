@@ -11,7 +11,7 @@ import { makeTestGateway, type TestClient, type TestGateway } from '../../__test
 import { rawChannel, rawMessage, rawUser } from '../../__tests__/helpers/fakeTg.js';
 
 let gw: TestGateway;
-let nick: TestClient;
+let user_a: TestClient;
 let clock: number;
 
 const DAY = 86_400;
@@ -20,11 +20,11 @@ const NOW_SEC = Math.floor(Date.UTC(2026, 9, 1, 12, 0, 0) / 1000);
 beforeEach(async () => {
   clock = NOW_SEC * 1000;
   gw = makeTestGateway({ now: () => clock });
-  nick = await gw.client('nick');
+  user_a = await gw.client('user_a');
 });
 
 afterEach(async () => {
-  await nick.close();
+  await user_a.close();
   gw.cleanup();
 });
 
@@ -54,8 +54,8 @@ describe('tg_list_dialogs: account chats', () => {
     message: { className: 'Message', id: 9, date: NOW_SEC - 60, peerId: { className: 'PeerUser', userId: 42n } },
   };
   const chats = [
-    rawChannel(500, { username: 'stonksnws', title: 'Stonks', participantsCount: 289 }),
-    rawChannel(700, { username: 'baraholka_cy', title: 'Cyprus Marketplace', broadcast: false, megagroup: true, forum: true, participantsCount: 12_400 }),
+    rawChannel(500, { username: 'fixture_channel', title: 'Fixture Channel', participantsCount: 289 }),
+    rawChannel(700, { username: 'fixture_market_cy', title: 'Cyprus Marketplace', broadcast: false, megagroup: true, forum: true, participantsCount: 12_400 }),
     rawChannel(800, { title: 'News without a link' }),
     rawChannel(900, { username: 'old_channel', title: 'Old channel' }),
   ];
@@ -77,11 +77,11 @@ describe('tg_list_dialogs: account chats', () => {
   });
 
   it('lists channels and groups including archived chats while excluding private conversations', async () => {
-    const reply = await nick.call('tg_list_dialogs');
+    const reply = await user_a.call('tg_list_dialogs');
     expect(reply.isError, reply.text).toBe(false);
     expect(reply.text).toContain('Chats of account agent: 4 shown (scanned 5)');
-    expect(reply.text).toContain('@stonksnws "Stonks" | channel | 289 members | last message 2026-08-22 | pinned | id -1000000000500');
-    expect(reply.text).toContain('@baraholka_cy "Cyprus Marketplace" | forum | 12.4k members | unread 12 | last message 2026-10-01 | id -1000000000700');
+    expect(reply.text).toContain('@fixture_channel "Fixture Channel" | channel | 289 members | last message 2026-08-22 | pinned | id -1000000000500');
+    expect(reply.text).toContain('@fixture_market_cy "Cyprus Marketplace" | forum | 12.4k members | unread 12 | last message 2026-10-01 | id -1000000000700');
     expect(reply.text).toContain('"News without a link" (id -1000000000800) | channel | last message 2026-09-29');
     expect(reply.text).toContain('@old_channel "Old channel" | channel | last message 2026-07-03 | archived | id -1000000000900');
     expect(reply.text).not.toContain('friend');
@@ -98,52 +98,52 @@ describe('tg_list_dialogs: account chats', () => {
   });
 
   it('type=private lists only conversations opened for reading by the owner', async () => {
-    const closed = await nick.call('tg_list_dialogs', { type: 'private' });
+    const closed = await user_a.call('tg_list_dialogs', { type: 'private' });
     expect(closed.text).toContain('0 shown, private only');
     expect(closed.text).not.toContain('friend');
 
     // Send mode does not grant read access.
-    writePrivateMode(gw.storage, 'nick', 'agent', 'send');
-    expect((await nick.call('tg_list_dialogs', { type: 'private' })).text).not.toContain('friend');
+    writePrivateMode(gw.storage, 'user_a', 'agent', 'send');
+    expect((await user_a.call('tg_list_dialogs', { type: 'private' })).text).not.toContain('friend');
 
-    writePrivateMode(gw.storage, 'nick', 'agent', 'open');
-    const open = await nick.call('tg_list_dialogs', { type: 'private' });
+    writePrivateMode(gw.storage, 'user_a', 'agent', 'open');
+    const open = await user_a.call('tg_list_dialogs', { type: 'private' });
     expect(open.text).toContain('1 shown, private only');
     expect(open.text).toContain('@friend "Friend" | user | unread 1');
-    expect(open.text).not.toContain('@stonksnws');
+    expect(open.text).not.toContain('@fixture_channel');
     // The default list still excludes people.
-    expect((await nick.call('tg_list_dialogs')).text).not.toContain('friend');
+    expect((await user_a.call('tg_list_dialogs')).text).not.toContain('friend');
 
     // A conversation opened by an explicit rule is also visible.
-    writePrivateMode(gw.storage, 'nick', 'agent', 'closed');
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'friend', effect: 'allow' });
-    expect((await nick.call('tg_list_dialogs', { type: 'private' })).text).toContain('@friend');
+    writePrivateMode(gw.storage, 'user_a', 'agent', 'closed');
+    gw.storage.scopes.put({ userId: 'user_a', accountId: 'agent', target: 'friend', effect: 'allow' });
+    expect((await user_a.call('tg_list_dialogs', { type: 'private' })).text).toContain('@friend');
   });
 
   it('filters by title and type and resolves listed chats by ID', async () => {
-    const byName = await nick.call('tg_list_dialogs', { query: 'market' });
+    const byName = await user_a.call('tg_list_dialogs', { query: 'market' });
     expect(byName.text).toContain('1 shown, matching "market"');
-    expect(byName.text).toContain('@baraholka_cy');
-    expect(byName.text).not.toContain('@stonksnws');
+    expect(byName.text).toContain('@fixture_market_cy');
+    expect(byName.text).not.toContain('@fixture_channel');
 
-    const groups = await nick.call('tg_list_dialogs', { type: 'groups' });
+    const groups = await user_a.call('tg_list_dialogs', { type: 'groups' });
     expect(groups.text).toContain('1 shown, groups only');
-    const channels = await nick.call('tg_list_dialogs', { type: 'channels' });
+    const channels = await user_a.call('tg_list_dialogs', { type: 'channels' });
     expect(channels.text).toContain('3 shown, channels only');
-    expect(channels.text).not.toContain('baraholka_cy');
+    expect(channels.text).not.toContain('fixture_market_cy');
 
-    expect((await nick.call('tg_list_dialogs', { query: 'no such chat' })).text).toContain('Nothing matched.');
+    expect((await user_a.call('tg_list_dialogs', { query: 'no such chat' })).text).toContain('Nothing matched.');
 
     // Chats without usernames are now known and can be read by their listed IDs.
     gw.tg.on('messages.GetHistory', () => ({ messages: [], chats: [], users: [] }));
-    const history = await nick.call('tg_read_history', { chat: '-1000000000800' });
+    const history = await user_a.call('tg_read_history', { chat: '-1000000000800' });
     expect(history.isError, history.text).toBe(false);
   });
 
   it('hides owner-blocked chats and denies dialog lists to rule-based launches', async () => {
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000700', effect: 'deny' });
-    const reply = await nick.call('tg_list_dialogs');
-    expect(reply.text).not.toContain('baraholka_cy');
+    gw.storage.scopes.put({ userId: 'user_a', accountId: 'agent', target: '-1000000000700', effect: 'deny' });
+    const reply = await user_a.call('tg_list_dialogs');
+    expect(reply.text).not.toContain('fixture_market_cy');
     expect(reply.text).toContain('3 shown');
   });
 
@@ -157,13 +157,13 @@ describe('tg_list_dialogs: account chats', () => {
       return { className: 'messages.DialogsSlice', count: 150, dialogs: slice.map(d => d.dialog), messages: slice.map(d => d.message), chats: manyChats, users: [] };
     });
 
-    const first = await nick.call('tg_list_dialogs', { limit: 60 });
+    const first = await user_a.call('tg_list_dialogs', { limit: 60 });
     expect(first.text).toContain('60 shown');
     expect(first.text).toContain('@chan59');
     expect(first.text).not.toContain('@chan60 ');
     const cursor = first.text.match(/next_cursor: (\S+)/)![1]!;
 
-    const second = await nick.call('tg_list_dialogs', { limit: 100, cursor });
+    const second = await user_a.call('tg_list_dialogs', { limit: 100, cursor });
     expect(second.text).toContain('90 shown');
     expect(second.text).toContain('@chan60 ');
     expect(second.text).toContain('@chan149');
@@ -180,12 +180,12 @@ describe('discover toolset: channel discovery', () => {
   const DISCOVER = ['core', 'discover'];
   let agent: TestClient;
   const peer = (id: number) => ({ className: 'PeerChannel', channelId: BigInt(id) });
-  const mine = rawChannel(500, { username: 'stonksnws', title: 'Stonks', participantsCount: 289 });
+  const mine = rawChannel(500, { username: 'fixture_channel', title: 'Fixture Channel', participantsCount: 289 });
   const big = rawChannel(3001, { username: 'crypto_news', title: 'Crypto news', participantsCount: 54_000, verified: true, left: true });
   const group = rawChannel(3002, { username: 'crypto_chat', title: 'Crypto chat', broadcast: false, megagroup: true, participantsCount: 9_100, scam: true, left: true });
 
   beforeEach(async () => {
-    agent = await gw.client('nick', DISCOVER);
+    agent = await gw.client('user_a', DISCOVER);
     gw.tg.on('contacts.ResolveUsername', (req: { username: string }) => {
       if (req.username.toLowerCase() === 'crypto_chat') return { peer: peer(3002), chats: [group], users: [] };
       return { peer: peer(500), chats: [mine], users: [] };
@@ -199,7 +199,7 @@ describe('discover toolset: channel discovery', () => {
   it('exposes discover tools only when the toolset is enabled', async () => {
     const names = (await agent.tools()).map(t => t.name);
     expect(names).toEqual(expect.arrayContaining(['tg_find_channels', 'tg_similar_channels', 'tg_forward_sources']));
-    expect((await nick.tools()).map(t => t.name)).not.toContain('tg_find_channels');
+    expect((await user_a.tools()).map(t => t.name)).not.toContain('tg_find_channels');
     for (const tool of (await agent.tools()).filter(t => /find_channels|similar|forward_sources/.test(t.name))) {
       expect(tool.annotations).toMatchObject({ readOnlyHint: true });
       expect(JSON.stringify(tool.inputSchema)).not.toMatch(/anyOf|oneOf|allOf/);
@@ -217,7 +217,7 @@ describe('discover toolset: channel discovery', () => {
     const reply = await agent.call('tg_find_channels', { query: 'crypto' });
     expect(reply.isError, reply.text).toBe(false);
     expect(reply.text).toContain('Channels and groups matching "crypto": 3');
-    expect(reply.text).toContain('@stonksnws "Stonks" | channel | 289 members | the account is a member');
+    expect(reply.text).toContain('@fixture_channel "Fixture Channel" | channel | 289 members | the account is a member');
     expect(reply.text).toContain('@crypto_news "Crypto news" | channel | 54k members | verified');
     expect(reply.text).toContain('@crypto_chat "Crypto chat" | supergroup | 9.1k members | SCAM or FAKE');
     expect(reply.text).not.toContain('crypto_guy');
@@ -232,7 +232,7 @@ describe('discover toolset: channel discovery', () => {
     expect(gw.tg.callsOf('contacts.ResolveUsername')).toHaveLength(before);
 
     // Hide channels blocked by the owner.
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'crypto_news', effect: 'deny' });
+    gw.storage.scopes.put({ userId: 'user_a', accountId: 'agent', target: 'crypto_news', effect: 'deny' });
     expect((await agent.call('tg_find_channels', { query: 'crypto' })).text).not.toContain('crypto_news');
     expect((await agent.call('tg_find_channels', { query: 'x' })).isError).toBe(true);
   });
@@ -247,9 +247,9 @@ describe('discover toolset: channel discovery', () => {
       return { className: 'messages.Chats', chats: [rec(3011, 700)] };
     });
 
-    const one = await agent.call('tg_similar_channels', { chat: '@stonksnws' });
+    const one = await agent.call('tg_similar_channels', { chat: '@fixture_channel' });
     expect(one.isError, one.text).toBe(false);
-    expect(one.text).toContain('Channels similar to @stonksnws: 4');
+    expect(one.text).toContain('Channels similar to @fixture_channel: 4');
     // Largest channels first.
     expect(one.text.indexOf('@rec3003')).toBeLessThan(one.text.indexOf('@rec3001'));
     expect(one.text).toContain('@rec3003 "Rec 3003" | channel | 200k members');
@@ -257,7 +257,7 @@ describe('discover toolset: channel discovery', () => {
     expect(gw.tg.callsOf('channels.GetChannelRecommendations')).toHaveLength(1);
     expect(() => gw.tg.last('channels.GetChannelRecommendations').request.getBytes()).not.toThrow();
 
-    const two = await agent.call('tg_similar_channels', { chat: '@stonksnws', depth: 2 });
+    const two = await agent.call('tg_similar_channels', { chat: '@fixture_channel', depth: 2 });
     expect(two.text).toContain('6 (two levels)');
     expect(two.text).toContain('@rec3010');
     expect(two.text).toContain('@rec3011');
@@ -283,9 +283,9 @@ describe('discover toolset: channel discovery', () => {
     ];
     gw.tg.on('messages.GetHistory', () => ({ messages: posts, chats: [mine, big, group], users: [rawUser(77, { firstName: 'Someone' })] }));
 
-    const reply = await agent.call('tg_forward_sources', { chat: '@stonksnws' });
+    const reply = await agent.call('tg_forward_sources', { chat: '@fixture_channel' });
     expect(reply.isError, reply.text).toBe(false);
-    expect(reply.text).toContain('Forward sources of @stonksnws: 6 forwards in 7 posts (86%)');
+    expect(reply.text).toContain('Forward sources of @fixture_channel: 6 forwards in 7 posts (86%)');
     const lines = reply.text.split('\n');
     expect(lines.find(l => l.startsWith('2x'))).toContain('@crypto_news "Crypto news" | 54k members | last ');
     expect(lines.find(l => l.includes('@crypto_chat'))).toMatch(/^1x \| @crypto_chat/);
@@ -300,17 +300,17 @@ describe('discover toolset: channel discovery', () => {
       const start = req.offsetId === 0 ? 0 : all.findIndex(m => m.id === req.offsetId) + 1;
       return { messages: all.slice(start, start + req.limit), chats: [mine, big], users: [] };
     });
-    const reply = await agent.call('tg_forward_sources', { chat: '@stonksnws', posts: 150 });
+    const reply = await agent.call('tg_forward_sources', { chat: '@fixture_channel', posts: 150 });
     expect(reply.text).toContain('15 forwards in 150 posts (10%)');
     expect(gw.tg.callsOf('messages.GetHistory').map(c => (c.request as { limit: number }).limit)).toEqual([100, 50]);
-    expect((await agent.call('tg_forward_sources', { chat: '@stonksnws', posts: 5000 })).text).toContain('in 260 posts');
+    expect((await agent.call('tg_forward_sources', { chat: '@fixture_channel', posts: 5000 })).text).toContain('in 260 posts');
   });
 });
 
 describe('analytics toolset: channel statistics', () => {
   let agent: TestClient;
   let members: number;
-  const chan = () => rawChannel(500, { username: 'stonksnws', title: 'Stonks' });
+  const chan = () => rawChannel(500, { username: 'fixture_channel', title: 'Fixture Channel' });
   const reaction = (emoticon: string, count: number) => ({ reaction: { className: 'ReactionEmoji', emoticon }, count });
   const at = (daysAgo: number) => NOW_SEC - Math.round(daysAgo * DAY);
   const post = (id: number, daysAgo: number, views: number, extra: Record<string, unknown> = {}) =>
@@ -330,7 +330,7 @@ describe('analytics toolset: channel statistics', () => {
 
   beforeEach(async () => {
     members = 1000;
-    agent = await gw.client('nick', ['core', 'analytics']);
+    agent = await gw.client('user_a', ['core', 'analytics']);
     gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerChannel', channelId: 500n }, chats: [chan()], users: [] }));
     gw.tg.on('channels.GetFullChannel', () => ({ fullChat: { participantsCount: members, about: 'about' }, chats: [chan()], users: [] }));
     gw.tg.on('messages.GetHistory', () => ({ messages: feed(), chats: [chan()], users: [] }));
@@ -374,9 +374,9 @@ describe('analytics toolset: channel statistics', () => {
   });
 
   it('tg_channel_stats reports channel metrics and subscriber changes between days', async () => {
-    const first = await agent.call('tg_channel_stats', { chat: '@stonksnws' });
+    const first = await agent.call('tg_channel_stats', { chat: '@fixture_channel' });
     expect(first.isError, first.text).toBe(false);
-    expect(first.text).toContain('Statistics of @stonksnws [channel] for the last 30 days: 7 posts');
+    expect(first.text).toContain('Statistics of @fixture_channel [channel] for the last 30 days: 7 posts');
     expect(first.text).toContain('subscribers: 1k (1000) | change: no earlier snapshot yet');
     expect(first.text).toContain('posts: 7 (1.8 per week) | reposts from elsewhere: 14%');
     expect(first.text).not.toContain('ads');
@@ -387,7 +387,7 @@ describe('analytics toolset: channel statistics', () => {
     expect(first.text).toContain('reactions used: 👍 71%, 🔥 19%, ❤ 10% (3 kinds)');
     expect(first.text).toContain('trend: views per post +100% in the newer half of the period against the older half');
     expect(first.text).toContain('View numbers use 6 posts older than 24 hours');
-    expect(first.text).toContain('#60 | 2026-09-29 12:00 | views 400 | comments 4 | https://t.me/stonksnws/60');
+    expect(first.text).toContain('#60 | 2026-09-29 12:00 | views 400 | comments 4 | https://t.me/fixture_channel/60');
     expect(first.text).toMatch(/By week \(Monday, UTC\):\n2026-09-28 \| 2 posts \| avg views 225/);
     // Statistics do not contain post texts.
     expect(first.text).not.toContain('Buy the course');
@@ -395,7 +395,7 @@ describe('analytics toolset: channel statistics', () => {
     // Three days later, subscriber growth is visible against the first snapshot.
     clock += 3 * DAY * 1000;
     members = 1100;
-    const later = await agent.call('tg_channel_stats', { chat: '@stonksnws', days: 14 });
+    const later = await agent.call('tg_channel_stats', { chat: '@fixture_channel', days: 14 });
     expect(later.text).toContain('subscribers: 1.1k (1100) | on 2026-10-01: 1000 (+100, +10%)');
   });
 
@@ -405,17 +405,17 @@ describe('analytics toolset: channel statistics', () => {
       const start = req.offsetId === 0 ? 0 : all.findIndex(m => m.id === req.offsetId) + 1;
       return { messages: all.slice(start, start + req.limit), chats: [chan()], users: [] };
     });
-    const capped = await agent.call('tg_channel_stats', { chat: '@stonksnws', max_posts: 100 });
+    const capped = await agent.call('tg_channel_stats', { chat: '@fixture_channel', max_posts: 100 });
     expect(capped.text).toContain('Only the newest 100 posts were read (max_posts)');
     expect(gw.tg.callsOf('messages.GetHistory')).toHaveLength(1);
 
     gw.tg.on('messages.GetHistory', () => ({ messages: [], chats: [chan()], users: [] }));
-    expect((await agent.call('tg_channel_stats', { chat: '@stonksnws' })).text).toContain('No posts in this period.');
+    expect((await agent.call('tg_channel_stats', { chat: '@fixture_channel' })).text).toContain('No posts in this period.');
 
     gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerUser', userId: 42n }, chats: [], users: [rawUser(42, { username: 'seller' })] }));
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: 'seller', effect: 'allow' });
+    gw.storage.scopes.put({ userId: 'user_a', accountId: 'agent', target: 'seller', effect: 'allow' });
     expect((await agent.call('tg_channel_stats', { chat: '@seller' })).text).toContain('not for people');
-    expect((await nick.tools()).map(t => t.name)).not.toContain('tg_channel_stats');
+    expect((await user_a.tools()).map(t => t.name)).not.toContain('tg_channel_stats');
   });
 });
 
@@ -425,14 +425,14 @@ describe('index toolset: local indexing and search', () => {
   let agent: TestClient;
   /** Chat history, newest first. */
   let feed: Array<Record<string, unknown>>;
-  const flea = () => rawChannel(FLEA, { username: 'baraholka', title: 'Marketplace', broadcast: false, megagroup: true });
+  const flea = () => rawChannel(FLEA, { username: 'fixture_market', title: 'Marketplace', broadcast: false, megagroup: true });
   const at = (daysAgo: number) => NOW_SEC - Math.round(daysAgo * DAY);
   const msg = (id: number, daysAgo: number, text: string, extra: Record<string, unknown> = {}) =>
     rawMessage(FLEA, id, { date: at(daysAgo), message: text, fromId: { className: 'PeerUser', userId: 42n }, ...extra });
   const historyCalls = () => gw.tg.callsOf('messages.GetHistory').length;
 
   beforeEach(async () => {
-    agent = await gw.client('nick', INDEX);
+    agent = await gw.client('user_a', INDEX);
     feed = [
       msg(110, 1, 'Selling bicycles Stels, two available, 12,000 RUB each'),
       msg(109, 2, 'Buying iPhone 15 Pro, used'),
@@ -444,7 +444,7 @@ describe('index toolset: local indexing and search', () => {
       msg(103, 80, 'Very old listing: selling skis'),
     ];
     gw.tg.on('contacts.ResolveUsername', (req: { username: string }) => {
-      if (req.username.toLowerCase() === 'stonksnws') return { peer: { className: 'PeerChannel', channelId: 500n }, chats: [rawChannel(500, { username: 'stonksnws', title: 'Stonks' })], users: [] };
+      if (req.username.toLowerCase() === 'fixture_channel') return { peer: { className: 'PeerChannel', channelId: 500n }, chats: [rawChannel(500, { username: 'fixture_channel', title: 'Fixture Channel' })], users: [] };
       return { peer: { className: 'PeerChannel', channelId: BigInt(FLEA) }, chats: [flea()], users: [] };
     });
     gw.tg.on('messages.GetHistory', (req: { offsetId: number; limit: number }) => {
@@ -459,10 +459,10 @@ describe('index toolset: local indexing and search', () => {
   });
 
   it('matches word forms, case, and all query words without Telegram calls', async () => {
-    const indexed = await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    const indexed = await agent.call('tg_index', { chat: '@fixture_market', since: '30d' });
     expect(indexed.isError, indexed.text).toBe(false);
     // Five messages in 30 days; service messages are not indexed.
-    expect(indexed.text).toContain('Indexed @baraholka: 5 messages in the local index (5 new,');
+    expect(indexed.text).toContain('Indexed @fixture_market: 5 messages in the local index (5 new,');
     expect(indexed.text).toContain('The index covers this chat since 2026-09-01 12:00 UTC');
     expect(gw.tg.last('messages.GetHistory').options).toMatchObject({ priority: 'background' });
 
@@ -471,7 +471,7 @@ describe('index toolset: local indexing and search', () => {
     expect(bikes.text).toContain('Local search "bicycle": 2 of 2 matches in 1 indexed chat(s)');
     expect(bikes.text).toContain('#110');
     expect(bikes.text).toContain('#108');
-    expect(bikes.text).toContain('https://t.me/baraholka/110');
+    expect(bikes.text).toContain('https://t.me/fixture_market/110');
     expect(bikes.text).toMatch(/> Selling bicycles Stels/);
     expect(bikes.text).toContain('Index last synced: 2026-10-01 12:00 UTC');
     // Messages outside the selected period were not indexed.
@@ -488,7 +488,7 @@ describe('index toolset: local indexing and search', () => {
   });
 
   it('handles short query words and punctuation safely', async () => {
-    await agent.call('tg_index', { chat: '@baraholka' });
+    await agent.call('tg_index', { chat: '@fixture_market' });
     const short = await agent.call('tg_local_search', { query: 'iphone us' });
     expect(short.isError, short.text).toBe(false);
     expect(short.text).toContain('#109');
@@ -507,7 +507,7 @@ describe('index toolset: local indexing and search', () => {
       const matches = pattern === 'alternating' ? i % 2 === 0 : i === 31 || i === 37;
       return msg(id, 1 + i / 100, `bicycle ${matches ? 'ÉX' : 'listing'}`);
     });
-    await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    await agent.call('tg_index', { chat: '@fixture_market', since: '30d' });
     const expected = feed.filter(m => String(m.message).includes('ÉX')).map(m => m.id);
     const received: number[] = [];
     let cursor: string | undefined;
@@ -528,14 +528,14 @@ describe('index toolset: local indexing and search', () => {
   });
 
   it('refreshes new and edited messages with few Telegram calls on repeated runs', async () => {
-    await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    await agent.call('tg_index', { chat: '@fixture_market', since: '30d' });
     const callsAfterFirst = historyCalls();
 
     // A new listing arrives and yesterday's author edits an existing listing.
     feed.unshift(msg(111, 0.1, 'Selling Yamaha guitar'));
     feed[1] = msg(110, 1, 'SOLD. Bicycles are gone');
     clock += 3600 * 1000;
-    const again = await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    const again = await agent.call('tg_index', { chat: '@fixture_market', since: '30d' });
     expect(again.text).toContain('6 messages in the local index (1 new,');
     expect(historyCalls() - callsAfterFirst).toBe(1);
 
@@ -545,9 +545,9 @@ describe('index toolset: local indexing and search', () => {
   });
 
   it('extends the period backward by reading only the remaining tail', async () => {
-    await agent.call('tg_index', { chat: '@baraholka', since: '30d' });
+    await agent.call('tg_index', { chat: '@fixture_market', since: '30d' });
     expect((await agent.call('tg_local_search', { query: 'pump' })).text).toContain('0 of 0 matches');
-    const wider = await agent.call('tg_index', { chat: '@baraholka', since: '60d' });
+    const wider = await agent.call('tg_index', { chat: '@fixture_market', since: '60d' });
     expect(wider.text).toContain('6 messages in the local index (1 new,');
     expect(wider.text).toContain('covers this chat since 2026-08-02');
     expect((await agent.call('tg_local_search', { query: 'pump' })).text).toContain('#104');
@@ -555,16 +555,16 @@ describe('index toolset: local indexing and search', () => {
 
     const list = await agent.call('tg_index', { action: 'list' });
     expect(list.text).toContain('Indexed chats: 1');
-    expect(list.text).toContain('@baraholka | account agent | 6 messages | since 2026-08-02 | synced 2026-10-01 12:00');
+    expect(list.text).toContain('@fixture_market | account agent | 6 messages | since 2026-08-02 | synced 2026-10-01 12:00');
     // Periods can also use years, up to three years.
-    expect((await agent.call('tg_index', { chat: '@baraholka', since: '1y' })).text).toContain('covers this chat since 2025-10-01');
-    expect((await agent.call('tg_index', { chat: '@baraholka', since: '9y' })).text).toContain('covers this chat since 2023-10-02');
-    expect((await agent.call('tg_index', { chat: '@baraholka', since: 'long ago' })).text).toContain('Use a relative period (30d, 12h, 2w, 6mo, 1y)');
+    expect((await agent.call('tg_index', { chat: '@fixture_market', since: '1y' })).text).toContain('covers this chat since 2025-10-01');
+    expect((await agent.call('tg_index', { chat: '@fixture_market', since: '9y' })).text).toContain('covers this chat since 2023-10-02');
+    expect((await agent.call('tg_index', { chat: '@fixture_market', since: 'long ago' })).text).toContain('Use a relative period (30d, 12h, 2w, 6mo, 1y)');
   });
 
   it('paginates results and searches a single chat', async () => {
     feed = Array.from({ length: 25 }, (_, i) => msg(300 - i, 1 + i * 0.1, `Selling chair number ${i}`));
-    await agent.call('tg_index', { chat: '@baraholka' });
+    await agent.call('tg_index', { chat: '@fixture_market' });
     const first = await agent.call('tg_local_search', { query: 'chair', limit: 10 });
     expect(first.text).toContain('10 of 25 matches');
     const cursor = first.text.match(/next_cursor: (\S+)/)![1]!;
@@ -573,44 +573,44 @@ describe('index toolset: local indexing and search', () => {
     expect(second.text).not.toContain('#291 ');
     expect((await agent.call('tg_local_search', { query: 'table', cursor })).text).toContain('cursor belongs to another query');
 
-    expect((await agent.call('tg_local_search', { query: 'chair', chat: '@baraholka', limit: 50 })).text).toContain('25 of 25 matches');
-    const notIndexed = await agent.call('tg_local_search', { query: 'chair', chat: '@stonksnws' });
+    expect((await agent.call('tg_local_search', { query: 'chair', chat: '@fixture_market', limit: 50 })).text).toContain('25 of 25 matches');
+    const notIndexed = await agent.call('tg_local_search', { query: 'chair', chat: '@fixture_channel' });
     expect(notIndexed.isError).toBe(true);
-    expect(notIndexed.text).toContain('@stonksnws is not indexed');
+    expect(notIndexed.text).toContain('@fixture_channel is not indexed');
   });
 
   it('shares account indexes, hides blocked chats, and allows only creators to delete indexes', async () => {
-    await agent.call('tg_index', { chat: '@baraholka' });
-    const partner = await gw.client('partner', INDEX);
+    await agent.call('tg_index', { chat: '@fixture_market' });
+    const user_b = await gw.client('user_b', INDEX);
     // Another user searches the same index on shared account agent.
-    expect((await partner.call('tg_local_search', { query: 'bicycle', account: 'agent' })).text).toContain('3 of 3 matches');
-    const denied = await partner.call('tg_index', { action: 'remove', chat: '@baraholka', account: 'agent' });
+    expect((await user_b.call('tg_local_search', { query: 'bicycle', account: 'agent' })).text).toContain('3 of 3 matches');
+    const denied = await user_b.call('tg_index', { action: 'remove', chat: '@fixture_market', account: 'agent' });
     expect(denied.isError).toBe(true);
-    expect(denied.text).toContain('was created by nick');
+    expect(denied.text).toContain('was created by user_a');
 
     // Blocking the chat hides its index from this user's search and list.
-    gw.storage.scopes.put({ userId: 'nick', accountId: 'agent', target: '-1000000000700', effect: 'deny' });
+    gw.storage.scopes.put({ userId: 'user_a', accountId: 'agent', target: '-1000000000700', effect: 'deny' });
     expect((await agent.call('tg_local_search', { query: 'bicycle' })).text).toContain('Nothing is indexed yet');
     expect((await agent.call('tg_index', { action: 'list' })).text).toContain('Indexed chats: 0');
-    expect((await partner.call('tg_local_search', { query: 'bicycle', account: 'agent' })).text).toContain('3 of 3 matches');
-    await partner.close();
-    expect((await nick.tools()).map(t => t.name)).not.toContain('tg_local_search');
+    expect((await user_b.call('tg_local_search', { query: 'bicycle', account: 'agent' })).text).toContain('3 of 3 matches');
+    await user_b.close();
+    expect((await user_a.tools()).map(t => t.name)).not.toContain('tg_local_search');
   });
 
   it('removes stored message text when deleting an index or account', async () => {
-    await agent.call('tg_index', { chat: '@baraholka' });
+    await agent.call('tg_index', { chat: '@fixture_market' });
     const count = (table: string) => Number((gw.storage.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n);
     // The default 90-day period contains seven non-service messages.
     expect(count('indexed_messages')).toBe(7);
     expect(count('indexed_fts')).toBe(7);
 
-    const removed = await agent.call('tg_index', { action: 'remove', chat: '@baraholka' });
+    const removed = await agent.call('tg_index', { action: 'remove', chat: '@fixture_market' });
     expect(removed.text).toContain('7 messages deleted from the gateway');
     expect(count('indexed_messages')).toBe(0);
     expect(count('indexed_fts')).toBe(0);
-    expect((await agent.call('tg_index', { action: 'remove', chat: '@baraholka' })).text).toContain('is not indexed');
+    expect((await agent.call('tg_index', { action: 'remove', chat: '@fixture_market' })).text).toContain('is not indexed');
 
-    await agent.call('tg_index', { chat: '@baraholka' });
+    await agent.call('tg_index', { chat: '@fixture_market' });
     expect(count('indexed_fts')).toBe(7);
     removeAccount(gw.storage, 'agent');
     expect(count('indexed_messages')).toBe(0);
@@ -626,23 +626,23 @@ describe('index toolset: local indexing and search', () => {
       await gate;
       return page;
     });
-    await agent.call('tg_resolve', { ref: '@baraholka' });
+    await agent.call('tg_resolve', { ref: '@fixture_market' });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      const pending = agent.call('tg_index', { chat: '@baraholka' });
+      const pending = agent.call('tg_index', { chat: '@fixture_market' });
       await vi.advanceTimersByTimeAsync(21_000);
       const started = await pending;
-      expect(started.text).toContain('Indexing of @baraholka is running');
+      expect(started.text).toContain('Indexing of @fixture_market is running');
       const jobId = started.text.match(/job_id: (job_[0-9a-f]+)/)![1]!;
 
-      const second = agent.call('tg_index', { chat: '@baraholka' });
+      const second = agent.call('tg_index', { chat: '@fixture_market' });
       await vi.advanceTimersByTimeAsync(6_000);
       expect((await second).text).toContain(jobId);
       expect(gw.storage.jobs.list({ limit: 10 }).filter(j => j.kind === 'index')).toHaveLength(1);
 
       release();
       await vi.advanceTimersByTimeAsync(10);
-      expect((await agent.call('tg_index', { job_id: jobId })).text).toContain('Indexed @baraholka: 1 messages');
+      expect((await agent.call('tg_index', { job_id: jobId })).text).toContain('Indexed @fixture_market: 1 messages');
     } finally {
       vi.useRealTimers();
     }
@@ -650,14 +650,14 @@ describe('index toolset: local indexing and search', () => {
 
   it('indexes large chats across capped runs without coverage gaps', async () => {
     feed = Array.from({ length: 450 }, (_, i) => msg(1000 - i, 1 + i * 0.05, `Listing number ${1000 - i}`));
-    await agent.call('tg_resolve', { ref: '@baraholka' });
+    await agent.call('tg_resolve', { ref: '@fixture_market' });
     const store = new IndexStore(gw.storage, () => clock);
     const service = new LocalIndexService({ storage: gw.storage, store, history: new HistoryService(gw.tg), now: () => clock, maxPerRun: 200 });
     const jobs = new JobManager({ storage: gw.storage, log: createLogger('test', { level: 'silent' }) });
     jobs.register('index', ctx => service.run(ctx));
     const run = async () => {
-      const job = jobs.start({ userId: 'nick', accountId: 'agent', kind: 'index', params: { accountId: 'agent', chatKey: '-1000000000700', sinceTs: at(60) } });
-      return (await jobs.waitFor(job.id, 'nick', 5_000)).result as { partial: boolean; messages: number; sinceTs: number };
+      const job = jobs.start({ userId: 'user_a', accountId: 'agent', kind: 'index', params: { accountId: 'agent', chatKey: '-1000000000700', sinceTs: at(60) } });
+      return (await jobs.waitFor(job.id, 'user_a', 5_000)).result as { partial: boolean; messages: number; sinceTs: number };
     };
 
     const first = await run();
@@ -682,7 +682,7 @@ describe('index toolset: local indexing and search', () => {
 
 describe('all toolset contracts', () => {
   it('gives each tool a flat schema, short description, and correct read hint', async () => {
-    const everything = await gw.client('nick', ['core', 'discover', 'analytics', 'index', 'write']);
+    const everything = await gw.client('user_a', ['core', 'discover', 'analytics', 'index', 'write']);
     const tools = await everything.tools();
     await everything.close();
     expect(tools.map(t => t.name).sort()).toEqual([

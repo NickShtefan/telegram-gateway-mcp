@@ -268,7 +268,7 @@ describe('export: spreadsheet values', () => {
     expect(csvCell('a line, with a comma')).toBe('"a line, with a comma"');
     expect(csvCell('two\nlines')).toBe('"two\nlines"');
     expect(csvCell(null)).toBe('');
-    expect(slugify('@Stonks_NWS  iPhone 15 / ../../etc')).toBe('stonks-nws-iphone-15-etc');
+    expect(slugify('@Fixture Channel_NWS  iPhone 15 / ../../etc')).toBe('fixture-channel-nws-iphone-15-etc');
   });
 });
 
@@ -290,20 +290,20 @@ describe('JobManager', () => {
       await gate;
       return { path: '/x.jsonl', rows: 400 };
     });
-    const job = jobs.start({ userId: 'nick', accountId: 'agent', kind: 'export', params: { chat: '-1001' } });
+    const job = jobs.start({ userId: 'user_a', accountId: 'agent', kind: 'export', params: { chat: '-1001' } });
     expect(job.id).toMatch(/^job_[0-9a-f]{12}$/);
-    await vi.waitFor(() => expect(jobs.get(job.id, 'nick')).toMatchObject({ state: 'running', progress: { rows: 100 } }));
+    await vi.waitFor(() => expect(jobs.get(job.id, 'user_a')).toMatchObject({ state: 'running', progress: { rows: 100 } }));
     release();
-    const done = await jobs.waitFor(job.id, 'nick', 1_000);
+    const done = await jobs.waitFor(job.id, 'user_a', 1_000);
     expect(done).toMatchObject({ state: 'done', result: { path: '/x.jsonl', rows: 400 } });
-    expect(() => jobs.get(job.id, 'partner')).toThrow(/not found/);
+    expect(() => jobs.get(job.id, 'user_b')).toThrow(/not found/);
   });
 
   it('waitFor returns current state on timeout before completion', async () => {
     const jobs = new JobManager({ storage, log: silent });
     jobs.register('slow', () => new Promise(() => undefined));
-    const job = jobs.start({ userId: 'nick', kind: 'slow', params: {} });
-    const state = await jobs.waitFor(job.id, 'nick', 20);
+    const job = jobs.start({ userId: 'user_a', kind: 'slow', params: {} });
+    const state = await jobs.waitFor(job.id, 'user_a', 20);
     expect(state.state).toBe('running');
     jobs.stop();
   });
@@ -313,10 +313,10 @@ describe('JobManager', () => {
     jobs.register('export', async () => {
       throw new GatewayError('FLOOD_WAIT', 'wait 400 seconds', { retryAfter: 400 });
     });
-    const job = jobs.start({ userId: 'nick', kind: 'export', params: {} });
-    const done = await jobs.waitFor(job.id, 'nick', 1_000);
+    const job = jobs.start({ userId: 'user_a', kind: 'export', params: {} });
+    const done = await jobs.waitFor(job.id, 'user_a', 1_000);
     expect(done).toMatchObject({ state: 'failed', error: 'FLOOD_WAIT: wait 400 seconds' });
-    expect(() => jobs.start({ userId: 'nick', kind: 'unknown', params: {} })).toThrow(/Unknown job kind/);
+    expect(() => jobs.start({ userId: 'user_a', kind: 'unknown', params: {} })).toThrow(/Unknown job kind/);
   });
 
   it('limits the number of concurrent jobs', async () => {
@@ -331,15 +331,15 @@ describe('JobManager', () => {
       running--;
       return {};
     });
-    const a = jobs.start({ userId: 'nick', kind: 'export', params: { n: 1 } });
-    const b = jobs.start({ userId: 'nick', kind: 'export', params: { n: 2 } });
+    const a = jobs.start({ userId: 'user_a', kind: 'export', params: { n: 1 } });
+    const b = jobs.start({ userId: 'user_a', kind: 'export', params: { n: 2 } });
     await vi.waitFor(() => expect(releases).toHaveLength(1));
-    expect(jobs.get(b.id, 'nick').state).toBe('queued');
+    expect(jobs.get(b.id, 'user_a').state).toBe('queued');
     releases[0]!();
-    await jobs.waitFor(a.id, 'nick', 1_000);
+    await jobs.waitFor(a.id, 'user_a', 1_000);
     await vi.waitFor(() => expect(releases).toHaveLength(2));
     releases[1]!();
-    await jobs.waitFor(b.id, 'nick', 1_000);
+    await jobs.waitFor(b.id, 'user_a', 1_000);
     expect(maxRunning).toBe(1);
   });
 
@@ -351,21 +351,21 @@ describe('JobManager', () => {
       sawStop = true;
       return { rows: 10 };
     });
-    const running = jobs.start({ userId: 'nick', kind: 'export', params: {} });
-    const queued = jobs.start({ userId: 'nick', kind: 'export', params: {} });
-    await vi.waitFor(() => expect(jobs.get(running.id, 'nick').state).toBe('running'));
+    const running = jobs.start({ userId: 'user_a', kind: 'export', params: {} });
+    const queued = jobs.start({ userId: 'user_a', kind: 'export', params: {} });
+    await vi.waitFor(() => expect(jobs.get(running.id, 'user_a').state).toBe('running'));
     jobs.stop();
     await vi.waitFor(() => expect(sawStop).toBe(true));
     // Do not record an interrupted outcome; the job is requeued on startup.
-    expect(jobs.get(running.id, 'nick').state).toBe('running');
-    expect(jobs.get(queued.id, 'nick').state).toBe('queued');
+    expect(jobs.get(running.id, 'user_a').state).toBe('running');
+    expect(jobs.get(queued.id, 'user_a').state).toBe('queued');
   });
 
   it('runs the oldest job first even with more than fifty queued jobs', async () => {
     let clock = 1_000;
     const ordered = new SqliteStorage({ path: ':memory:', now: () => (clock += 10) });
     try {
-      for (let i = 1; i <= 60; i++) ordered.jobs.create({ id: `job_${i}`, userId: 'nick', kind: 'export', params: { n: i } });
+      for (let i = 1; i <= 60; i++) ordered.jobs.create({ id: `job_${i}`, userId: 'user_a', kind: 'export', params: { n: i } });
       const jobs = new JobManager({ storage: ordered, log: silent, concurrency: 1 });
       const order: number[] = [];
       jobs.register('export', async ctx => {
@@ -373,7 +373,7 @@ describe('JobManager', () => {
         return {};
       });
       expect(jobs.resume()).toBe(0);
-      await jobs.waitFor('job_3', 'nick', 1_000);
+      await jobs.waitFor('job_3', 'user_a', 1_000);
       expect(order.slice(0, 3)).toEqual([1, 2, 3]);
       jobs.stop();
     } finally {
@@ -385,15 +385,15 @@ describe('JobManager', () => {
     const jobs = new JobManager({ storage, log: silent });
     let release!: () => void;
     jobs.register('export', () => new Promise(r => (release = () => r({}))));
-    const job = jobs.start({ userId: 'nick', kind: 'export', params: {} });
-    for (let i = 0; i < 5; i++) await jobs.waitFor(job.id, 'nick', 5);
+    const job = jobs.start({ userId: 'user_a', kind: 'export', params: {} });
+    for (let i = 0; i < 5; i++) await jobs.waitFor(job.id, 'user_a', 5);
     expect((jobs as unknown as { waiters: Map<string, unknown[]> }).waiters.size).toBe(0);
     release();
-    expect((await jobs.waitFor(job.id, 'nick', 1_000)).state).toBe('done');
+    expect((await jobs.waitFor(job.id, 'user_a', 1_000)).state).toBe('done');
   });
 
   it('stops resuming jobs that repeatedly crash the gateway', async () => {
-    storage.jobs.create({ id: 'job_bad', userId: 'nick', kind: 'export', params: {} });
+    storage.jobs.create({ id: 'job_bad', userId: 'user_a', kind: 'export', params: {} });
     const run = vi.fn(async () => ({}));
     for (let restart = 1; restart <= 3; restart++) {
       // The process crashed while the job was running.
@@ -408,12 +408,12 @@ describe('JobManager', () => {
   });
 
   it('requeues and executes interrupted jobs after restart', async () => {
-    storage.jobs.create({ id: 'job_old', userId: 'nick', kind: 'export', params: { chat: '-1001' } });
+    storage.jobs.create({ id: 'job_old', userId: 'user_a', kind: 'export', params: { chat: '-1001' } });
     storage.jobs.update('job_old', { state: 'running', progress: { rows: 50 } });
     const jobs = new JobManager({ storage, log: silent });
     jobs.register('export', async ctx => ({ resumedFrom: ctx.job.progress.rows }));
     expect(jobs.resume()).toBe(1);
-    const done = await jobs.waitFor('job_old', 'nick', 1_000);
+    const done = await jobs.waitFor('job_old', 'user_a', 1_000);
     expect(done).toMatchObject({ state: 'done', result: { resumedFrom: 50 } });
   });
 });

@@ -1,10 +1,10 @@
 # Architecture
 
-The gateway's current implementation. Rationale: [decisions.md](decisions.md). Agent-facing interface: [tools.md](tools.md).
+The gateway's current implementation. Agent-facing interface: [tools.md](tools.md).
 
 ## Purpose
 
-One process (`tg-mcp serve`) owns the MTProto sessions of connected Telegram accounts and handles MCP tool calls. It is a tool for an agent, not an agent (decision 25): no model, schedules, or chat monitoring inside. Every Telegram operation responds to a tool call.
+One process (`tg-mcp serve`) owns the MTProto sessions of connected Telegram accounts and handles MCP tool calls. It is a tool for an agent, not an agent: no model, schedules, or chat monitoring inside. Every Telegram operation responds to a tool call.
 
 ## Request flow
 
@@ -61,7 +61,7 @@ Code: `src/writegate/` and `services/write.ts`.
 2. The agent shows the preview to the owner.
 3. `tg_confirm` rechecks scopes/limits, sends the action to Telegram, and journals its outcome.
 
-Requests expire after 30 minutes. Repeated confirmation never executes twice; another user's request cannot be confirmed; a write interrupted by restart is not replayed (outcome unknown). The journal supplies daily limits for replies, new dialogs, joins, and reactions (configurable under decision 27).
+Requests expire after 30 minutes. Repeated confirmation never executes twice; another user's request cannot be confirmed; a write interrupted by restart is not replayed (outcome unknown). The journal supplies daily limits for replies, new dialogs, joins, and reactions (owner-configurable).
 
 ## Services
 
@@ -77,9 +77,9 @@ Requests expire after 30 minutes. Repeated confirmation never executes twice; an
 | `dialogs.ts` | Account dialogs including archived chats |
 | `discover.ts` | Channel name search, similar channels, forwarding sources |
 | `stats.ts` | Public channel counters and daily participant-count snapshots |
-| `localIndex.ts` | SQLite trigram FTS5 message index and search |
+| `localIndex.ts` | SQLite trigram FTS5 search; short terms filter before counts and pagination |
 | `export.ts` | JSONL/CSV export: authors hashed, phone numbers masked (`phones.ts`) |
-| `media.ts` | Photos, albums, video thumbnails in the shared directory; file-size and directory quotas |
+| `media.ts` | Photos, albums, video thumbnails in the shared directory; metadata and actual full-file size checks, cache checks and directory quotas |
 | `write.ts` | Replies, sends, reactions, joins and limits; inline-button press with message revalidation |
 | `buttons.ts` | Keyboard button type/label/URL, row/position lookup, verification fingerprint |
 | `jobs.ts` | Long-running export/index jobs, database state, restart continuation |
@@ -88,7 +88,7 @@ Requests expire after 30 minutes. Repeated confirmation never executes twice; an
 
 - **Client pool** (`clientPool.ts`): one teleproto client per account, lazy connection, coalesced concurrent attempts, 30-second connect limit. Library logging goes to stderr.
 - **Limiter** (`limiter.ts`): one sequential lane per account, 500 ms spacing, 60 calls/minute. Per-call deadlines: 20 seconds, 60 for downloads. FLOOD_WAIT up to five minutes pauses the account and is waited within the wait budget (15 seconds for agent calls); above five minutes, only the affected method is closed and the agent immediately receives `retry_after`. Chat slow mode is not an account pause. Agent calls take priority over background jobs.
-- **Watchdog** (`recovery.ts`): a timed-out MTProto call cannot be safely canceled. Waiting calls fail, the process exits with code 1, and launchd restarts it. The stateless client can retry.
+- **Watchdog** (`recovery.ts`): a timed-out MTProto call cannot be safely canceled. Waiting calls fail, the process exits with code 1, and a configured supervisor restarts it. Retry reads only after restart; do not replay writes with an unknown outcome.
 - **Login** (`auth.ts`): phone, code, and 2FA password in `tg-mcp login`. The agent cannot see the code. Unregistered numbers are not signed up.
 - **Sessions** (`crypto.ts`): session strings are AES-256-GCM encrypted with `session.key` (or `TG_MCP_SESSION_KEY`) and stored in SQLite.
 - **Entities** (`entities.ts`, `entities` table): accessHash is session-bound, so each account has its own cache. Reduces tightly limited `contacts.ResolveUsername` calls.
@@ -119,6 +119,8 @@ Agent files live separately in the shared directory: `exports/<user>/` and `medi
 
 Without a tool call, the daemon only maintains existing account connections; it does not query Telegram. Once a minute it expires write requests; every six hours it removes old audit records. Agents start export/index jobs; interrupted jobs resume after restart.
 
-## Deployment
+## Deployment boundary
 
-The lab daemon runs as a separate macOS user (`tgmcp`) under launchd. Only that user can access the database, encryption key, and `.env`; root owns code/Node. Agents running as `nick` can access only HTTP and the shared files directory (decision 17). Installation/updates: [deploy.md](deploy.md).
+Keep daemon credentials, database and session key inaccessible to agent shells. A distinct OS identity can enforce this boundary; running everything under the same user cannot. The public installation/isolation model remains pending. HTTP tokens enforce logical account access, not OS separation. Shared exports/media must be readable by authorized clients without exposing account state.
+
+The current lock uses a Unix socket. Native Windows and the full target-platform matrix need release verification.

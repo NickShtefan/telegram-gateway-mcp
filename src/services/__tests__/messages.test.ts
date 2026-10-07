@@ -8,8 +8,8 @@ const response = {
     { className: 'User', id: 43n, firstName: 'Bot', bot: true, usernames: [{ username: 'menu_bot', active: true }] },
   ],
   chats: [
-    { className: 'Channel', id: 500n, title: 'Stonks', username: 'stonksnws', broadcast: true },
-    { className: 'Channel', id: 600n, title: 'Stonks chat', megagroup: true },
+    { className: 'Channel', id: 500n, title: 'Fixture Channel', username: 'fixture_channel', broadcast: true },
+    { className: 'Channel', id: 600n, title: 'Fixture Channel chat', megagroup: true },
   ],
   messages: [
     {
@@ -67,7 +67,7 @@ describe('normalizeMessages', () => {
   it('attributes channel posts to the channel and retains counters and albums', () => {
     expect(messages[0]).toMatchObject({
       chatKey: '-1000000000500',
-      author: { kind: 'channel', peerKey: '-1000000000500', name: 'Stonks', username: 'stonksnws' },
+      author: { kind: 'channel', peerKey: '-1000000000500', name: 'Fixture Channel', username: 'fixture_channel' },
       views: 12_345,
       forwards: 7,
       replies: 14,
@@ -86,7 +86,7 @@ describe('normalizeMessages', () => {
       author: { kind: 'user', peerKey: '42', name: 'Ivan Petrov', username: 'seller', bot: false },
       topicId: 5,
       replyToId: 70,
-      forwardedFrom: { name: 'Stonks', peerKey: '-1000000000500', postId: 10 },
+      forwardedFrom: { name: 'Fixture Channel', peerKey: '-1000000000500', postId: 10 },
       views: null,
       replies: null,
       hasComments: false,
@@ -94,7 +94,7 @@ describe('normalizeMessages', () => {
   });
 
   it('handles anonymous administrators and service messages', () => {
-    expect(messages[2]!.author).toMatchObject({ kind: 'channel', name: 'Stonks chat' });
+    expect(messages[2]!.author).toMatchObject({ kind: 'channel', name: 'Fixture Channel chat' });
     expect(messages[2]!.topicId).toBeNull();
     expect(messages[3]).toMatchObject({ service: 'MessageActionChatAddUser', text: '' });
   });

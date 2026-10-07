@@ -29,3 +29,7 @@ Stage 2.5 validation: build, typecheck, 725 tests passed. Stage 2.6 (F6): displa
 Stage 2.6 validation: build, typecheck, 726 tests passed. Stage 2 is complete.
 
 Stage 3: removed both write-only DeadlineError fields and 26 module-local value exports (implementations retained). Build/typecheck check for external consumers. Corrected M1-M8 comments and three SQLite job headings. AuditRepo.recent, EntitiesRepo.put, all modules, Unicode fixtures and eight published migrations remain.
+
+Stage 3 validation: build/typecheck, 726 tests, bash syntax and ShellCheck pass; commit `f23b12f`.
+
+Stage 4: prepared an explicit source-to-destination manifest. Generalized README, architecture, tool contracts, connections, risks and synthetic scenarios; prepared portable public AGENTS.md separately so current private operating rules remain intact. Test identities/handles are synthetic (user_a/user_b, fixture_channel/fixture_market); permissions and session state are untouched. Private plan/decisions/questions/research/evidence, Russian audit, laboratory instructions and installer remain excluded. Package metadata stays private; public version, installation, license and release preparation are explicit pending gates.

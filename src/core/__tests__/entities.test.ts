@@ -7,8 +7,8 @@ describe('entityFromApi', () => {
       className: 'Channel',
       id: 1782171896n,
       accessHash: 555n,
-      title: 'Stonks',
-      usernames: [{ username: 'old', active: false }, { username: 'stonksnws', active: true }],
+      title: 'Fixture Channel',
+      usernames: [{ username: 'old', active: false }, { username: 'fixture_channel', active: true }],
       broadcast: true,
       forum: false,
       left: true,
@@ -17,8 +17,8 @@ describe('entityFromApi', () => {
       peerKey: '-1001782171896',
       kind: 'channel',
       accessHash: '555',
-      username: 'stonksnws',
-      title: 'Stonks',
+      username: 'fixture_channel',
+      title: 'Fixture Channel',
       meta: { broadcast: true, megagroup: false, forum: false, member: false },
     });
   });

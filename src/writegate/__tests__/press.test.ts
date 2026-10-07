@@ -11,7 +11,7 @@ const ALL = ['core', 'write'];
 const LINK = 'https://t.me/it_chat/9149';
 
 let gw: TestGateway;
-let nick: TestClient;
+let user_a: TestClient;
 let clock: number;
 
 type RawButton = Record<string, unknown>;
@@ -44,25 +44,25 @@ beforeEach(async () => {
   clock = Date.UTC(2026, 9, 2, 12, 0, 0);
   gw = makeTestGateway({ now: () => clock });
   gw.config.toolsets = ALL;
-  nick = await gw.client('nick', ALL);
+  user_a = await gw.client('user_a', ALL);
   gw.tg.on('contacts.ResolveUsername', () => ({ peer: { className: 'PeerChannel', channelId: BigInt(GROUP) }, chats: [group()], users: [] }));
   gw.tg.on('messages.GetBotCallbackAnswer', () => ({ className: 'messages.BotCallbackAnswer', message: 'Vote accepted', cacheTime: 0 }));
   botMessage(VOTE);
 });
 
 afterEach(async () => {
-  await nick.close();
+  await user_a.close();
   gw.cleanup();
 });
 
 const approvalIdOf = (text: string): string => text.match(/approval_id (ap_[0-9a-f]+)/)![1]!;
-const press = (row: number, button: number) => nick.call('tg_press_button', { link: LINK, row, button });
-const confirm = (approvalId: string) => nick.call('tg_confirm', { approval_id: approvalId });
+const press = (row: number, button: number) => user_a.call('tg_press_button', { link: LINK, row, button });
+const confirm = (approvalId: string) => user_a.call('tg_confirm', { approval_id: approvalId });
 const presses = () => gw.tg.callsOf('messages.GetBotCallbackAnswer');
 
 describe('inline buttons in output', () => {
   it('tg_get_message shows position, label, type, and link URL without callback bytes', async () => {
-    const text = (await nick.call('tg_get_message', { link: LINK })).text;
+    const text = (await user_a.call('tg_get_message', { link: LINK })).text;
     expect(text).toContain('buttons: 1.1 "Yes" (callback) | 1.2 "No" (callback) | 2.1 "Website" (link https://secret.example/token-123)');
     expect(text).toContain('button labels and link addresses');
     expect(text).not.toContain('vote:');
@@ -74,10 +74,10 @@ describe('inline buttons in output', () => {
       chats: [group()],
       users: [bot()],
     }));
-    const brief = (await nick.call('tg_read_history', { chat: '@it_chat' })).text;
+    const brief = (await user_a.call('tg_read_history', { chat: '@it_chat' })).text;
     expect(brief).toContain('| buttons 3 |');
     expect(brief).not.toContain('"Yes"');
-    expect((await nick.call('tg_read_history', { chat: '@it_chat', mode: 'full' })).text).toContain('buttons: 1.1 "Yes" (callback)');
+    expect((await user_a.call('tg_read_history', { chat: '@it_chat', mode: 'full' })).text).toContain('buttons: 1.1 "Yes" (callback)');
   });
 
   it('does not expose reply keyboards or absent keyboards as inline buttons', () => {
@@ -132,7 +132,7 @@ describe('two-step button press', () => {
 
   it('reject cancels without pressing', async () => {
     const prepared = await press(1, 1);
-    const rejected = await nick.call('tg_confirm', { approval_id: approvalIdOf(prepared.text), action: 'reject' });
+    const rejected = await user_a.call('tg_confirm', { approval_id: approvalIdOf(prepared.text), action: 'reject' });
     expect(rejected.text).toContain('Nothing was done in Telegram');
     expect(presses()).toHaveLength(0);
   });
@@ -218,12 +218,12 @@ describe('unsupported button types', () => {
       expect(refused.text, kind).toContain('Error: INVALID_ARGUMENT');
       expect(refused.text, kind).toContain(`This is ${kind}.`);
     }
-    expect(gw.services.writeGate.store.listApprovals('nick', ['pending'])).toHaveLength(0);
+    expect(gw.services.writeGate.store.listApprovals('user_a', ['pending'])).toHaveLength(0);
   });
 
   it('does not enter a 2FA password requested by a button', async () => {
     botMessage(keyboard([callback('Transfer channel', 'transfer', { requiresPassword: true })]));
-    expect((await nick.call('tg_get_message', { link: LINK })).text).toContain('1.1 "Transfer channel" (callback, asks for the 2FA password)');
+    expect((await user_a.call('tg_get_message', { link: LINK })).text).toContain('1.1 "Transfer channel" (callback, asks for the 2FA password)');
     const refused = await press(1, 1);
     expect(refused.isError).toBe(true);
     expect(refused.text).toContain('The gateway never enters it');
@@ -239,12 +239,12 @@ describe('unsupported button types', () => {
   });
 
   it('belongs only to write; the owner chooses buttons, not the tool description', async () => {
-    const tool = (await nick.tools()).find(t => t.name === 'tg_press_button')!;
+    const tool = (await user_a.tools()).find(t => t.name === 'tg_press_button')!;
     expect(tool.description).toContain('pressed only after tg_confirm');
     expect(tool.description).not.toMatch(/captcha|anti-bot|not a bot/i);
-    expect(nick.instructions()).toContain("never joins chats or presses buttons without the owner's confirmation");
+    expect(user_a.instructions()).toContain("never joins chats or presses buttons without the owner's confirmation");
     expect(tool.annotations?.readOnlyHint).toBe(false);
-    const core = await gw.client('nick', ['core']);
+    const core = await gw.client('user_a', ['core']);
     expect((await core.tools()).map(t => t.name)).not.toContain('tg_press_button');
     await core.close();
   });

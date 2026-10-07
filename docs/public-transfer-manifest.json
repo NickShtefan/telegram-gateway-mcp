@@ -1,0 +1,500 @@
+{
+  "formatVersion": 1,
+  "status": "Prepared file selection, not a release or transferred snapshot",
+  "publicName": "telegram-mcp-gateway",
+  "cliCommand": "tg-mcp",
+  "files": [
+    {
+      "source": ".env.example",
+      "destination": ".env.example"
+    },
+    {
+      "source": ".gitignore",
+      "destination": ".gitignore"
+    },
+    {
+      "source": "CLAUDE.md",
+      "destination": "CLAUDE.md"
+    },
+    {
+      "source": "README.md",
+      "destination": "README.md"
+    },
+    {
+      "source": "docs/architecture.md",
+      "destination": "docs/architecture.md"
+    },
+    {
+      "source": "docs/connect.md",
+      "destination": "docs/connect.md"
+    },
+    {
+      "source": "docs/risks.md",
+      "destination": "docs/risks.md"
+    },
+    {
+      "source": "docs/scenarios.md",
+      "destination": "docs/scenarios.md"
+    },
+    {
+      "source": "docs/tools.md",
+      "destination": "docs/tools.md"
+    },
+    {
+      "source": "package-lock.json",
+      "destination": "package-lock.json"
+    },
+    {
+      "source": "package.json",
+      "destination": "package.json"
+    },
+    {
+      "source": "scripts/clean-build.mjs",
+      "destination": "scripts/clean-build.mjs"
+    },
+    {
+      "source": "src/__tests__/helpers/fakeTg.ts",
+      "destination": "src/__tests__/helpers/fakeTg.ts"
+    },
+    {
+      "source": "src/__tests__/helpers/gateway.ts",
+      "destination": "src/__tests__/helpers/gateway.ts"
+    },
+    {
+      "source": "src/cli/__tests__/cli.test.ts",
+      "destination": "src/cli/__tests__/cli.test.ts"
+    },
+    {
+      "source": "src/cli/admin.ts",
+      "destination": "src/cli/admin.ts"
+    },
+    {
+      "source": "src/cli/doctor.ts",
+      "destination": "src/cli/doctor.ts"
+    },
+    {
+      "source": "src/cli/index.ts",
+      "destination": "src/cli/index.ts"
+    },
+    {
+      "source": "src/cli/io.ts",
+      "destination": "src/cli/io.ts"
+    },
+    {
+      "source": "src/cli/login.ts",
+      "destination": "src/cli/login.ts"
+    },
+    {
+      "source": "src/cli/main.ts",
+      "destination": "src/cli/main.ts"
+    },
+    {
+      "source": "src/cli/serve.ts",
+      "destination": "src/cli/serve.ts"
+    },
+    {
+      "source": "src/core/__tests__/chatId.test.ts",
+      "destination": "src/core/__tests__/chatId.test.ts"
+    },
+    {
+      "source": "src/core/__tests__/entities.test.ts",
+      "destination": "src/core/__tests__/entities.test.ts"
+    },
+    {
+      "source": "src/core/__tests__/errors.test.ts",
+      "destination": "src/core/__tests__/errors.test.ts"
+    },
+    {
+      "source": "src/core/__tests__/limiter.test.ts",
+      "destination": "src/core/__tests__/limiter.test.ts"
+    },
+    {
+      "source": "src/core/__tests__/misc.test.ts",
+      "destination": "src/core/__tests__/misc.test.ts"
+    },
+    {
+      "source": "src/core/__tests__/pool.test.ts",
+      "destination": "src/core/__tests__/pool.test.ts"
+    },
+    {
+      "source": "src/core/auth.ts",
+      "destination": "src/core/auth.ts"
+    },
+    {
+      "source": "src/core/chatId.ts",
+      "destination": "src/core/chatId.ts"
+    },
+    {
+      "source": "src/core/clientPool.ts",
+      "destination": "src/core/clientPool.ts"
+    },
+    {
+      "source": "src/core/config.ts",
+      "destination": "src/core/config.ts"
+    },
+    {
+      "source": "src/core/crypto.ts",
+      "destination": "src/core/crypto.ts"
+    },
+    {
+      "source": "src/core/entities.ts",
+      "destination": "src/core/entities.ts"
+    },
+    {
+      "source": "src/core/errors.ts",
+      "destination": "src/core/errors.ts"
+    },
+    {
+      "source": "src/core/limiter.ts",
+      "destination": "src/core/limiter.ts"
+    },
+    {
+      "source": "src/core/lock.ts",
+      "destination": "src/core/lock.ts"
+    },
+    {
+      "source": "src/core/log.ts",
+      "destination": "src/core/log.ts"
+    },
+    {
+      "source": "src/core/reactions.ts",
+      "destination": "src/core/reactions.ts"
+    },
+    {
+      "source": "src/core/recovery.ts",
+      "destination": "src/core/recovery.ts"
+    },
+    {
+      "source": "src/core/safeFs.ts",
+      "destination": "src/core/safeFs.ts"
+    },
+    {
+      "source": "src/core/tg.ts",
+      "destination": "src/core/tg.ts"
+    },
+    {
+      "source": "src/core/time.ts",
+      "destination": "src/core/time.ts"
+    },
+    {
+      "source": "src/mcp/__tests__/format.test.ts",
+      "destination": "src/mcp/__tests__/format.test.ts"
+    },
+    {
+      "source": "src/mcp/__tests__/tools.test.ts",
+      "destination": "src/mcp/__tests__/tools.test.ts"
+    },
+    {
+      "source": "src/mcp/__tests__/toolsets.test.ts",
+      "destination": "src/mcp/__tests__/toolsets.test.ts"
+    },
+    {
+      "source": "src/mcp/args.ts",
+      "destination": "src/mcp/args.ts"
+    },
+    {
+      "source": "src/mcp/cursor.ts",
+      "destination": "src/mcp/cursor.ts"
+    },
+    {
+      "source": "src/mcp/format.ts",
+      "destination": "src/mcp/format.ts"
+    },
+    {
+      "source": "src/mcp/server.ts",
+      "destination": "src/mcp/server.ts"
+    },
+    {
+      "source": "src/mcp/tool.ts",
+      "destination": "src/mcp/tool.ts"
+    },
+    {
+      "source": "src/mcp/tools/analytics.ts",
+      "destination": "src/mcp/tools/analytics.ts"
+    },
+    {
+      "source": "src/mcp/tools/core.ts",
+      "destination": "src/mcp/tools/core.ts"
+    },
+    {
+      "source": "src/mcp/tools/discover.ts",
+      "destination": "src/mcp/tools/discover.ts"
+    },
+    {
+      "source": "src/mcp/tools/indexTools.ts",
+      "destination": "src/mcp/tools/indexTools.ts"
+    },
+    {
+      "source": "src/mcp/tools/shared.ts",
+      "destination": "src/mcp/tools/shared.ts"
+    },
+    {
+      "source": "src/mcp/tools/write.ts",
+      "destination": "src/mcp/tools/write.ts"
+    },
+    {
+      "source": "src/policy/__tests__/envelope.test.ts",
+      "destination": "src/policy/__tests__/envelope.test.ts"
+    },
+    {
+      "source": "src/policy/__tests__/policy.test.ts",
+      "destination": "src/policy/__tests__/policy.test.ts"
+    },
+    {
+      "source": "src/policy/access.ts",
+      "destination": "src/policy/access.ts"
+    },
+    {
+      "source": "src/policy/audit.ts",
+      "destination": "src/policy/audit.ts"
+    },
+    {
+      "source": "src/policy/envelope.ts",
+      "destination": "src/policy/envelope.ts"
+    },
+    {
+      "source": "src/policy/scopes.ts",
+      "destination": "src/policy/scopes.ts"
+    },
+    {
+      "source": "src/runtime.ts",
+      "destination": "src/runtime.ts"
+    },
+    {
+      "source": "src/services/__tests__/links.test.ts",
+      "destination": "src/services/__tests__/links.test.ts"
+    },
+    {
+      "source": "src/services/__tests__/media-jobs.test.ts",
+      "destination": "src/services/__tests__/media-jobs.test.ts"
+    },
+    {
+      "source": "src/services/__tests__/messages.test.ts",
+      "destination": "src/services/__tests__/messages.test.ts"
+    },
+    {
+      "source": "src/services/__tests__/phones.test.ts",
+      "destination": "src/services/__tests__/phones.test.ts"
+    },
+    {
+      "source": "src/services/__tests__/read.test.ts",
+      "destination": "src/services/__tests__/read.test.ts"
+    },
+    {
+      "source": "src/services/buttons.ts",
+      "destination": "src/services/buttons.ts"
+    },
+    {
+      "source": "src/services/comments.ts",
+      "destination": "src/services/comments.ts"
+    },
+    {
+      "source": "src/services/dialogs.ts",
+      "destination": "src/services/dialogs.ts"
+    },
+    {
+      "source": "src/services/discover.ts",
+      "destination": "src/services/discover.ts"
+    },
+    {
+      "source": "src/services/export.ts",
+      "destination": "src/services/export.ts"
+    },
+    {
+      "source": "src/services/history.ts",
+      "destination": "src/services/history.ts"
+    },
+    {
+      "source": "src/services/index.ts",
+      "destination": "src/services/index.ts"
+    },
+    {
+      "source": "src/services/jobs.ts",
+      "destination": "src/services/jobs.ts"
+    },
+    {
+      "source": "src/services/links.ts",
+      "destination": "src/services/links.ts"
+    },
+    {
+      "source": "src/services/localIndex.ts",
+      "destination": "src/services/localIndex.ts"
+    },
+    {
+      "source": "src/services/media.ts",
+      "destination": "src/services/media.ts"
+    },
+    {
+      "source": "src/services/messages.ts",
+      "destination": "src/services/messages.ts"
+    },
+    {
+      "source": "src/services/phones.ts",
+      "destination": "src/services/phones.ts"
+    },
+    {
+      "source": "src/services/resolve.ts",
+      "destination": "src/services/resolve.ts"
+    },
+    {
+      "source": "src/services/search.ts",
+      "destination": "src/services/search.ts"
+    },
+    {
+      "source": "src/services/stats.ts",
+      "destination": "src/services/stats.ts"
+    },
+    {
+      "source": "src/services/topics.ts",
+      "destination": "src/services/topics.ts"
+    },
+    {
+      "source": "src/services/write.ts",
+      "destination": "src/services/write.ts"
+    },
+    {
+      "source": "src/storage/__tests__/sqlite.test.ts",
+      "destination": "src/storage/__tests__/sqlite.test.ts"
+    },
+    {
+      "source": "src/storage/migrations.ts",
+      "destination": "src/storage/migrations.ts"
+    },
+    {
+      "source": "src/storage/port.ts",
+      "destination": "src/storage/port.ts"
+    },
+    {
+      "source": "src/storage/sqlite.ts",
+      "destination": "src/storage/sqlite.ts"
+    },
+    {
+      "source": "src/transport/__tests__/transport.test.ts",
+      "destination": "src/transport/__tests__/transport.test.ts"
+    },
+    {
+      "source": "src/transport/http.ts",
+      "destination": "src/transport/http.ts"
+    },
+    {
+      "source": "src/transport/stdio.ts",
+      "destination": "src/transport/stdio.ts"
+    },
+    {
+      "source": "src/writegate/__tests__/press.test.ts",
+      "destination": "src/writegate/__tests__/press.test.ts"
+    },
+    {
+      "source": "src/writegate/__tests__/write.test.ts",
+      "destination": "src/writegate/__tests__/write.test.ts"
+    },
+    {
+      "source": "src/writegate/approvals.ts",
+      "destination": "src/writegate/approvals.ts"
+    },
+    {
+      "source": "src/writegate/index.ts",
+      "destination": "src/writegate/index.ts"
+    },
+    {
+      "source": "src/writegate/store.ts",
+      "destination": "src/writegate/store.ts"
+    },
+    {
+      "source": "tsconfig.build.json",
+      "destination": "tsconfig.build.json"
+    },
+    {
+      "source": "tsconfig.json",
+      "destination": "tsconfig.json"
+    },
+    {
+      "source": "vitest.config.ts",
+      "destination": "vitest.config.ts"
+    },
+    {
+      "source": "docs/public-agent-instructions.md",
+      "destination": "AGENTS.md"
+    }
+  ],
+  "excludedTrackedFiles": [
+    {
+      "path": "AGENTS.md",
+      "reason": "Replaced by portable public agent instructions"
+    },
+    {
+      "path": "docs/cleanup-progress.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/decisions.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/deploy.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/findings.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/naming-research.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/open-questions.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/open-source-plan.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/plan.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/repository-audit.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/use-cases.md",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "scripts/lab-install.sh",
+      "reason": "Private planning, evidence or laboratory operations"
+    },
+    {
+      "path": "docs/public-transfer-manifest.json",
+      "reason": "Private cleanup preparation record"
+    }
+  ],
+  "excludedLocalPaths": [
+    ".git/",
+    ".claude/",
+    "node_modules/",
+    "dist/",
+    "coverage/",
+    ".env",
+    "data/",
+    "media/",
+    "exports/",
+    "session.key",
+    "*.session",
+    "*.sqlite*",
+    "*.db",
+    "*.log*",
+    "*.bak",
+    "*.backup",
+    "backups/"
+  ],
+  "requiredBeforeTransferOrRelease": [
+    "Vetted source commit and full snapshot secrets/PII review (stage 6)",
+    "MIT copyright holder, provenance and required notices; add LICENSE and notices to the selection",
+    "Public package name and release version metadata, retaining tg-mcp command",
+    "Public installation/isolation model and verified platform matrix",
+    "CI, contribution/security documents and release procedure under accepted owner decisions"
+  ]
+}

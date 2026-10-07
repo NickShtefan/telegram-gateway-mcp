@@ -58,11 +58,11 @@ describe('log', () => {
     const lines: string[] = [];
     const log = createLogger('t', { level: 'warn', write: l => lines.push(l) });
     log.info('skipped');
-    log.warn('auth', { token: 'abc', apiHash: 'def', sessionString: 'x', user: 'nick' });
+    log.warn('auth', { token: 'abc', apiHash: 'def', sessionString: 'x', user: 'user_a' });
     expect(lines).toHaveLength(1);
     expect(lines[0]).not.toContain('abc');
     expect(lines[0]).not.toContain('def');
-    expect(lines[0]).toContain('"user":"nick"');
+    expect(lines[0]).toContain('"user":"user_a"');
     expect(redactFields({ Authorization: 'Bearer 1', n: 1n })).toEqual({ Authorization: '[redacted]', n: '1' });
     expect(parseLogLevel('nonsense')).toBe('info');
   });

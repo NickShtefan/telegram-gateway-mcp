@@ -23,9 +23,9 @@ export interface TestGateway {
   storage: SqliteStorage;
   tg: FakeTg;
   services: GatewayServices;
-  tokens: { nick: string; partner: string };
+  tokens: { user_a: string; user_b: string };
   /** MCP client connected to the user's in-memory server. */
-  client(userId: 'nick' | 'partner', toolsets?: string[]): Promise<TestClient>;
+  client(userId: 'user_a' | 'user_b', toolsets?: string[]): Promise<TestClient>;
   cleanup(): void;
 }
 
@@ -59,13 +59,13 @@ export function makeTestGateway(options: { now?: () => number; writeLimits?: Gat
     writeLimits: options.writeLimits ?? {},
   };
 
-  const nick = addUser(storage, { id: 'nick', accounts: ['nick', 'agent'] });
-  const partner = addUser(storage, { id: 'partner', accounts: ['partner', 'agent'] });
-  for (const id of ['nick', 'partner', 'agent']) {
+  const user_a = addUser(storage, { id: 'user_a', accounts: ['user_a', 'agent'] });
+  const user_b = addUser(storage, { id: 'user_b', accounts: ['user_b', 'agent'] });
+  for (const id of ['user_a', 'user_b', 'agent']) {
     storage.accounts.upsert({ id, status: 'active', username: `${id}_acc`, tgUserId: '1001' });
     storage.sessions.put(id, seal('session', 'secret'));
   }
-  storage.users.update('nick', { defaultAccount: 'agent' });
+  storage.users.update('user_a', { defaultAccount: 'agent' });
 
   const runtime = { config, storage, tg, log, close: async () => undefined } as unknown as Runtime;
   const services = buildServices(runtime, { now: options.now });
@@ -76,7 +76,7 @@ export function makeTestGateway(options: { now?: () => number; writeLimits?: Gat
     storage,
     tg,
     services,
-    tokens: { nick: nick.token, partner: partner.token },
+    tokens: { user_a: user_a.token, user_b: user_b.token },
     client: async (userId, toolsets = ['core']) => {
       const { server } = createMcpServer({ services, principal: services.access.principalOf(userId), toolsets, version: 'test', log, now: options.now });
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

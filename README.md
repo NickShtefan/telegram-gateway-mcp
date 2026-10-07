@@ -1,73 +1,57 @@
-# tg-mcp
+# Unofficial Telegram MCP Gateway
 
-An MCP gateway to Telegram. One daemon owns the sessions of connected Telegram accounts and exposes them to agents (Claude Code, Hermes, Codex, OpenCode, or any MCP client) as tools: reading channels, groups, and comments; searching; exporting files; fetching images; discovering channels; retrieving statistics; local indexing; and writes with confirmation.
+An MCP gateway for Telegram user accounts. One daemon owns the MTProto sessions and exposes tools to Claude Code, Codex, OpenCode and other MCP clients. Agents can read and search chats, fetch media, export messages, inspect channel counters, build a local index and prepare confirmed writes.
 
-The gateway is a tool for an agent, not an agent (decision 25). It does nothing until an agent calls a tool: it does not watch chats, run models, or manage tasks. There is no model or model API key inside. The agent produces summaries, calculations, and text; it can also watch channels or manage conversations using its own schedule and memory.
+The gateway is a tool for an agent. It does not run models, watch chats, start agents or manage negotiation goals. Every Telegram operation begins with a tool call. This project is independent of Telegram.
 
 ## Capabilities
 
-23 tools in five toolsets. Enable toolsets through `TG_MCP_TOOLSETS`; only `core` is enabled by default.
+23 tools in five toolsets; `core` is enabled by default.
 
-| Toolset | Tools | Capabilities |
-|---|---|---|
-| `core` | `tg_status`, `tg_list_dialogs`, `tg_resolve`, `tg_search_messages`, `tg_search_chat`, `tg_read_history`, `tg_get_message`, `tg_get_comments`, `tg_list_topics`, `tg_export`, `tg_get_media` | Reading and searching: account dialogs, chat details, history, comments, forum topics, JSONL or CSV export, photos and albums |
-| `discover` | `tg_find_channels`, `tg_similar_channels`, `tg_forward_sources` | Channel search by name, similar channels, forwarding sources |
-| `analytics` | `tg_channel_stats` | Channel metrics: subscribers, reach, engagement, trend |
-| `index` | `tg_index`, `tg_local_search` | A local chat index and search without Telegram requests |
-| `write` | `tg_reply`, `tg_send`, `tg_react`, `tg_join`, `tg_press_button`, `tg_confirm` | Comment replies, messages, reactions, joins, and bot button presses: always in two steps |
+| Toolset | Capabilities |
+| --- | --- |
+| core | Account dialogs, chat resolution, search, history, comments, forum topics, JSONL/CSV exports, photos and previews |
+| discover | Channel name search, similar channels and forwarding sources |
+| analytics | Public channel counters, reach, engagement and trends |
+| index | Explicit chat indexing and local substring search without Telegram calls |
+| write | Preview and confirm replies, sends, reactions, joins and callback button presses |
 
-Details: [docs/tools.md](docs/tools.md).
+One process owns each session. Bearer tokens separate gateway users and their account grants. Private conversations are closed by default. Every MTProto call passes through an account queue with limits and a deadline. A hung operation stops queued work and exits with code 1 for supervisor restart. Telegram text is labeled as untrusted data.
 
-## Main properties
+Write tools return a preview and `approval_id`. The agent must show it to the owner and call `tg_confirm` only after consent. The gateway cannot independently verify human approval; client permissions are part of this boundary.
 
-- **One process owns the sessions.** The daemon listens on `127.0.0.1`. Each gateway user has a bearer token and sees only their own and shared accounts.
-- **Writes in two steps.** A write tool returns a preview and `approval_id`. The action reaches Telegram only after `tg_confirm`, which the agent calls after the owner's consent.
-- **Private chats are closed by default.** The owner opens access with a command: one dialog, send-only or read-and-send. Telegram service chats remain closed.
-- **Untrusted text is labeled.** Telegram text is wrapped in markers in tool responses: it is data, not instructions to the agent.
-- **Account limits.** Every MTProto call goes through the account queue with a deadline. FLOOD_WAIT is returned as an error with `retry_after`; writes have daily limits.
-- **All state in one SQLite file.** No external storage services.
+## Preparation status
 
-Internals: [docs/architecture.md](docs/architecture.md).
+The current repository and package remain private and unpublished. The selected public repository and npm name is `telegram-mcp-gateway`; the command stays `tg-mcp`. Do not run `npx tg-mcp`: that package belongs to a different project.
 
-## Status
+MIT is the selected license, but the license file, copyright holder, provenance review and any required notices are still release gates. The first public version, installation/isolation model and release platform matrix are pending. Native Windows support is a target, not a verified capability. No production installation recommendation is implied by the development commands below.
 
-- Installed on the lab machine `macbook-pro-lab.local` under a separate macOS user, connected to Claude Code and Hermes. Two people use it: the owner and the owner's wife. Each has personal Telegram accounts, and some accounts are shared.
-- Reading has been verified on live Telegram across all toolsets. Confirmed writes include sending a message, replying to a post, reacting, and joining a public supergroup. The exact verification status and remaining gaps are in [docs/plan.md](docs/plan.md).
-- The current repository is private (`telegram-gateway-mcp`); the package is not published to npm. Do not run `npx tg-mcp`: that npm name belongs to someone else's package.
-- Open-source preparation targets a clean new repository and the npm package `telegram-mcp-gateway`. The release has not been published. See [docs/open-source-plan.md](docs/open-source-plan.md).
+## Development
 
-Details: [docs/plan.md](docs/plan.md).
-
-## Directory map
-
-| Path | Contents |
-|---|---|
-| [AGENTS.md](AGENTS.md) | Instructions for any agent working in this directory. Read first. |
-| [CLAUDE.md](CLAUDE.md) | Loads AGENTS.md for Claude Code. |
-| [docs/tools.md](docs/tools.md) | Tools: behavior, contracts, writes, and private chats. |
-| [docs/architecture.md](docs/architecture.md) | Request flow, layers, services, core, and database tables. |
-| [docs/decisions.md](docs/decisions.md) | Current decisions and their rationale. |
-| [docs/connect.md](docs/connect.md) | Client connections, toolsets, and agent-owned monitoring and conversations. |
-| [docs/deploy.md](docs/deploy.md) | Lab installation, updates, configuration, and diagnostics. |
-| [docs/use-cases.md](docs/use-cases.md) | Four owner tasks and what each needs from the gateway. |
-| [docs/scenarios.md](docs/scenarios.md) | The same tasks, step by step. |
-| [docs/risks.md](docs/risks.md) | Risks ordered by impact. |
-| [docs/plan.md](docs/plan.md) | Implementation, verification evidence, and remaining work. |
-| [docs/open-source-plan.md](docs/open-source-plan.md) | Open-source preparation: stages, owner decisions, and publication gates. |
-| [docs/naming-research.md](docs/naming-research.md) | Human and agent search research supporting decision 35. |
-| [docs/open-questions.md](docs/open-questions.md) | Unresolved questions. |
-| [docs/findings.md](docs/findings.md) | Verified facts about Telegram, the library, and clients. |
-| `src/` | Code: `core`, `storage`, `policy`, `services`, `writegate`, `mcp`, `transport`, `cli`. |
-| [scripts/lab-install.sh](scripts/lab-install.sh) | Installation under a separate macOS user (run by the owner; requires sudo). |
-
-## Development quick start
+Requires Node.js 22.13 or later and npm. The release policy is to recommend a tested LTS branch and verify the minimum Node version separately. Cleanup checks currently run on macOS with Node 24.10.0.
 
 ```bash
-npm ci && npm run build && npm test
-```
-
-```bash
+npm ci --ignore-scripts
+npm run build
+npm run typecheck
+npm test
 node dist/cli/index.js help
 ```
 
-State lives in `~/.tg-mcp` (or `TG_MCP_HOME`). Put your own Telegram application credentials in `<directory>/.env` as `TG_API_ID` and `TG_API_HASH`.
+The build removes old outputs before compiling. The npm archive contains JavaScript, declarations, this README and license notices when provided; tests, source maps, private records and runtime state are excluded.
+
+State defaults to `~/.tg-mcp`, or `TG_MCP_HOME`. Use only sessions created by this gateway's own login, separately on each machine. Never share session strings with another process or project. Store credentials, database and session key outside the checkout and away from agents with shell access.
+
+## Source directory map
+
+| Path | Contents |
+| --- | --- |
+| src/core | Session pool, limiter, watchdog, configuration, login and file safety |
+| src/storage | SQLite implementation, interfaces and immutable migrations |
+| src/services | Reads, search, export, media, index, statistics and actions |
+| src/policy, src/writegate | User access, scopes, untrusted content, audit and write confirmation |
+| src/mcp, src/transport | MCP tools, compact responses, HTTP server and stdio proxy |
+| src/cli | Owner administration and daemon commands |
+| docs | Architecture, tool contracts, connections, risks and synthetic scenarios |
+
+The source checkout contains the detailed documents; they are not part of the runtime npm archive. Contributor agent instructions live in `AGENTS.md`.

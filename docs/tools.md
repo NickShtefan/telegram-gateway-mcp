@@ -1,21 +1,21 @@
 # MCP tools
 
-Agent-facing contract: 23 tools in five toolsets. The gateway is pure MCP (decision 25): every operation requires a call. Select `TG_MCP_TOOLSETS` (default `core`). Exact argument schemas/descriptions: `src/mcp/tools/`. This document explains purpose and rules.
+Agent-facing contract: 23 tools in five toolsets. The gateway is pure MCP: every operation requires a call. Select `TG_MCP_TOOLSETS` (default `core`). Exact argument schemas/descriptions: `src/mcp/tools/`. This document explains purpose and rules.
 
 ## Common contract
 
-- Responses use compact text, with `brief` and `full` modes. Full message output includes hidden links (`hidden links: "here" https://...`, decision 32) and buttons (`buttons: 1.1 "Label" (callback) | 1.2 "Website" (link https://...)`, decision 31). Button row/position, label, type, and link URL are exposed; brief headers show only button count. Callback bytes are never exposed.
+- Responses use compact text, with `brief` and `full` modes. Full message output includes hidden links (`hidden links: "here" https://...`) and buttons (`buttons: 1.1 "Label" (callback) | 1.2 "Website" (link https://...)`). Button row/position, label, type, and link URL are exposed; brief headers show only button count. Callback bytes are never exposed.
 - Messages from the account are labeled `@username (this account)`, distinguishing them from the private-chat peer. The label identifies the account, not the agent: the owner also sends messages manually.
 - Errors return `isError` with `Error: CODE`, an explanation, and FLOOD_WAIT `retry_after`.
 - `tg_export` and `tg_index` wait up to 20 seconds, then return `job_id` if unfinished. Query status using the same tool and ID.
 - Telegram text is untrusted: a block between `<<<TG:marker` and `TG:marker>>>` or lines prefixed `> `. The marker is random per response.
-- Dates accept `30d`, `12h`, `2w`, `6mo`, `1y` (ago), `2026-09-01`, or ISO. Output times are UTC.
-- Bearer tokens identify gateway users. Telegram tools accept optional `account`, defaulting to the user's default; only personal/shared accounts are available (decision 16).
+- Dates accept `30d`, `12h`, `2w`, `6mo`, `1y` (ago), `2026-09-01`, or ISO. Impossible calendar dates are rejected. Output times are UTC.
+- Bearer tokens identify gateway users. Telegram tools accept optional `account`, defaulting to the user's default; only personal/shared accounts are available.
 - `tg_status` is always available.
 
 ## Writes: preview then `tg_confirm`
 
-Write tools do not execute Telegram actions directly (decisions 4 and 23).
+Write tools do not execute Telegram actions directly.
 
 1. `tg_reply`, `tg_send`, `tg_react`, `tg_join`, or `tg_press_button` returns the action, account, exact text, and `approval_id` as a preview.
 2. The agent shows it to the owner.
@@ -29,13 +29,13 @@ Rules:
 - Requests live 30 minutes for owner review/response; expired actions must be prepared again.
 - Text is limited to 4096 characters, without markup. Invisible characters are removed before preview; confirmed text is exactly what is sent. Link previews default off because Telegram generates cards that cannot be previewed here. `link_preview` enables them and is disclosed in the action preview.
 - A write interrupted by restart is not replayed: `failed`, with unknown-result notice.
-- Gateway daily limits are independent of the agent: defaults 20 replies, 30 reactions, 5 joins, 5 new dialogs (people the account has never messaged). The owner configures `TG_MCP_LIMIT_REPLIES`, `TG_MCP_LIMIT_REACTIONS`, `TG_MCP_LIMIT_JOINS`, `TG_MCP_LIMIT_NEW_DIALOGS` in the daemon `.env`; 0 removes a limit (decision 27). `tg_status` shows current values.
+- Gateway daily limits are independent of the agent: defaults 20 replies, 30 reactions, 5 joins, 5 new dialogs (people the account has never messaged). The owner configures `TG_MCP_LIMIT_REPLIES`, `TG_MCP_LIMIT_REACTIONS`, `TG_MCP_LIMIT_JOINS`, `TG_MCP_LIMIT_NEW_DIALOGS` in the daemon `.env`; 0 removes a limit. `tg_status` shows current values.
 - Scopes are checked at preparation and confirmation.
 - Button confirmation reloads the message and requires the same button at the same position. Bot output is untrusted; response links are not opened. Button presses have no daily cap.
 
 ## Private chats
 
-Closed by default. Only the owner grants access through a command on the gateway machine (lab: `sudo .../tg-mcp-admin`):
+Closed by default. Only the owner grants access through a command on the gateway machine (CLI: `tg-mcp scope ...`; use the authorized daemon-owner environment):
 
 | Command | Access |
 |---|---|
@@ -62,6 +62,8 @@ Modes are per user/account and apply immediately without restart. Telegram servi
 | `tg_list_topics` | Forum topics | messages.getForumTopics |
 | `tg_export` | JSONL/CSV: original text, counters, URLs, photo previews. Hashes authors, masks phones. Returns path, row count, 5 samples. The agent extracts prices/meaning | messages.search, messages.getHistory, upload.getFile |
 | `tg_get_media` | Photos, entire albums, video thumbnails; `thumb`/`full`; file path or inline image | upload.getFile |
+
+Full files are limited to 20 MiB by default, checked against available metadata, downloaded bytes and cached file size. Previews use their existing behavior. The received-buffer check does not bound memory during download.
 
 ## write: two-step actions
 
@@ -90,7 +92,7 @@ Discovered channels enter the account's entity cache; @username/ID lookup needs 
 |---|---|---|
 | `tg_channel_stats` | Participants/change, weekly posts, mean/median views, reach (views/subscribers), engagement (reactions/views), comments/forwards per post, forwarding share, view trend, weekly breakdown, top posts | channels.getFullChannel, messages.getHistory |
 
-Computed from public counters, so it works for other people's channels too. No ratings or verdicts: the gateway supplies numbers; the agent interprets them (decision 7). Telegram supplies subscriber growth only to channel admins, so the gateway snapshots participant counts when observed (`tg_resolve`, `tg_channel_stats`) and compares dates. There is no change value on the first day.
+Computed from public counters, so it works for other people's channels too. No ratings or verdicts: the gateway supplies numbers; the agent interprets them. Telegram supplies subscriber growth only to channel admins, so the gateway snapshots participant counts when observed (`tg_resolve`, `tg_channel_stats`) and compares dates. There is no change value on the first day.
 
 ## index: local index
 
@@ -100,13 +102,13 @@ Computed from public counters, so it works for other people's channels too. No r
 | `tg_local_search` | Search indexed chats without Telegram calls: case/word-form insensitive; every query term must match. Date window, one/all chats, cursor | None |
 
 - Search reflects the last `tg_index`; output reports catch-up time.
-- Words shorter than three characters are not indexed: they are checked against retrieved messages. All-short-word queries are rejected.
+- Words shorter than three characters are not indexed: they are checked against candidates before counting and pagination. All-short-word queries are rejected.
 - A shared-account chat index is visible to all its users; only its creator can delete it. Owner-denied chats disappear from search.
 - Each run reads at most 20,000 messages; larger chats are indexed over multiple calls without gaps.
 
 ## Intentionally absent
 
-The gateway is a tool, not an agent (decision 25).
+The gateway is a tool, not an agent.
 
 | Capability outside the gateway | Responsibility |
 |---|---|
@@ -115,6 +117,6 @@ The gateway is a tool, not an agent (decision 25).
 | Negotiation goals, boundaries, conversation memory | Agent memory/logic; gateway supplies permitted reads and `tg_send` |
 | Starting agents | Agent or its own schedule |
 | Price extraction, channel ratings/verdicts | Agent processes text/numbers |
-| Reading other project databases | Nobody: the gateway only uses Telegram (decision 28) |
+| Reading other project databases | Nobody: the gateway only uses Telegram |
 | Money transfers/paid Stars actions | Never supported |
 | Solving image/task CAPTCHAs | Not supported: the gateway only presses an owner-confirmed button |

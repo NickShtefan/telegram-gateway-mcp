@@ -42,19 +42,19 @@ describe('SqliteStorage: schema', () => {
       for (const sql of MIGRATIONS.slice(0, 6)) old.exec(sql);
       old.exec('PRAGMA user_version = 6');
       old.exec(`
-        INSERT INTO users (id, token_sha256, telegram_id, default_account, created_at) VALUES ('nick', 'h1', '111', 'agent', 1);
+        INSERT INTO users (id, token_sha256, telegram_id, default_account, created_at) VALUES ('user_a', 'h1', '111', 'agent', 1);
         INSERT INTO accounts (id, status, created_at, updated_at) VALUES ('agent', 'active', 1, 1);
-        INSERT INTO account_access (account_id, user_id) VALUES ('agent', 'nick');
+        INSERT INTO account_access (account_id, user_id) VALUES ('agent', 'user_a');
         INSERT INTO scope_rules (user_id, account_id, target, effect, source, created_at) VALUES
-          ('nick', 'agent', 'seller', 'allow', 'owner', 2),
-          ('nick', 'agent', '-1000000000500', 'deny', 'owner', 3),
-          ('nick', 'agent', '*private-send', 'allow', 'owner', 4),
-          ('nick', 'agent', '-1000000000500', 'allow', 'task:t1', 5),
-          ('nick', 'agent', 'stranger', 'allow', 'task:t1', 6);
+          ('user_a', 'agent', 'seller', 'allow', 'owner', 2),
+          ('user_a', 'agent', '-1000000000500', 'deny', 'owner', 3),
+          ('user_a', 'agent', '*private-send', 'allow', 'owner', 4),
+          ('user_a', 'agent', '-1000000000500', 'allow', 'task:t1', 5),
+          ('user_a', 'agent', 'stranger', 'allow', 'task:t1', 6);
         INSERT INTO approvals (id, user_id, account_id, kind, source, payload, preview, state, result, bot_chat_id, bot_message_id, created_at, expires_at, decided_at)
-          VALUES ('ap_1', 'nick', 'agent', 'reply', 'tool', '{"text":"hi"}', 'Reply', 'executed', '{"summary":"Sent"}', '123', 7, 10, 20, 15);
+          VALUES ('ap_1', 'user_a', 'agent', 'reply', 'tool', '{"text":"hi"}', 'Reply', 'executed', '{"summary":"Sent"}', '123', 7, 10, 20, 15);
         INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id, source)
-          VALUES (10, 'nick', 'agent', 'reply', '-1000000000500', 10, 77, 'tool'), (11, 'nick', 'agent', 'send', '42', NULL, 78, 'task:t1');
+          VALUES (10, 'user_a', 'agent', 'reply', '-1000000000500', 10, 77, 'tool'), (11, 'user_a', 'agent', 'send', '42', NULL, 78, 'task:t1');
       `);
       old.close();
 
@@ -68,19 +68,19 @@ describe('SqliteStorage: schema', () => {
         expect(columns('scope_rules')).toEqual(['user_id', 'account_id', 'target', 'effect', 'created_at']);
 
         // Owner scopes survive, including private-chat mode; task-created access disappears.
-        expect(upgraded.scopes.list('nick', 'agent').map(r => `${r.effect} ${r.target}`)).toEqual(['allow *private-send', 'deny -1000000000500', 'allow seller']);
-        expect(upgraded.users.get('nick')).toMatchObject({ tokenSha256: 'h1', defaultAccount: 'agent' });
+        expect(upgraded.scopes.list('user_a', 'agent').map(r => `${r.effect} ${r.target}`)).toEqual(['allow *private-send', 'deny -1000000000500', 'allow seller']);
+        expect(upgraded.users.get('user_a')).toMatchObject({ tokenSha256: 'h1', defaultAccount: 'agent' });
         expect(upgraded.db.prepare("SELECT state, result FROM approvals WHERE id = 'ap_1'").get()).toMatchObject({ state: 'executed', result: '{"summary":"Sent"}' });
         expect((upgraded.db.prepare('SELECT COUNT(*) AS n FROM writes').get() as { n: number }).n).toBe(2);
         // Migration 8: the database allows multiple replies to the same post.
-        upgraded.db.prepare("INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id) VALUES (12, 'nick', 'agent', 'reply', '-1000000000500', 10, 79)").run();
+        upgraded.db.prepare("INSERT INTO writes (ts, user_id, account_id, kind, chat_key, post_id, sent_message_id) VALUES (12, 'user_a', 'agent', 'reply', '-1000000000500', 10, 79)").run();
         expect((upgraded.db.prepare("SELECT COUNT(*) AS n FROM writes WHERE kind = 'reply' AND post_id = 10").get() as { n: number }).n).toBe(2);
         // One rule per target: another write updates it instead of adding a duplicate.
-        upgraded.scopes.put({ userId: 'nick', accountId: 'agent', target: '@Seller', effect: 'deny' });
-        expect(upgraded.scopes.list('nick', 'agent').filter(r => r.target === 'seller')).toEqual([expect.objectContaining({ effect: 'deny' })]);
+        upgraded.scopes.put({ userId: 'user_a', accountId: 'agent', target: '@Seller', effect: 'deny' });
+        expect(upgraded.scopes.list('user_a', 'agent').filter(r => r.target === 'seller')).toEqual([expect.objectContaining({ effect: 'deny' })]);
         // User deletion cascades survive the table rebuild.
-        upgraded.users.remove('nick');
-        expect(upgraded.scopes.list('nick', 'agent')).toEqual([]);
+        upgraded.users.remove('user_a');
+        expect(upgraded.scopes.list('user_a', 'agent')).toEqual([]);
       } finally {
         upgraded.close();
       }
@@ -100,8 +100,8 @@ describe('SqliteStorage: schema', () => {
 describe('SqliteStorage: users and accounts', () => {
   it('finds users by token hash without storing the token', () => {
     const token = 'user-token';
-    storage.users.create({ id: 'nick', tokenSha256: sha256Hex(token) });
-    expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
+    storage.users.create({ id: 'user_a', tokenSha256: sha256Hex(token) });
+    expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('user_a');
     expect(storage.users.findByTokenHash(sha256Hex('other'))).toBeNull();
     expect(JSON.stringify(storage.users.list())).not.toContain(token);
   });
@@ -112,23 +112,23 @@ describe('SqliteStorage: users and accounts', () => {
   });
 
   it('handles access to owned, unowned, and shared accounts', () => {
-    storage.users.create({ id: 'nick', tokenSha256: 'h1' });
-    storage.users.create({ id: 'partner', tokenSha256: 'h2' });
-    for (const id of ['nick', 'partner', 'agent']) storage.accounts.upsert({ id });
-    storage.accounts.grant('nick', 'nick');
-    storage.accounts.grant('partner', 'partner');
-    storage.accounts.grant('agent', 'nick');
-    storage.accounts.grant('agent', 'partner');
-    storage.accounts.grant('agent', 'partner'); // Repeated grants are harmless.
+    storage.users.create({ id: 'user_a', tokenSha256: 'h1' });
+    storage.users.create({ id: 'user_b', tokenSha256: 'h2' });
+    for (const id of ['user_a', 'user_b', 'agent']) storage.accounts.upsert({ id });
+    storage.accounts.grant('user_a', 'user_a');
+    storage.accounts.grant('user_b', 'user_b');
+    storage.accounts.grant('agent', 'user_a');
+    storage.accounts.grant('agent', 'user_b');
+    storage.accounts.grant('agent', 'user_b'); // Repeated grants are harmless.
 
-    expect(storage.accounts.hasAccess('nick', 'nick')).toBe(true);
-    expect(storage.accounts.hasAccess('nick', 'partner')).toBe(false);
-    expect(storage.accounts.hasAccess('partner', 'agent')).toBe(true);
-    expect(storage.accounts.accountsOf('partner').map(a => a.id)).toEqual(['agent', 'partner']);
-    expect(storage.accounts.usersOf('agent')).toEqual(['nick', 'partner']);
+    expect(storage.accounts.hasAccess('user_a', 'user_a')).toBe(true);
+    expect(storage.accounts.hasAccess('user_a', 'user_b')).toBe(false);
+    expect(storage.accounts.hasAccess('user_b', 'agent')).toBe(true);
+    expect(storage.accounts.accountsOf('user_b').map(a => a.id)).toEqual(['agent', 'user_b']);
+    expect(storage.accounts.usersOf('agent')).toEqual(['user_a', 'user_b']);
 
-    storage.accounts.revoke('agent', 'partner');
-    expect(storage.accounts.hasAccess('partner', 'agent')).toBe(false);
+    storage.accounts.revoke('agent', 'user_b');
+    expect(storage.accounts.hasAccess('user_b', 'agent')).toBe(false);
   });
 
   it('upserts only the supplied account fields', () => {
@@ -139,15 +139,15 @@ describe('SqliteStorage: users and accounts', () => {
   });
 
   it('removes sessions, grants, and entity caches when deleting an account', () => {
-    storage.users.create({ id: 'nick', tokenSha256: 'h1' });
+    storage.users.create({ id: 'user_a', tokenSha256: 'h1' });
     storage.accounts.upsert({ id: 'agent' });
-    storage.accounts.grant('agent', 'nick');
+    storage.accounts.grant('agent', 'user_a');
     storage.sessions.put('agent', seal('session', 'k'));
     storage.entities.put({ accountId: 'agent', peerKey: '-1001', kind: 'channel', accessHash: '9', username: 'chan', title: 'Chan', meta: {} });
     storage.accounts.remove('agent');
     expect(storage.sessions.get('agent')).toBeNull();
     expect(storage.entities.get('agent', '-1001')).toBeNull();
-    expect(storage.accounts.accountsOf('nick')).toEqual([]);
+    expect(storage.accounts.accountsOf('user_a')).toEqual([]);
   });
 });
 
@@ -214,29 +214,29 @@ describe('SqliteStorage: entity cache', () => {
 describe('SqliteStorage: audit, jobs, kv, and transactions', () => {
   it('filters audit by user and removes old entries', () => {
     const base = { accountId: 'agent', args: { chat: '@x' }, peerKey: '-1001', resultCount: 3, durationMs: 12, errorCode: null, floodWaitSeconds: null };
-    storage.audit.add({ ...base, ts: 100, userId: 'nick', tool: 'tg_read_history' });
-    storage.audit.add({ ...base, ts: 200, userId: 'partner', tool: 'tg_resolve', errorCode: 'FLOOD_WAIT', floodWaitSeconds: 30 });
-    expect(storage.audit.recent({ userId: 'nick' }).map(e => e.tool)).toEqual(['tg_read_history']);
+    storage.audit.add({ ...base, ts: 100, userId: 'user_a', tool: 'tg_read_history' });
+    storage.audit.add({ ...base, ts: 200, userId: 'user_b', tool: 'tg_resolve', errorCode: 'FLOOD_WAIT', floodWaitSeconds: 30 });
+    expect(storage.audit.recent({ userId: 'user_a' }).map(e => e.tool)).toEqual(['tg_read_history']);
     expect(storage.audit.recent()[0]).toMatchObject({ tool: 'tg_resolve', errorCode: 'FLOOD_WAIT', floodWaitSeconds: 30, args: { chat: '@x' } });
     expect(storage.audit.prune(150)).toBe(1);
     expect(storage.audit.recent()).toHaveLength(1);
   });
 
   it('advances job states and requeues interrupted jobs after restart', () => {
-    storage.jobs.create({ id: 'j1', userId: 'nick', accountId: 'agent', kind: 'export', params: { chat: '-1001' } });
+    storage.jobs.create({ id: 'j1', userId: 'user_a', accountId: 'agent', kind: 'export', params: { chat: '-1001' } });
     storage.jobs.update('j1', { state: 'running', progress: { done: 100, total: 400 } });
     expect(storage.jobs.get('j1')).toMatchObject({ state: 'running', progress: { done: 100, total: 400 }, result: null });
     expect(storage.jobs.requeueRunning()).toBe(1);
     expect(storage.jobs.get('j1')?.state).toBe('queued');
     storage.jobs.update('j1', { state: 'done', result: { path: '/tmp/x.jsonl', rows: 400 } });
-    expect(storage.jobs.list({ userId: 'nick', state: 'done' })).toHaveLength(1);
-    expect(storage.jobs.list({ userId: 'partner' })).toHaveLength(0);
+    expect(storage.jobs.list({ userId: 'user_a', state: 'done' })).toHaveLength(1);
+    expect(storage.jobs.list({ userId: 'user_b' })).toHaveLength(0);
   });
 
   it('reads the job queue oldest first', () => {
     for (let i = 1; i <= 60; i++) {
       clock += 10;
-      storage.jobs.create({ id: `job_${i}`, userId: 'nick', kind: 'export', params: {} });
+      storage.jobs.create({ id: `job_${i}`, userId: 'user_a', kind: 'export', params: {} });
     }
     expect(storage.jobs.list({ state: 'queued', limit: 1, oldestFirst: true })[0]!.id).toBe('job_1');
     expect(storage.jobs.list({ state: 'queued', limit: 1 })[0]!.id).toBe('job_60');

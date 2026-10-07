@@ -51,30 +51,30 @@ function fakeFactory(overrides: Record<string, unknown> = {}): ClientFactory {
 
 describe('admin', () => {
   it('creates a token-bearing user and stores only its hash', () => {
-    const { user, token } = addUser(storage, { id: 'nick', accounts: ['nick', 'agent'] });
-    expect(user.defaultAccount).toBe('nick');
-    expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
-    expect(storage.accounts.hasAccess('nick', 'agent')).toBe(true);
-    expect(() => addUser(storage, { id: 'nick' })).toThrow(/already exists/);
+    const { user, token } = addUser(storage, { id: 'user_a', accounts: ['user_a', 'agent'] });
+    expect(user.defaultAccount).toBe('user_a');
+    expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('user_a');
+    expect(storage.accounts.hasAccess('user_a', 'agent')).toBe(true);
+    expect(() => addUser(storage, { id: 'user_a' })).toThrow(/already exists/);
     expect(() => addUser(storage, { id: 'Bad Id' })).toThrow(/Invalid user id/);
   });
 
   it('issuing a new token revokes the old one', () => {
-    const { token } = addUser(storage, { id: 'nick' });
-    const next = rotateToken(storage, 'nick');
+    const { token } = addUser(storage, { id: 'user_a' });
+    const next = rotateToken(storage, 'user_a');
     expect(storage.users.findByTokenHash(sha256Hex(token))).toBeNull();
-    expect(storage.users.findByTokenHash(sha256Hex(next))?.id).toBe('nick');
+    expect(storage.users.findByTokenHash(sha256Hex(next))?.id).toBe('user_a');
   });
 
   it('marks shared accounts and changes defaults after access revocation', () => {
-    addUser(storage, { id: 'nick', accounts: ['agent'] });
-    addUser(storage, { id: 'partner', accounts: ['partner'] });
-    grantAccount(storage, 'agent', 'partner');
-    expect(describeAccounts(storage).find(a => a.id === 'agent')).toMatchObject({ shared: true, users: ['nick', 'partner'] });
-    revokeAccount(storage, 'agent', 'nick');
-    expect(storage.users.get('nick')?.defaultAccount).toBeNull();
-    removeAccount(storage, 'partner');
-    expect(storage.users.get('partner')?.defaultAccount).toBe('agent');
+    addUser(storage, { id: 'user_a', accounts: ['agent'] });
+    addUser(storage, { id: 'user_b', accounts: ['user_b'] });
+    grantAccount(storage, 'agent', 'user_b');
+    expect(describeAccounts(storage).find(a => a.id === 'agent')).toMatchObject({ shared: true, users: ['user_a', 'user_b'] });
+    revokeAccount(storage, 'agent', 'user_a');
+    expect(storage.users.get('user_a')?.defaultAccount).toBeNull();
+    removeAccount(storage, 'user_b');
+    expect(storage.users.get('user_b')?.defaultAccount).toBe('agent');
   });
 });
 
@@ -117,16 +117,16 @@ describe('doctor', () => {
   });
 
   it('shows private-chat modes and daily write limits', async () => {
-    addUser(storage, { id: 'nick', accounts: ['agent'] });
+    addUser(storage, { id: 'user_a', accounts: ['agent'] });
     const quiet = (await collectChecks({ config, storage, io })).map(c => c.message).join('\n');
     expect(quiet).not.toContain('private chats');
     // Limits apply only to writes; hide them when the write toolset is disabled.
     expect(quiet).not.toContain('write limits');
 
-    writePrivateMode(storage, 'nick', 'agent', 'send');
+    writePrivateMode(storage, 'user_a', 'agent', 'send');
     const custom = { ...config, toolsets: ['core', 'write'], writeLimits: { newDialogsPerDay: 25, reactionsPerDay: 0 } };
     const text = (await collectChecks({ config: custom, storage, io })).map(c => c.message).join('\n');
-    expect(text).toContain('user nick on account agent: private chats are open for sending only');
+    expect(text).toContain('user user_a on account agent: private chats are open for sending only');
     expect(text).toContain('write limits per account per day: replies 20, new dialogs 25, joins 5, reactions no limit');
   });
 
@@ -141,7 +141,7 @@ describe('doctor', () => {
   it('--connect connects accounts while the daemon is stopped', async () => {
     io.prompt = vi.fn(async () => '1');
     await runLogin({ config, storage, io, account: 'agent', phone: '+79991234567', factory: fakeFactory() });
-    addUser(storage, { id: 'nick', accounts: ['agent'] });
+    addUser(storage, { id: 'user_a', accounts: ['agent'] });
     const checks = await collectChecks({ config, storage, io, connect: true, factory: fakeFactory() });
     expect(checks.some(c => c.level === 'ok' && c.message.startsWith('account agent connects: @agent_acc'))).toBe(true);
   });
@@ -236,67 +236,67 @@ describe('main', () => {
   });
 
   it('user add prints the token once and user list does not expose it', async () => {
-    expect(await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage })).toBe(0);
+    expect(await main(['user', 'add', 'user_a', '--account', 'agent'], { io, config, storage })).toBe(0);
     const token = out[out.length - 1]!;
-    expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('nick');
+    expect(storage.users.findByTokenHash(sha256Hex(token))?.id).toBe('user_a');
     out.length = 0;
     expect(await main(['user', 'list'], { io, config, storage })).toBe(0);
-    expect(out.join('\n')).toContain('nick  accounts: [agent]');
+    expect(out.join('\n')).toContain('user_a  accounts: [agent]');
     expect(out.join('\n')).not.toContain(token);
   });
 
   it('handles account grant and list', async () => {
-    await main(['user', 'add', 'nick'], { io, config, storage });
-    await main(['user', 'add', 'partner'], { io, config, storage });
-    expect(await main(['account', 'grant', 'agent', 'nick'], { io, config, storage })).toBe(0);
-    expect(await main(['account', 'grant', 'agent', 'partner'], { io, config, storage })).toBe(0);
+    await main(['user', 'add', 'user_a'], { io, config, storage });
+    await main(['user', 'add', 'user_b'], { io, config, storage });
+    expect(await main(['account', 'grant', 'agent', 'user_a'], { io, config, storage })).toBe(0);
+    expect(await main(['account', 'grant', 'agent', 'user_b'], { io, config, storage })).toBe(0);
     out.length = 0;
     await main(['account', 'list'], { io, config, storage });
-    expect(out.join('\n')).toContain('agent  no session  -  users: [nick, partner]  shared');
+    expect(out.join('\n')).toContain('agent  no session  -  users: [user_a, user_b]  shared');
     expect(await main(['account', 'grant', 'agent', 'ghost'], { io, config, storage })).toBe(1);
   });
 
   it('scope: the owner opens a private chat and closes a channel', async () => {
-    await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage });
+    await main(['user', 'add', 'user_a', '--account', 'agent'], { io, config, storage });
     out.length = 0;
-    expect(await main(['scope', 'allow', 'nick', 'agent', '@Seller'], { io, config, storage })).toBe(0);
-    expect(await main(['scope', 'deny', 'nick', 'agent', '-1001782171896'], { io, config, storage })).toBe(0);
-    expect(await main(['scope', 'list', 'nick', 'agent'], { io, config, storage })).toBe(0);
+    expect(await main(['scope', 'allow', 'user_a', 'agent', '@Seller'], { io, config, storage })).toBe(0);
+    expect(await main(['scope', 'deny', 'user_a', 'agent', '-1001782171896'], { io, config, storage })).toBe(0);
+    expect(await main(['scope', 'list', 'user_a', 'agent'], { io, config, storage })).toBe(0);
     expect(out.join('\n')).toContain('allow  @seller');
     expect(out.join('\n')).toContain('deny  -1001782171896');
-    expect(await main(['scope', 'remove', 'nick', 'agent', 't.me/seller'], { io, config, storage })).toBe(0);
-    expect(storage.scopes.list('nick', 'agent')).toHaveLength(1);
+    expect(await main(['scope', 'remove', 'user_a', 'agent', 't.me/seller'], { io, config, storage })).toBe(0);
+    expect(storage.scopes.list('user_a', 'agent')).toHaveLength(1);
     // Reject inaccessible accounts and invites.
-    expect(await main(['scope', 'allow', 'nick', 'other', '@x_user'], { io, config, storage })).toBe(1);
-    expect(await main(['scope', 'allow', 'nick', 'agent', 't.me/+AbCdEf'], { io, config, storage })).toBe(1);
+    expect(await main(['scope', 'allow', 'user_a', 'other', '@x_user'], { io, config, storage })).toBe(1);
+    expect(await main(['scope', 'allow', 'user_a', 'agent', 't.me/+AbCdEf'], { io, config, storage })).toBe(1);
   });
 
   it('scope private: shows and changes modes without presenting them as chat rules', async () => {
-    await main(['user', 'add', 'nick', '--account', 'agent'], { io, config, storage });
+    await main(['user', 'add', 'user_a', '--account', 'agent'], { io, config, storage });
     out.length = 0;
-    expect(await main(['scope', 'private', 'nick', 'agent'], { io, config, storage })).toBe(0);
-    expect(out.join('\n')).toContain('Private chats for user "nick" on account "agent": closed');
+    expect(await main(['scope', 'private', 'user_a', 'agent'], { io, config, storage })).toBe(0);
+    expect(out.join('\n')).toContain('Private chats for user "user_a" on account "agent": closed');
 
-    expect(await main(['scope', 'private', 'nick', 'agent', 'send'], { io, config, storage })).toBe(0);
-    expect(new ScopePolicy(storage).isAllowed('nick', 'agent', { peerKey: '42', kind: 'user' }, 'write')).toBe(true);
-    expect(new ScopePolicy(storage).isAllowed('nick', 'agent', { peerKey: '42', kind: 'user' })).toBe(false);
+    expect(await main(['scope', 'private', 'user_a', 'agent', 'send'], { io, config, storage })).toBe(0);
+    expect(new ScopePolicy(storage).isAllowed('user_a', 'agent', { peerKey: '42', kind: 'user' }, 'write')).toBe(true);
+    expect(new ScopePolicy(storage).isAllowed('user_a', 'agent', { peerKey: '42', kind: 'user' })).toBe(false);
 
     out.length = 0;
-    expect(await main(['scope', 'list', 'nick', 'agent'], { io, config, storage })).toBe(0);
+    expect(await main(['scope', 'list', 'user_a', 'agent'], { io, config, storage })).toBe(0);
     expect(out.join('\n')).toContain('Private chats: send');
     expect(out.join('\n')).toContain('No rules for single chats');
     expect(out.join('\n')).not.toContain('*private');
 
-    expect(await main(['scope', 'private', 'nick', 'agent', 'open'], { io, config, storage })).toBe(0);
-    expect(new ScopePolicy(storage).privateMode('nick', 'agent')).toBe('open');
-    expect(await main(['scope', 'private', 'nick', 'agent', 'closed'], { io, config, storage })).toBe(0);
-    expect(storage.scopes.list('nick', 'agent')).toHaveLength(0);
+    expect(await main(['scope', 'private', 'user_a', 'agent', 'open'], { io, config, storage })).toBe(0);
+    expect(new ScopePolicy(storage).privateMode('user_a', 'agent')).toBe('open');
+    expect(await main(['scope', 'private', 'user_a', 'agent', 'closed'], { io, config, storage })).toBe(0);
+    expect(storage.scopes.list('user_a', 'agent')).toHaveLength(0);
 
     // Invalid modes and inaccessible accounts must not change state.
-    expect(await main(['scope', 'private', 'nick', 'agent', 'all'], { io, config, storage })).toBe(1);
-    expect(await main(['scope', 'private', 'nick', 'other', 'open'], { io, config, storage })).toBe(1);
-    expect(new ScopePolicy(storage).privateMode('nick', 'agent')).toBe('closed');
+    expect(await main(['scope', 'private', 'user_a', 'agent', 'all'], { io, config, storage })).toBe(1);
+    expect(await main(['scope', 'private', 'user_a', 'other', 'open'], { io, config, storage })).toBe(1);
+    expect(new ScopePolicy(storage).privateMode('user_a', 'agent')).toBe('closed');
     // An ordinary rule cannot create or remove a service target.
-    expect(await main(['scope', 'allow', 'nick', 'agent', '*private-open'], { io, config, storage })).toBe(1);
+    expect(await main(['scope', 'allow', 'user_a', 'agent', '*private-open'], { io, config, storage })).toBe(1);
   });
 });

@@ -60,7 +60,7 @@ describe('HTTP: daemon entry point', () => {
   });
 
   it('rejects foreign Host headers and browser requests', async () => {
-    const auth = { Authorization: `Bearer ${gw.tokens.nick}`, 'Content-Type': 'application/json' };
+    const auth = { Authorization: `Bearer ${gw.tokens.user_a}`, 'Content-Type': 'application/json' };
     const rebinding = await raw('POST', '/mcp', { ...auth, Host: 'evil.example.com' }, JSON.stringify(initialize));
     expect(rebinding.status).toBe(403);
     const browser = await raw('POST', '/mcp', { ...auth, Host: `127.0.0.1:${http.port}`, Origin: 'https://evil.example.com' }, JSON.stringify(initialize));
@@ -70,7 +70,7 @@ describe('HTTP: daemon entry point', () => {
   });
 
   it('rejects GET and reports invalid bodies and unknown paths clearly', async () => {
-    const auth = { Authorization: `Bearer ${gw.tokens.nick}` };
+    const auth = { Authorization: `Bearer ${gw.tokens.user_a}` };
     const get = await fetch(url, { headers: auth });
     expect(get.status).toBe(405);
     expect(get.headers.get('allow')).toBe('POST');
@@ -85,7 +85,7 @@ describe('HTTP: daemon entry point', () => {
     try {
       const response = await fetch(`http://127.0.0.1:${small.port}/mcp`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gw.tokens.nick}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gw.tokens.user_a}` },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { text: 'x'.repeat(300_000) } }),
       });
       expect(response.status).toBe(413);
@@ -101,15 +101,15 @@ describe('HTTP: daemon entry point', () => {
       await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
       return client;
     };
-    const nick = await connect(gw.tokens.nick);
-    const partner = await connect(gw.tokens.partner);
-    expect((await nick.listTools()).tools).toHaveLength(11);
+    const user_a = await connect(gw.tokens.user_a);
+    const user_b = await connect(gw.tokens.user_b);
+    expect((await user_a.listTools()).tools).toHaveLength(11);
     const text = async (c: Client) => ((await c.callTool({ name: 'tg_status', arguments: {} })) as { content: Array<{ text: string }> }).content[0]!.text;
-    expect(await text(nick)).toContain('Gateway user: nick');
-    expect(await text(partner)).toContain('Gateway user: partner');
-    expect(nick.getInstructions()).toContain('Telegram gateway');
-    await nick.close();
-    await partner.close();
+    expect(await text(user_a)).toContain('Gateway user: user_a');
+    expect(await text(user_b)).toContain('Gateway user: user_b');
+    expect(user_a.getInstructions()).toContain('Telegram gateway');
+    await user_a.close();
+    await user_b.close();
   });
 
   it('parses headers', () => {
@@ -128,7 +128,7 @@ describe('stdio proxy', () => {
     const output = new PassThrough();
     const chunks: Buffer[] = [];
     output.on('data', c => chunks.push(c as Buffer));
-    const done = runStdioProxy({ url: options.target ?? url, token: options.token ?? gw.tokens.nick, input, output, log: silent, timeoutMs: 5_000 });
+    const done = runStdioProxy({ url: options.target ?? url, token: options.token ?? gw.tokens.user_a, input, output, log: silent, timeoutMs: 5_000 });
     for (const line of lines) input.write(line + '\n');
     input.end();
     await done;
@@ -151,7 +151,7 @@ describe('stdio proxy', () => {
     const byId = new Map(replies.map(r => [r.id, r]));
     expect((byId.get(1)!.result as { serverInfo: { name: string } }).serverInfo.name).toBe('telegram-gateway');
     expect((byId.get(2)!.result as { tools: unknown[] }).tools).toHaveLength(11);
-    expect(JSON.stringify(byId.get(3))).toContain('Gateway user: nick');
+    expect(JSON.stringify(byId.get(3))).toContain('Gateway user: user_a');
   });
 
   it('unavailable daemon: requests fail and notifications stay silent', async () => {
@@ -174,7 +174,7 @@ describe('stdio proxy', () => {
       const output = new PassThrough();
       const chunks: Buffer[] = [];
       output.on('data', c => chunks.push(c as Buffer));
-      const done = runStdioProxy({ url, token: gw.tokens.nick, input, output, log: silent, fetch: fetchImpl });
+      const done = runStdioProxy({ url, token: gw.tokens.user_a, input, output, log: silent, fetch: fetchImpl });
       input.write(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list' }) + '\n');
       input.end();
       await done;

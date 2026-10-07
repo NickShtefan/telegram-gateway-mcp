@@ -62,16 +62,16 @@ describe('numbers, dates, and duration', () => {
 
 describe('formatMessage', () => {
   it('full mode includes a header and bounded untrusted text', () => {
-    const text = formatMessage(msg({ topicId: 5, replyToId: 120 }), { mode: 'full', envelope: env, linkFor: m => `https://t.me/baraholka/5/${m.id}` });
+    const text = formatMessage(msg({ topicId: 5, replyToId: 120 }), { mode: 'full', envelope: env, linkFor: m => `https://t.me/fixture_market/5/${m.id}` });
     expect(text).toBe(
-      '#123 | 2026-09-21 14:13 | @seller | topic 5 | re #120 | https://t.me/baraholka/5/123\n' +
+      '#123 | 2026-09-21 14:13 | @seller | topic 5 | re #120 | https://t.me/fixture_market/5/123\n' +
         '<<<TG:abcd1234\nSelling iPhone 15, 256 GB.\nPrice 65k, negotiable.\nTG:abcd1234>>>',
     );
   });
 
   it('brief mode uses two lines per channel post with counters', () => {
     const post = msg({
-      author: { kind: 'channel', peerKey: '-1000000000500', name: 'Stonks', username: 'stonksnws', bot: false },
+      author: { kind: 'channel', peerKey: '-1000000000500', name: 'Fixture Channel', username: 'fixture_channel', bot: false },
       views: 12_345,
       forwards: 7,
       replies: 14,
@@ -152,16 +152,16 @@ describe('formatMessage', () => {
     expect(header({ author: { kind: 'user', peerKey: '1001', name: 'Nick', username: null, bot: false } })).toContain('| Nick (id 1001) (this account)');
     expect(header({ author: { kind: 'user', peerKey: null, name: null, username: null, bot: false } })).toBe('#123 | 2026-09-21 14:13 | this account');
     // Channel posts and messages sent as a group retain channel/group attribution.
-    expect(header({ author: { kind: 'channel', peerKey: '-1000000000500', name: 'Stonks', username: 'stonksnws', bot: false } })).toBe('#123 | 2026-09-21 14:13 | @stonksnws');
+    expect(header({ author: { kind: 'channel', peerKey: '-1000000000500', name: 'Fixture Channel', username: 'fixture_channel', bot: false } })).toBe('#123 | 2026-09-21 14:13 | @fixture_channel');
     expect(header({ author: { kind: 'anonymous', peerKey: null, name: null, username: null, bot: false } })).toBe('#123 | 2026-09-21 14:13 | anonymous');
   });
 });
 
 describe('formatMessageList', () => {
   it('formats headers, warnings, lists, and cursors', () => {
-    const text = formatMessageList([msg(), msg({ id: 124 })], { title: 'Chat @baraholka, 2 of 240 messages', mode: 'brief', envelope: env, nextCursor: 'c1.abc', hints: ['Use tg_export for the full set.'] });
+    const text = formatMessageList([msg(), msg({ id: 124 })], { title: 'Chat @fixture_market, 2 of 240 messages', mode: 'brief', envelope: env, nextCursor: 'c1.abc', hints: ['Use tg_export for the full set.'] });
     const lines = text.split('\n');
-    expect(lines[0]).toBe('Chat @baraholka, 2 of 240 messages');
+    expect(lines[0]).toBe('Chat @fixture_market, 2 of 240 messages');
     expect(lines[1]).toContain('Untrusted content');
     expect(lines[2]).toBe('Times are UTC.');
     expect(text).toContain('#124 | ');
