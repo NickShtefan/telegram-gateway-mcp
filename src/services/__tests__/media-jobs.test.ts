@@ -99,6 +99,36 @@ describe('MediaService', () => {
     expect(downloadMedia).toHaveBeenCalledTimes(2);
   });
 
+  it.each(['photo', 'unknown document'])('checks actual full-size bytes for %s before saving', async kind => {
+    const raw = kind === 'photo' ? photoMessage(8) : {
+      className: 'Message', id: 8,
+      media: { className: 'MessageMediaDocument', document: { className: 'Document', mimeType: 'application/pdf', attributes: [] } },
+    };
+    const oversized = setup(vi.fn(async () => Buffer.alloc(1001)));
+    const result = await oversized.media.download('agent', '42', [raw], 'full');
+    expect(result.files).toEqual([]);
+    expect(result.skipped[0]!.reason).toContain('1001 bytes, over the 1000 byte limit');
+    expect(existsSync(join(dir, 'media'))).toBe(false);
+    const boundary = setup(vi.fn(async () => Buffer.alloc(1000)));
+    const ok = await boundary.media.download('agent', '42', [raw], 'full');
+    expect(ok.files[0]).toMatchObject({ bytes: 1000, cached: false });
+    const cached = await boundary.media.download('agent', '42', [raw], 'full');
+    expect(cached.files[0]).toMatchObject({ bytes: 1000, cached: true });
+  });
+
+  it('rejects an oversized full cache hit while allowing a large preview', async () => {
+    const { media, downloadMedia } = setup(vi.fn(async () => Buffer.alloc(1001)));
+    const cacheDir = join(dir, 'media', 'agent', 'u42');
+    mkdirSync(cacheDir, { recursive: true, mode: 0o755 });
+    writeFileSync(join(cacheDir, '7-full.jpg'), Buffer.alloc(1001));
+    const full = await media.download('agent', '42', [photoMessage(7)], 'full');
+    expect(full.files).toEqual([]);
+    expect(full.skipped[0]!.reason).toContain('byte limit');
+    expect(downloadMedia).not.toHaveBeenCalled();
+    const preview = await media.download('agent', '42', [photoMessage(7)], 'thumb');
+    expect(preview.files[0]).toMatchObject({ bytes: 1001, size: 'thumb' });
+  });
+
   it('skips messages without media or previews with an explanation', async () => {
     const { media } = setup();
     const result = await media.download(

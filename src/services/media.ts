@@ -41,7 +41,7 @@ export interface MediaServiceOptions {
   tg: Tg;
   /** Shared gateway directory; media are stored in `<filesDir>/media`. */
   filesDir: string;
-  /** Maximum full-size file size. */
+  /** Maximum full-size file saved or returned from cache; not a download memory cap. */
   maxFullBytes?: number;
   /** Maximum total media directory size. */
   quotaBytes?: number;
@@ -177,7 +177,12 @@ export class MediaService {
       const path = join(this.root, accountId, chatDirName(chatKey), `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
       // Only owned regular files count as cache hits; never follow planted symlinks.
       if (isOwnRegularFile(path) && lstatSync(path).size > 0) {
-        result.files.push({ messageId, kind: media.kind, size: thumb ? 'thumb' : 'full', path, bytes: lstatSync(path).size, mime, cached: true });
+        const bytes = lstatSync(path).size;
+        if (size === 'full' && bytes > this.maxFullBytes) {
+          result.skipped.push({ messageId, reason: this.sizeLimitReason(bytes) });
+          continue;
+        }
+        result.files.push({ messageId, kind: media.kind, size: thumb ? 'thumb' : 'full', path, bytes, mime, cached: true });
         continue;
       }
 
@@ -185,6 +190,10 @@ export class MediaService {
         const buffer = await this.fetch(accountId, raw, thumb, options);
         if (!buffer || buffer.length === 0) {
           result.skipped.push({ messageId, reason: 'Telegram returned an empty file' });
+          continue;
+        }
+        if (size === 'full' && buffer.length > this.maxFullBytes) {
+          result.skipped.push({ messageId, reason: this.sizeLimitReason(buffer.length) });
           continue;
         }
         this.write(path, buffer);
@@ -195,6 +204,10 @@ export class MediaService {
     }
 
     return result;
+  }
+
+  private sizeLimitReason(bytes: number): string {
+    return `file is ${bytes} bytes, over the ${this.maxFullBytes} byte limit; use size=thumb for a preview`;
   }
 
   private async fetch(accountId: string, raw: RawMessage, thumb: string | undefined, options?: TgCallOptions): Promise<Buffer | null> {
