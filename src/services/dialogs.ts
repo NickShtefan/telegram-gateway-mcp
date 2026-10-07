@@ -14,7 +14,7 @@ import type { Tg, TgCallOptions } from '../core/tg.js';
 import type { EntitiesRepo } from '../storage/port.js';
 import { chatTypeOf, type ChatType } from './resolve.js';
 
-export const DIALOGS_PAGE_MAX = 100;
+const DIALOGS_PAGE_MAX = 100;
 
 /** Dialog folder: 0 for the main list, 1 for archive. */
 export type DialogFolder = 0 | 1;

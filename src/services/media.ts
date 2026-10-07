@@ -105,7 +105,7 @@ interface RawMessage {
   } | null;
 }
 
-/** On-disk chat directory name: chat key without its leading minus. */
+/** On-disk chat name: negative keys use n plus digits, positive keys use u plus digits. */
 export function chatDirName(chatKey: string): string {
   return chatKey.startsWith('-') ? `n${chatKey.slice(1)}` : `u${chatKey}`;
 }

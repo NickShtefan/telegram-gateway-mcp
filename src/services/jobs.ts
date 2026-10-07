@@ -1,10 +1,10 @@
 /**
  * Jobs for operations longer than ordinary calls, such as months of history
- * or hundreds of previews. Tools return `job_id` immediately;
- * separate calls read progress.
+ * or hundreds of previews. Tools may wait briefly for completion,
+ * then return `job_id` for separate progress calls.
  *
  * Each job has independent state persisted in the database and returns
- * to the queue after a restart.
+ * to the queue after a restart, at most twice before failing.
  */
 import { randomBytes } from 'node:crypto';
 import { GatewayError, isGatewayError } from '../core/errors.js';

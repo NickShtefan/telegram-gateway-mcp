@@ -11,8 +11,8 @@ import { GatewayError } from '../core/errors.js';
 import type { Storage } from '../storage/port.js';
 
 /** Telegram login codes, BotFather, SpamBot, service notifications. */
-export const SERVICE_PEER_KEYS: ReadonlySet<string> = new Set(['777000', '93372553', '178220800', '42777']);
-export const SERVICE_USERNAMES: ReadonlySet<string> = new Set(['botfather', 'spambot', 'telegram', 'notoscam']);
+const SERVICE_PEER_KEYS: ReadonlySet<string> = new Set(['777000', '93372553', '178220800', '42777']);
+const SERVICE_USERNAMES: ReadonlySet<string> = new Set(['botfather', 'spambot', 'telegram', 'notoscam']);
 
 export interface ScopeTarget {
   peerKey: string;

@@ -25,8 +25,8 @@ export interface FormatOptions {
   chatLabel?: (message: MessageDto) => string | null;
 }
 
-export const DEFAULT_MAX_TEXT_CHARS = 1500;
-export const DEFAULT_BRIEF_CHARS = 220;
+const DEFAULT_MAX_TEXT_CHARS = 1500;
+const DEFAULT_BRIEF_CHARS = 220;
 
 /** 1234 -> 1.2k, 1200000 -> 1.2M. */
 export function compactNumber(n: number): string {
@@ -87,7 +87,7 @@ export function formatReactions(reactions: ReactionCount[], top = 3): string {
   return shown.join(' ') + (rest > 0 ? ` +${compactNumber(rest)}` : '');
 }
 
-export function formatMediaTag(media: MediaDto | null, grouped: boolean): string {
+function formatMediaTag(media: MediaDto | null, grouped: boolean): string {
   if (!media) return '';
   switch (media.kind) {
     case 'photo':
@@ -147,7 +147,7 @@ const URL_MAX_CHARS = 300;
  * Inline buttons on one line: position (row.column), label, kind, and
  * destination for URL buttons. Callback bytes are never included.
  */
-export function formatButtons(m: MessageDto): string {
+function formatButtons(m: MessageDto): string {
   const items: string[] = [];
   m.buttons.forEach((row, r) => {
     row.forEach((button, p) => {
@@ -162,7 +162,7 @@ export function formatButtons(m: MessageDto): string {
 const HIDDEN_LINKS_MAX = 20;
 
 /** Hidden links on one line: linked words and their destinations. */
-export function formatHiddenLinks(m: MessageDto): string {
+function formatHiddenLinks(m: MessageDto): string {
   if (m.hiddenLinks.length === 0) return '';
   const shown = m.hiddenLinks.slice(0, HIDDEN_LINKS_MAX).map(link => `${quoted(link.text, 48)} ${safeLabel(link.url, URL_MAX_CHARS)}`);
   const rest = m.hiddenLinks.length - shown.length;
@@ -170,7 +170,7 @@ export function formatHiddenLinks(m: MessageDto): string {
 }
 
 /** Message header line containing everything except the text. */
-export function formatHeader(m: MessageDto, options: FormatOptions): string {
+function formatHeader(m: MessageDto, options: FormatOptions): string {
   const parts: string[] = [`#${m.id}`, formatDate(m.date)];
   const chat = options.chatLabel?.(m);
   if (chat) parts.push(`in ${chat}`);

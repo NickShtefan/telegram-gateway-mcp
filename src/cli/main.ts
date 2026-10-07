@@ -32,7 +32,7 @@ import { createLogger } from '../core/log.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from '../core/config.js';
 import { runStdioProxy } from '../transport/stdio.js';
 
-export const VERSION = '0.1.0';
+const VERSION = '0.1.0';
 
 const HELP = `tg-mcp ${VERSION}: Telegram MCP gateway
 

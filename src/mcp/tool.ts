@@ -63,7 +63,7 @@ export function defineTool<S extends ToolShape>(def: ToolDef<S>): ToolDef<S> {
 }
 
 /** Agent error text: code, explanation, and retry timing when available. */
-export function formatToolError(err: GatewayError): string {
+function formatToolError(err: GatewayError): string {
   const lines = [`Error: ${err.code}`, err.message];
   if (err.retryAfter !== undefined) lines.push(`retry_after: ${err.retryAfter}`);
   if (err.outcomeUnknown) lines.push('outcome: unknown');
@@ -71,7 +71,7 @@ export function formatToolError(err: GatewayError): string {
 }
 
 /** Converts errors to GatewayError without disguising gateway bugs as Telegram errors. */
-export function toGatewayError(err: unknown, log: Logger, tool: string): GatewayError {
+function toGatewayError(err: unknown, log: Logger, tool: string): GatewayError {
   if (isGatewayError(err)) return err;
   const looksLikeTelegram =
     typeof err === 'object' && err !== null && ('errorMessage' in err || 'seconds' in err || /[A-Z]{3,}_[A-Z_]+/.test((err as Error).message ?? ''));
@@ -88,7 +88,7 @@ export interface RegisterOptions {
   now?: () => number;
 }
 
-export function createToolContext(options: RegisterOptions): ToolContext {
+function createToolContext(options: RegisterOptions): ToolContext {
   const { services, principal } = options;
   const now = options.now ?? (() => Date.now());
   return {

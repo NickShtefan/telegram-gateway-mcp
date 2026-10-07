@@ -147,7 +147,7 @@ export function describeAccounts(storage: Storage): AccountView[] {
 }
 
 /** Scope target: lowercase username without @, or a chat key. */
-export function scopeTarget(chat: string): string {
+function scopeTarget(chat: string): string {
   const parsed = parseRef(chat);
   if (parsed.chat.type === 'username') return parsed.chat.username.toLowerCase();
   if (parsed.chat.type === 'peer') return parsed.chat.peerKey;

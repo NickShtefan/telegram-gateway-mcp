@@ -1,6 +1,7 @@
 /**
- * Storage port. Core and services depend only on these interfaces; the default
- * implementation uses SQLite (`sqlite.ts`). Methods are synchronous: SQLite
+ * Storage port for core and most service dependencies. SQLite-backed index,
+ * snapshot and write stores also use the concrete database (`sqlite.ts`).
+ * Methods are synchronous: SQLite
  * responds in-process, allowing atomic writes without asynchronous locks.
  *
  * All chat IDs here are keys from `core/chatId.ts` (marked IDs as strings).
@@ -105,7 +106,7 @@ export interface AuditRepo {
   prune(olderThanTs: number): number;
 }
 
-// ---------- tasks (long-running operations) ----------
+// ---------- jobs (long-running operations) ----------
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed';
 
@@ -129,7 +130,7 @@ export interface JobsRepo {
   update(id: string, patch: { state?: JobState; progress?: Record<string, unknown>; result?: Record<string, unknown> | null; error?: string | null }): void;
   /** Newest first by default; the queue uses oldestFirst. */
   list(filter?: { userId?: string; state?: JobState; limit?: number; oldestFirst?: boolean }): JobRecord[];
-  /** Requeues all running tasks after a restart. */
+  /** Requeues all running jobs after a restart. */
   requeueRunning(): number;
 }
 

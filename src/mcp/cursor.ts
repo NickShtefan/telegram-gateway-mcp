@@ -12,7 +12,7 @@ export function encodeCursor(kind: string, data: CursorData): string {
   return PREFIX + Buffer.from(JSON.stringify([kind, data]), 'utf8').toString('base64url');
 }
 
-/** Parses a cursor and checks that the same tool issued it. */
+/** Parses a cursor and checks its tool-kind tag; this is not proof of origin. */
 export function decodeCursor<T extends CursorData>(kind: string, cursor: string): T {
   const fail = (): never => {
     throw new GatewayError(

@@ -21,7 +21,7 @@ import type { Resolver } from './resolve.js';
 
 export const STATS_MAX_DAYS = 180;
 export const STATS_MAX_POSTS = 1000;
-/** Recent posts are still gaining views and are excluded from averages. */
+/** Exclude recent posts from averages when at least three settled posts exist. */
 const SETTLE_SECONDS = 24 * 3600;
 const DAY = 86_400;
 

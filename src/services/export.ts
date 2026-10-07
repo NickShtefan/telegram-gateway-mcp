@@ -56,7 +56,7 @@ export interface ExportRow {
   photo_path: string | null;
 }
 
-export const EXPORT_COLUMNS: Array<keyof ExportRow> = [
+const EXPORT_COLUMNS: Array<keyof ExportRow> = [
   'id',
   'date',
   'topic_id',

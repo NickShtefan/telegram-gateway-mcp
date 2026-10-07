@@ -32,7 +32,7 @@ export interface WriteLimitsConfig {
   reactionsPerDay?: number;
 }
 
-export const WRITE_LIMIT_ENV: Record<keyof WriteLimitsConfig, string> = {
+const WRITE_LIMIT_ENV: Record<keyof WriteLimitsConfig, string> = {
   repliesPerDay: 'TG_MCP_LIMIT_REPLIES',
   newDialogsPerDay: 'TG_MCP_LIMIT_NEW_DIALOGS',
   joinsPerDay: 'TG_MCP_LIMIT_JOINS',
@@ -41,7 +41,7 @@ export const WRITE_LIMIT_ENV: Record<keyof WriteLimitsConfig, string> = {
 
 export const DEFAULT_PORT = 7777;
 export const DEFAULT_HOST = '127.0.0.1';
-export const KNOWN_TOOLSETS = ['core', 'discover', 'analytics', 'index', 'write'] as const;
+const KNOWN_TOOLSETS = ['core', 'discover', 'analytics', 'index', 'write'] as const;
 /** Removed toolsets are skipped so old .env files do not crash startup. */
 export const RETIRED_TOOLSETS: readonly string[] = ['automate'];
 
@@ -49,12 +49,12 @@ function expandHome(path: string): string {
   return path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(1)) : path;
 }
 
-export function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
+function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolve(expandHome(env.TG_MCP_HOME?.trim() || '~/.tg-mcp'));
 }
 
 /** Load `<home>/.env` without overriding existing environment variables. */
-export function loadEnvFile(home: string, env: NodeJS.ProcessEnv = process.env): void {
+function loadEnvFile(home: string, env: NodeJS.ProcessEnv = process.env): void {
   const path = join(home, '.env');
   if (!existsSync(path)) return;
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -86,7 +86,7 @@ export function parseToolsets(raw: string | undefined): string[] {
   return [...new Set(requested.length > 0 ? requested : ['core'])];
 }
 
-export function parseWriteLimits(env: NodeJS.ProcessEnv = process.env): WriteLimitsConfig {
+function parseWriteLimits(env: NodeJS.ProcessEnv = process.env): WriteLimitsConfig {
   const limits: WriteLimitsConfig = {};
   for (const [key, name] of Object.entries(WRITE_LIMIT_ENV) as Array<[keyof WriteLimitsConfig, string]>) {
     const raw = (env[name] ?? '').trim();

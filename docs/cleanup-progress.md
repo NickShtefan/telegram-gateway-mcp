@@ -25,3 +25,7 @@ Stage 2.3 validation: build, typecheck, 699 tests passed. Stage 2.4 (F5): valida
 Stage 2.4 validation: build, typecheck, 714 tests passed. Stage 2.5 (F4): reject inherited log-level keys; tests verify fallback filtering and every supported level.
 
 Stage 2.5 validation: build, typecheck, 725 tests passed. Stage 2.6 (F6): display explicit timestamp zero independently of an absent boundary.
+
+Stage 2.6 validation: build, typecheck, 726 tests passed. Stage 2 is complete.
+
+Stage 3: removed both write-only DeadlineError fields and 26 module-local value exports (implementations retained). Build/typecheck check for external consumers. Corrected M1-M8 comments and three SQLite job headings. AuditRepo.recent, EntitiesRepo.put, all modules, Unicode fixtures and eight published migrations remain.

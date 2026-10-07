@@ -233,7 +233,7 @@ if [ -f "$ENV_FILE" ]; then
   HAVE_ID="$(env_value TG_API_ID "$ENV_FILE")"
   HAVE_HASH="$(env_value TG_API_HASH "$ENV_FILE")"
   if [ -n "$SEED_ID" ] && { [ -z "$HAVE_ID" ] || [ -z "$HAVE_HASH" ]; }; then
-    # Populate only empty credentials, preserving all other configuration lines.
+    # Replace both API credentials if either is empty; preserve other configuration lines.
     grep -v -E '^(TG_API_ID|TG_API_HASH)=' "$ENV_FILE" > "$WORK/env.new" || true
     printf 'TG_API_ID=%s\nTG_API_HASH=%s\n' "$SEED_ID" "$SEED_HASH" >> "$WORK/env.new"
     put_env "$WORK/env.new"

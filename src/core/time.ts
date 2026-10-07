@@ -4,14 +4,9 @@
  */
 
 export class DeadlineError extends Error {
-  readonly label: string;
-  readonly timeoutMs: number;
-
   constructor(label: string, timeoutMs: number) {
     super(`${label} timed out after ${timeoutMs}ms`);
     this.name = 'DeadlineError';
-    this.label = label;
-    this.timeoutMs = timeoutMs;
   }
 }
 

@@ -141,7 +141,7 @@ interface RawPeer {
 }
 
 /** Author from fromId: person, channel, or anonymous group administrator. */
-export function authorFromPeer(fromId: unknown, index: EntityIndex, postAuthor?: string | null): AuthorDto {
+function authorFromPeer(fromId: unknown, index: EntityIndex, postAuthor?: string | null): AuthorDto {
   const peer = fromId as RawPeer | null;
   if (peer && peer.userId !== undefined && peer.userId !== null) {
     const user = index.users.get(String(peer.userId));

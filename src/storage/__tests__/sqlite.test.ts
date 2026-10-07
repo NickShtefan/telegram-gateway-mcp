@@ -211,7 +211,7 @@ describe('SqliteStorage: entity cache', () => {
   });
 });
 
-describe('SqliteStorage: audit, tasks, kv, and transactions', () => {
+describe('SqliteStorage: audit, jobs, kv, and transactions', () => {
   it('filters audit by user and removes old entries', () => {
     const base = { accountId: 'agent', args: { chat: '@x' }, peerKey: '-1001', resultCount: 3, durationMs: 12, errorCode: null, floodWaitSeconds: null };
     storage.audit.add({ ...base, ts: 100, userId: 'nick', tool: 'tg_read_history' });
@@ -222,7 +222,7 @@ describe('SqliteStorage: audit, tasks, kv, and transactions', () => {
     expect(storage.audit.recent()).toHaveLength(1);
   });
 
-  it('advances task states and requeues interrupted tasks after restart', () => {
+  it('advances job states and requeues interrupted jobs after restart', () => {
     storage.jobs.create({ id: 'j1', userId: 'nick', accountId: 'agent', kind: 'export', params: { chat: '-1001' } });
     storage.jobs.update('j1', { state: 'running', progress: { done: 100, total: 400 } });
     expect(storage.jobs.get('j1')).toMatchObject({ state: 'running', progress: { done: 100, total: 400 }, result: null });
@@ -233,7 +233,7 @@ describe('SqliteStorage: audit, tasks, kv, and transactions', () => {
     expect(storage.jobs.list({ userId: 'partner' })).toHaveLength(0);
   });
 
-  it('reads the task queue oldest first', () => {
+  it('reads the job queue oldest first', () => {
     for (let i = 1; i <= 60; i++) {
       clock += 10;
       storage.jobs.create({ id: `job_${i}`, userId: 'nick', kind: 'export', params: {} });

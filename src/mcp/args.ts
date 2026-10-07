@@ -22,7 +22,7 @@ function validCalendarDate(text: string): boolean {
  * Timestamp: `30d`, `12h`, `2w`, `6mo`, `1y` (relative to now), a date
  * such as `2026-09-01`, an ISO datetime, or Unix seconds. Returns Unix seconds.
  */
-export function parseWhen(value: string, nowMs: number, argName: string): number {
+function parseWhen(value: string, nowMs: number, argName: string): number {
   const text = value.trim();
   const fail = (): never => {
     throw new GatewayError(

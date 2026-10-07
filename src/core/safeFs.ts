@@ -16,7 +16,7 @@ function untrusted(path: string, why: string): GatewayError {
 }
 
 /** Existing nonsymlink directory owned by this process and not writable by others. */
-export function assertTrustedDir(path: string): void {
+function assertTrustedDir(path: string): void {
   const st = lstatSync(path);
   if (st.isSymbolicLink()) throw untrusted(path, 'is a symbolic link');
   if (!st.isDirectory()) throw untrusted(path, 'is not a directory');

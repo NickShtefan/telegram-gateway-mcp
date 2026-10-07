@@ -1,8 +1,8 @@
 /**
  * Actions: comment replies, messages, reactions, joins, and
- * inline-button presses. Called
- * only by write-gateway executors (writegate/index.ts), after the
- * owner confirms through their agent (tg_confirm).
+ * inline-button presses. Preflight checks also run before the preview.
+ * Telegram mutations run only through write-gateway executors
+ * (writegate/index.ts), after confirmation through tg_confirm.
  *
  * Post replies: GetDiscussionMessage locates the post copy in the
  * discussion group, then SendMessage replies to that copy.
