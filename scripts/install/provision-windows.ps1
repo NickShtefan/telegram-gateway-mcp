@@ -8,6 +8,40 @@ function NoReparse([string]$Path) {
   if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){Fail}
   return $item
 }
+function Sid([object]$Identity) {
+  if($Identity -is [Security.Principal.IdentityReference]){return $Identity.Translate([Security.Principal.SecurityIdentifier]).Value}
+  if([string]$Identity -match '^S-1-'){return (New-Object Security.Principal.SecurityIdentifier ([string]$Identity)).Value}
+  return (New-Object Security.Principal.NTAccount ([string]$Identity)).Translate([Security.Principal.SecurityIdentifier]).Value
+}
+function AssertProtected([string]$Path,[string]$ServiceSid='',[bool]$Private=$false,[bool]$ServiceWritable=$false,[bool]$Anchor=$false) {
+  $item=NoReparse $Path;$acl=Get-Acl -LiteralPath $Path;$owner=Sid $acl.Owner
+  $admins=@('S-1-5-32-544','S-1-5-18')
+  $owners=$admins;if($ServiceSid -and $Private){$owners+=@($ServiceSid)}
+  if($owner -notin $owners){Fail}
+  $mutation=[Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles
+  $aclMutation=[Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
+  if($Anchor){$mutation=$mutation -band (-bnot ([Security.AccessControl.FileSystemRights]::CreateFiles -bor [Security.AccessControl.FileSystemRights]::CreateDirectories))}
+  foreach($rule in $acl.Access){
+    if($rule.AccessControlType -ne 'Allow'){continue};$identity=Sid $rule.IdentityReference
+    if($identity -in $admins){continue}
+    if($ServiceSid -and $identity -eq $ServiceSid){
+      if(($rule.FileSystemRights -band $aclMutation) -or (-not $ServiceWritable -and ($rule.FileSystemRights -band $mutation))){Fail};continue
+    }
+    if($Private -or ($rule.FileSystemRights -band $mutation)){Fail}
+  }
+  return $item
+}
+function AssertAncestors([string]$Path) {
+  $current=Get-Item -LiteralPath $Path -Force
+  for(;$current;$current=$current.Parent){
+    $anchor=$current.FullName -in @('C:\','C:\ProgramData')
+    $null=AssertProtected $current.FullName '' $false $false $anchor
+  }
+}
+function AssertTree([IO.FileSystemInfo]$Item,[string]$ServiceSid='',[bool]$Private=$false,[bool]$Writable=$false) {
+  $null=AssertProtected $Item.FullName $ServiceSid $Private $Writable
+  if($Item -is [IO.DirectoryInfo]){foreach($child in $Item.EnumerateFileSystemInfos()){AssertTree $child $ServiceSid $Private $Writable}}
+}
 function Protect([string]$Path,[string]$ServiceSid,[bool]$Private,[bool]$Writable) {
   $item=NoReparse $Path
   $acl=if($item.PSIsContainer){New-Object Security.AccessControl.DirectorySecurity}else{New-Object Security.AccessControl.FileSecurity}
@@ -32,17 +66,8 @@ try {
   $principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
   if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){Fail}
   $source=NoReparse $Candidate;if(-not $source.PSIsContainer){Fail}
-  # Candidate and ancestry must be immutable to ordinary users before any executable is invoked.
-  for($current=$source;$current;$current=$current.Parent){
-    $null=NoReparse $current.FullName;$acl=Get-Acl -LiteralPath $current.FullName
-    foreach($rule in $acl.Access){if($rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Write) -and $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-32-544','S-1-5-18')){Fail}}
-  }
-  function AttestTree([IO.FileSystemInfo]$Item) {
-    $null=NoReparse $Item.FullName;$acl=Get-Acl -LiteralPath $Item.FullName
-    foreach($rule in $acl.Access){if($rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Write) -and $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-32-544','S-1-5-18')){Fail}}
-    if($Item -is [IO.DirectoryInfo]){foreach($child in $Item.EnumerateFileSystemInfos()){AttestTree $child}}
-  }
-  AttestTree $source
+  AssertAncestors $Candidate
+  AssertTree $source
   # Reverify inside protected staging with its approved Node, not a caller's runtime.
   $node=Join-Path $Candidate 'node.exe';$null=NoReparse $node
   & $node (Join-Path $Candidate 'installer.mjs') --version 0.2.0 --source-sha $SourceSha --signer-sha256 $SignerSha256 --verify-extracted
@@ -51,12 +76,7 @@ try {
   $metadata=Get-Content -LiteralPath (Join-Path $application.FullName 'package.json') -Raw|ConvertFrom-Json
   if($metadata.version -cne '0.2.0'){Fail}
   $serviceHostPath=Join-Path $application.FullName 'dist\native\service-host.exe';$null=NoReparse $serviceHostPath
-  function AssertAdminOwned([string]$Path) {
-    $null=NoReparse $Path;$acl=Get-Acl -LiteralPath $Path
-    $owner=(New-Object Security.Principal.NTAccount($acl.Owner)).Translate([Security.Principal.SecurityIdentifier]).Value
-    if($owner -notin @('S-1-5-32-544','S-1-5-18')){Fail}
-    foreach($rule in $acl.Access){if($rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Write) -and $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-32-544','S-1-5-18')){Fail}}
-  }
+  function AssertAdminOwned([string]$Path) { $null=AssertProtected $Path }
   $receiptPath=Join-Path $prefix 'install.json'
   $receipt=@{format_version=1;source_sha=$SourceSha;signer_sha256=$SignerSha256;port=$Port;stage='prefix'}
   if(Test-Path -LiteralPath $prefix) {
@@ -87,24 +107,25 @@ try {
       else{Copy-Item -LiteralPath $From -Destination $To}
     }
   }
+  AssertAncestors $prefix
   if(-not(Test-Path -LiteralPath (Join-Path $prefix 'releases'))){$null=New-Item -ItemType Directory -Path (Join-Path $prefix 'releases')}
+  AssertAncestors (Join-Path $prefix 'releases')
   if(-not(Test-Path -LiteralPath $release)){$null=New-Item -ItemType Directory -Path $release}
-  AssertAdminOwned $release;AttestTree (Get-Item -LiteralPath $release)
+  AssertAncestors $release;AssertTree (Get-Item -LiteralPath $release)
   CopyMatching $node $layout.node;CopyMatching $application.FullName (Join-Path $release 'application');SaveStage 'release'
   $installedHost=Join-Path $release 'application\dist\native\service-host.exe'
   $existing=Get-CimInstance Win32_Service -Filter "Name='TelegramMCPGateway'"
-  if($existing){if($existing.StartName -cne $layout.account -or $existing.PathName -cne ('"'+$installedHost+'"') -or $existing.State -ne 'Stopped'){Fail}}
+  if($existing){if($existing.StartName -cne $layout.account -or $existing.PathName -cne ('"'+$installedHost+'"') -or $existing.State -ne 'Stopped' -or $existing.StartMode -cne 'Manual'){Fail}}
   else{& $sc create $layout.service binPath= ('"'+$installedHost+'"') start= demand obj= $layout.account;if($LASTEXITCODE -ne 0){Fail}}
   $sid=(New-Object Security.Principal.NTAccount($layout.account)).Translate([Security.Principal.SecurityIdentifier]).Value;SaveStage 'service'
   Protect $prefix $sid $false $false
   foreach($directory in @($layout.state,$layout.files,$layout.logs)){
-    if(-not(Test-Path -LiteralPath $directory)){$null=New-Item -ItemType Directory -Path $directory}
-    # Existing data are retained; only the attested installation's named directories are used.
-    $null=NoReparse $directory;Protect $directory $sid ($directory -ne $layout.files) $true
+    if(Test-Path -LiteralPath $directory){AssertTree (Get-Item -LiteralPath $directory) $sid ($directory -ne $layout.files) $true}
+    else{$null=New-Item -ItemType Directory -Path $directory;Protect $directory $sid ($directory -ne $layout.files) $true}
   }
   SaveStage 'state'
   $definition=Join-Path $prefix 'service.json';$expected=$layout|ConvertTo-Json -Compress
-  if(Test-Path -LiteralPath $definition){$null=NoReparse $definition;if((Get-Content -LiteralPath $definition -Raw).Trim() -cne $expected){Fail}}
+  if(Test-Path -LiteralPath $definition){AssertAdminOwned $definition;if((Get-Content -LiteralPath $definition -Raw).Trim() -cne $expected){Fail}}
   else{$expected|Set-Content -LiteralPath $definition -Encoding UTF8;Protect $definition $sid $false $false}
   & $sc failureflag $layout.service 1;if($LASTEXITCODE -ne 0){Fail}
   & $sc failure $layout.service reset= 86400 actions= restart/3000/restart/10000/restart/30000;if($LASTEXITCODE -ne 0){Fail}

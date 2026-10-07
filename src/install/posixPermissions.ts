@@ -1,5 +1,6 @@
 /** Attest complete ancestry and reject ACLs conservatively before privileged file work. */
 import { lstat, mkdir, chmod, chown, open, rename, unlink } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -8,17 +9,29 @@ import { promisify } from 'node:util';
 const runFile = promisify(execFile);
 export class ProtectionError extends Error { constructor() { super('protection_unverified'); } }
 
-export async function attestDirectory(path: string, owners: readonly number[], modeMask = 0o022): Promise<void> {
-  const st = await lstat(path);
-  if (!st.isDirectory() || st.isSymbolicLink() || !owners.includes(st.uid) || (st.mode & modeMask) !== 0) throw new ProtectionError();
+async function noAcl(path: string): Promise<void> {
   if (process.platform === 'darwin') {
     const { stdout } = await runFile('/bin/ls', ['-lde', path], { maxBuffer: 8192, timeout: 1000 });
     if (/\n\s*\d+:/.test(stdout) || stdout.split('\n')[0]?.[10] === '+') throw new ProtectionError();
   } else if (process.platform === 'linux') {
-    // POSIX modes do not attest extended ACLs. Require an explicit system ACL query.
     const { stdout } = await runFile('/usr/bin/getfacl', ['-cp', path], { maxBuffer: 8192, timeout: 1000 });
     if (stdout.split('\n').some(line => line && !/^(user::[rwx-]{3}|group::[rwx-]{3}|other::[rwx-]{3})$/.test(line))) throw new ProtectionError();
   } else throw new ProtectionError();
+}
+
+/** Correlate the path ACL with the already-open regular inode; parent attestation prevents replacement. */
+export async function attestFile(path: string, descriptor: Stats): Promise<void> {
+  const before = await lstat(path);
+  if (!before.isFile() || before.isSymbolicLink() || before.ino !== descriptor.ino || before.dev !== descriptor.dev) throw new ProtectionError();
+  await noAcl(path);
+  const after = await lstat(path);
+  if (!after.isFile() || after.ino !== descriptor.ino || after.dev !== descriptor.dev || after.uid !== descriptor.uid || after.mode !== descriptor.mode) throw new ProtectionError();
+}
+
+export async function attestDirectory(path: string, owners: readonly number[], modeMask = 0o022): Promise<void> {
+  const st = await lstat(path);
+  if (!st.isDirectory() || st.isSymbolicLink() || !owners.includes(st.uid) || (st.mode & modeMask) !== 0) throw new ProtectionError();
+  await noAcl(path);
 }
 export async function attestAncestry(path: string, allowSystemTemporary = false): Promise<void> {
   for (let current = resolve(path); ; current = dirname(current)) {

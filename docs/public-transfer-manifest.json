@@ -551,6 +551,14 @@
     {
       "source": "src/install/__tests__/provision.test.ts",
       "destination": "src/install/__tests__/provision.test.ts"
+    },
+    {
+      "source": "scripts/checks/windows-acl.ps1",
+      "destination": "scripts/checks/windows-acl.ps1"
+    },
+    {
+      "source": "src/install/__tests__/permissions.test.ts",
+      "destination": "src/install/__tests__/permissions.test.ts"
     }
   ],
   "excludedTrackedFiles": [

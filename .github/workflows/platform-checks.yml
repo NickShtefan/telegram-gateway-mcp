@@ -41,5 +41,10 @@ jobs:
         shell: powershell
         run: |
           $compiler=Join-Path ([Environment]::GetFolderPath('Windows')) 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-          & $compiler /nologo /target:exe /out:service-host.exe /r:System.ServiceProcess.dll /r:System.Web.Extensions.dll scripts/install/service-host.cs
+          $source=(Resolve-Path -LiteralPath 'scripts/install/service-host.cs').Path
+          & $compiler /nologo /target:exe /out:service-host.exe /r:System.ServiceProcess.dll /r:System.Web.Extensions.dll $source
           if ($LASTEXITCODE -ne 0) { throw 'Service host compile failed' }
+
+      - name: Synthetic ACL ownership and mutation regressions
+        shell: powershell
+        run: ./scripts/checks/windows-acl.ps1
