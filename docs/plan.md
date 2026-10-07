@@ -81,6 +81,8 @@ On October 7, the owner requested a full repository inventory before selecting c
 
 At the owner's request, the report was extended with a symbol and content review of all 87 source/test/helper files at SHA `8d9a917bbc01733d97f436538f0a7e4a7268e638`, including interfaces, callbacks, comments and the installer. No entirely unused own function, method, local variable or type was confirmed. It records two write-only error fields, two test-only repository access methods, 26 optional value exports, eight comment corrections and six behavior or policy findings. Isolated synthetic probes reproduced continued execution after a media timeout, duplicate local-search pages, incomplete full-media size enforcement, invalid log-level acceptance and two date-handling cases. ShellCheck passed. Cleanup and behavior changes remain for owner selection; no source, configuration, lab service or Telegram state was changed.
 
+The owner then requested a cleanup plan based on the audit. The private [repository report](repository-audit.md) now contains the proposed sequence, scope and completion criteria: clean builds and explicit package exclusions, independent fixes for F1-F6, narrow symbol/comment cleanup, public transfer contents, final verification and snapshot preparation. The proposal retains test-only repository methods, working modules, tests and published migrations; worktree archiving is a separate optional item. Writing the plan does not start cleanup, deployment, migration or publication.
+
 ## Code structure
 
 One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.
