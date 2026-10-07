@@ -21,3 +21,5 @@ Stage 2.1 validation: build, typecheck, 694 tests passed; commit `9f2fe5a`. Stag
 Stage 2.2 validation: build, typecheck, 696 tests passed. Stage 2.3 (F3): enforce actual full-buffer and cache-file sizes, including photos and missing document metadata. Tests cover exact boundary, oversized files, cache and uncapped previews. This does not cap memory during download.
 
 Stage 2.3 validation: build, typecheck, 699 tests passed. Stage 2.4 (F5): validate calendar components before date parsing; reject normalized impossible dates while preserving leap days, relative periods, Unix seconds and timezone conversion.
+
+Stage 2.4 validation: build, typecheck, 714 tests passed. Stage 2.5 (F4): reject inherited log-level keys; tests verify fallback filtering and every supported level.

@@ -25,7 +25,7 @@ export interface LoggerOptions {
 
 export function parseLogLevel(raw: string | undefined, fallback: LogLevel = 'info'): LogLevel {
   const v = (raw ?? '').trim().toLowerCase();
-  return v in ORDER ? (v as LogLevel) : fallback;
+  return Object.hasOwn(ORDER, v) ? (v as LogLevel) : fallback;
 }
 
 export function redactFields(fields: Record<string, unknown>): Record<string, unknown> {

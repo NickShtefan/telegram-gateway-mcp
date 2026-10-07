@@ -38,6 +38,22 @@ describe('log', () => {
     expect(lines).toEqual(['1970-01-01T00:00:00.000Z INFO [core:limiter] queued {"account":"agent","n":2}']);
   });
 
+  it.each(['constructor', '__proto__', 'toString', 'nonsense', '', undefined])('uses a filtering fallback for invalid level %s', value => {
+    const level = parseLogLevel(value);
+    expect(level).toBe('info');
+    expect(parseLogLevel(value, 'warn')).toBe('warn');
+    const lines: string[] = [];
+    const log = createLogger('test', { level, write: line => lines.push(line) });
+    log.debug('hidden');
+    log.info('visible');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('visible');
+  });
+
+  it.each(['debug', 'info', 'warn', 'error', 'silent'] as const)('accepts the supported level %s', level => {
+    expect(parseLogLevel(` ${level.toUpperCase()} `)).toBe(level);
+  });
+
   it('honors the log level and redacts secrets', () => {
     const lines: string[] = [];
     const log = createLogger('t', { level: 'warn', write: l => lines.push(l) });
