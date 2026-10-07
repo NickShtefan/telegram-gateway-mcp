@@ -1,6 +1,6 @@
 /** Protected native adapter storage primitive. No directory creation or automatic adoption. */
 import { constants } from 'node:fs';
-import { open, rename, unlink } from 'node:fs/promises';
+import { lstat, open, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { acquireFileLease, FileLeaseBusyError } from '../core/fileLease.js';
@@ -28,7 +28,12 @@ export class FileSetupJournal {
   async readJournal(): Promise<unknown | null> {
     await this.assertProtected();
     let file;
-    try { file = await open(join(this.directory, 'journal.json'), constants.O_RDONLY | constants.O_NOFOLLOW); } catch (err) {
+    try {
+      const path = join(this.directory, 'journal.json');
+      const existing = await lstat(path);
+      if (!existing.isFile() || existing.isSymbolicLink()) throw new SetupError('invalid_state');
+      file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw new SetupError('invalid_state');
     }

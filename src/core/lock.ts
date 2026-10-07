@@ -4,7 +4,7 @@
  * socket reclamation under the lease so concurrent restarts cannot unlink
  * a newly acquired owner's socket. Kernel ownership ends on process death.
  */
-import { existsSync, unlinkSync } from 'node:fs';
+import { lstatSync, unlinkSync, type Stats } from 'node:fs';
 import { connect, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { GatewayError } from './errors.js';
@@ -31,26 +31,44 @@ function pathTooLong(home: string): GatewayError {
 }
 
 /** Whether a live process answers on the lock socket. */
-function isSocketHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
+function inspectSocket(path: string): Stats | null {
+  try {
+    const st = lstatSync(path);
+    if (!st.isSocket() || st.uid !== process.getuid?.() || st.nlink !== 1 || (st.mode & 0o022) !== 0) {
+      throw new GatewayError('UNAVAILABLE', 'The gateway liveness endpoint requires owner review.');
+    }
+    return st;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+function probeSocket(home: string, timeoutMs = 1_000): Promise<'live' | 'stale' | 'missing' | 'unsafe'> {
   const path = lockPath(home);
   // The path cannot host a socket, so it cannot have an owner.
-  if (!pathFits(path)) return Promise.resolve(false);
-  if (!existsSync(path)) return Promise.resolve(false);
-  return new Promise<boolean>(resolve => {
+  if (!pathFits(path)) return Promise.resolve('missing');
+  try { if (!inspectSocket(path)) return Promise.resolve('missing'); }
+  catch { return Promise.resolve('unsafe'); }
+  return new Promise<'live' | 'stale' | 'missing' | 'unsafe'>(resolve => {
     const socket = connect(path);
-    const done = (held: boolean): void => {
+    const done = (held: 'live' | 'stale' | 'missing' | 'unsafe'): void => {
       socket.removeAllListeners();
       socket.destroy();
       resolve(held);
     };
-    socket.setTimeout(timeoutMs, () => done(true));
-    socket.once('connect', () => done(true));
-    socket.once('error', () => done(false));
+    socket.setTimeout(timeoutMs, () => done('live'));
+    socket.once('connect', () => done('live'));
+    socket.once('error', err => {
+      const code = (err as NodeJS.ErrnoException).code;
+      done(code === 'ECONNREFUSED' ? 'stale' : code === 'ENOENT' ? 'missing' : 'unsafe');
+    });
   });
 }
 
 export async function isLockHeld(home: string, timeoutMs = 1_000): Promise<boolean> {
-  if (await isSocketHeld(home, timeoutMs)) return true;
+  const socket = await probeSocket(home, timeoutMs);
+  if (socket === 'live' || socket === 'unsafe') return true;
   return isFileLeaseHeld(home, LEASE_NAME);
 }
 
@@ -84,12 +102,17 @@ export async function acquireLock(home: string): Promise<DaemonLock> {
 
   let server: Server;
   try {
+    inspectSocket(path);
     try {
       server = await listen();
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
       // Old versions own only the socket, so they must still block new clients.
-      if (await isSocketHeld(home)) throw held();
+      const before = inspectSocket(path);
+      if (!before) throw held();
+      if (await probeSocket(home) !== 'stale') throw held();
+      const after = inspectSocket(path);
+      if (!after || after.ino !== before.ino || after.dev !== before.dev) throw held();
       unlinkSync(path);
       server = await listen();
     }

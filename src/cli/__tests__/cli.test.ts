@@ -201,10 +201,10 @@ describe('lock: races and stale files', () => {
     await expect(acquireLock(deep)).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('Set TG_MCP_HOME to a shorter path') });
   });
 
-  it('does not treat a regular file at the socket path as a live process', async () => {
+  it('preserves a regular file at the socket path as unsafe state', async () => {
     writeFileSync(lockPath(home), 'stale');
-    const lock = await acquireLock(home);
-    await lock.release();
+    await expect(acquireLock(home)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    expect(await isLockHeld(home)).toBe(true);
   });
 
   it('doctor --connect holds the lock while sessions remain open', async () => {

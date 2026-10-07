@@ -35,7 +35,14 @@ async function trustedFile(home: string, filename: string, create: boolean): Pro
   }
   let file: FileHandle;
   try {
-    file = await open(join(home, filename), constants.O_NOFOLLOW | (create ? constants.O_RDWR | constants.O_CREAT : constants.O_RDONLY), 0o600);
+    const existing = await lstat(join(home, filename));
+    if (!existing.isFile() || existing.isSymbolicLink()) throw new GatewayError('UNAVAILABLE', 'The kernel-lock path is not a regular file.');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    if (!create) return null;
+  }
+  try {
+    file = await open(join(home, filename), constants.O_NOFOLLOW | constants.O_NONBLOCK | (create ? constants.O_RDWR | constants.O_CREAT : constants.O_RDONLY), 0o600);
   } catch (err) {
     if (!create && (err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw new GatewayError('UNAVAILABLE', 'The kernel-lock file cannot be opened safely.');

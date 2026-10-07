@@ -1,5 +1,5 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,7 +8,7 @@ import { createPlan, reconcile, resumeSetup, selectClient, type SetupAdapter, ty
 import { emptyChecks, SetupError, statusSchema } from '../contract.js';
 import { FileSetupJournal } from '../journal.js';
 import { preflight, type PreflightProbe } from '../preflight.js';
-import { decodeProgress } from '../progress.js';
+import { decodeProgress, readSnapshotFile } from '../progress.js';
 import { main } from '../../cli/main.js';
 import type { CliIo } from '../../cli/io.js';
 
@@ -190,6 +190,21 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
     await expect(storage.readJournal()).rejects.toThrow('protection_unverified');
     await expect(storage.withExclusive(async () => undefined)).rejects.toThrow('protection_unverified');
     expect(readdirSync(dir)).toEqual([]);
+  });
+  it('rejects a FIFO journal and releases its lease without deleting unsafe state', async () => {
+    const dir = directory(); const path = join(dir, 'journal.json');
+    execFileSync('/usr/bin/mkfifo', ['-m', '600', path]);
+    const storage = new FileSetupJournal(dir, async () => undefined);
+    const adapter: SetupAdapter = { withExclusive: f => storage.withExclusive(f), readJournal: () => storage.readJournal(), writeJournal: j => storage.writeJournal(j), inspect: async () => complete };
+    expect((await resumeSetup(adapter, plan)).error_code).toBe('invalid_state');
+    expect(lstatSync(path).isFIFO()).toBe(true);
+    await expect(storage.withExclusive(async () => 'lease_released')).resolves.toBe('lease_released');
+  });
+  it('rejects a FIFO progress file before open and preserves it', async () => {
+    const dir = directory(); const path = join(dir, 'progress.json');
+    execFileSync('/usr/bin/mkfifo', ['-m', '600', path]);
+    await expect(readSnapshotFile(path, id, process.getuid!())).rejects.toThrow('unsafe_progress');
+    expect(lstatSync(path).isFIFO()).toBe(true);
   });
   it('rejects symlink, malformed and world-readable journal files without changing them', async () => {
     const dir = directory(); const storage = new FileSetupJournal(dir, async () => undefined);

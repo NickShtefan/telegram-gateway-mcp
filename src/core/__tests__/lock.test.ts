@@ -1,5 +1,5 @@
-import { chmodSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { chmodSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -99,5 +99,26 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
     chmodSync(directory, 0o777);
     await expect(acquireLock(directory)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
     expect(lockPath(directory)).toBe(join(directory, 'daemon.sock'));
+  });
+
+  it('rejects FIFO kernel state promptly and preserves the object', async () => {
+    const directory = home(); const path = join(directory, 'sessions.lock');
+    execFileSync('/usr/bin/mkfifo', ['-m', '600', path]);
+    expect(await isFileLeaseHeld(directory, 'sessions.lock')).toBe(true);
+    await expect(acquireFileLease(directory, 'sessions.lock')).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    expect(lstatSync(path).isFIFO()).toBe(true);
+  });
+
+  it('preserves regular files, symlinks and FIFOs at the compatibility endpoint', async () => {
+    const directory = home(); const path = lockPath(directory);
+    writeFileSync(path, 'synthetic foreign state');
+    await expect(acquireLock(directory)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    expect(readFileSync(path, 'utf8')).toBe('synthetic foreign state');
+    rmSync(path); const target = join(directory, 'target'); writeFileSync(target, 'fixture'); symlinkSync(target, path);
+    await expect(acquireLock(directory)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    expect(lstatSync(path).isSymbolicLink()).toBe(true);
+    rmSync(path); execFileSync('/usr/bin/mkfifo', ['-m', '600', path]);
+    await expect(acquireLock(directory)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    expect(lstatSync(path).isFIFO()).toBe(true);
   });
 });
