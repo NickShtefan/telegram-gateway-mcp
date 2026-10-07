@@ -1,283 +1,283 @@
-# tg-mcp repository inventory and cleanup review
+# Инвентаризация репозитория tg-mcp и обзор вариантов очистки
 
-Prepared October 7, 2026, for the owner to select cleanup scope before the open-source transfer.
+Подготовлено 7 октября 2026 года, чтобы владелец выбрал объём очистки перед переносом в открытый репозиторий.
 
-The current source tree is compact and connected: all 64 production TypeScript modules belong to the CLI dependency graph, including one type-only storage contract. The clearest cleanup candidates are local build leftovers and an older nested Git worktree. The current npm packing rules also admit that worktree and the obsolete build outputs. Documentation needs a public/private split and general installation examples; deleting working source modules is not supported by this inventory.
+Текущее дерево исходников компактно, а его модули связаны между собой: все 64 рабочих модуля TypeScript входят в граф зависимостей CLI, включая один модуль с интерфейсами хранилища, используемый только для типов. Наиболее очевидные кандидаты на очистку: локальные остатки сборки и вложенный Git worktree со старой версией проекта. Текущие правила упаковки npm включают и этот worktree, и устаревшие результаты сборки. Для документации нужно определить публичный и приватный состав и подготовить общие примеры установки. Инвентаризация не даёт оснований удалять рабочие исходные модули.
 
-## Inspection baseline
+## Исходное состояние проверки
 
-- Source commit: `66fb7e18ae64161322b0c0e4360dfec03a9d3ae3`, current private `main`.
-- The main checkout and the nested worktree were clean at inspection. The main checkout had 110 tracked files. Counts below describe that source commit and exclude this new report and its status entry.
-- Environment: macOS, Darwin 25.6.0, arm64; Node 24.10.0; npm 11.6.1.
-- Scope: every tracked file, source import/export relationships, tests, configuration, documentation, local directory metadata, and a dry-run npm file list. Nested-worktree contents and installed dependency internals were inventoried by metadata, not reviewed as current project code.
-- No files were removed, no production code or configuration was changed, and no lab deployment, Telegram login/write, migration or publication was performed. Build verification refreshed existing generated outputs without removing old ones.
+- Коммит исходников: `66fb7e18ae64161322b0c0e4360dfec03a9d3ae3`, текущая приватная ветка `main`.
+- На момент проверки основной каталог и вложенный worktree не содержали незакоммиченных изменений. В основном каталоге было 110 файлов под контролем Git. Числа ниже относятся к этому коммиту и не включают новый отчёт и запись о его подготовке в плане.
+- Окружение: macOS, Darwin 25.6.0, arm64; Node 24.10.0; npm 11.6.1.
+- Объём проверки: каждый файл под контролем Git, связи импортов и экспортов исходников, тесты, настройки, документация, метаданные локальных директорий и список файлов пробной упаковки npm. Состав вложенного worktree и внутренние файлы установленных зависимостей описаны по метаданным; они не проверялись как текущий код проекта.
+- Файлы не удалялись, рабочий код и настройки не менялись. Развёртывание на лабораторной машине, вход и запись в Telegram, миграция и публикация не выполнялись. Проверка сборки обновила существующие сгенерированные файлы, сохранив старые остатки.
 
-This is a structural inventory and cleanup review. Filename exclusions and lock-file license labels do not constitute a complete secret, provenance or third-party license audit. Existing live Telegram evidence remains in [plan.md](plan.md); this review does not add live or cross-platform proof.
+Это инвентаризация структуры и обзор вариантов очистки. Исключения по именам файлов и сведения о лицензиях из lock-файла не заменяют полный аудит секретов, происхождения материалов и сторонних лицензий. Результаты прежних проверок на живом Telegram остаются в [plan.md](plan.md); этот обзор не добавляет доказательств работы на живом аккаунте или других платформах.
 
-## Directory map
+## Карта директорий
 
 ```text
 tg-mcp/
-  .git/                         private history and worktree metadata
-  .claude/worktrees/            one registered older checkout, not tracked by main
-  dist/                         current generated outputs plus old leftovers
-  node_modules/                 installed development/runtime dependencies
-  docs/                         13 current documents
-  scripts/lab-install.sh        private macOS installer
+  .git/                         приватная история и метаданные worktree
+  .claude/worktrees/            один зарегистрированный старый worktree, вне состава main
+  dist/                         текущая сборка и старые остатки
+  node_modules/                 установленные рабочие зависимости и инструменты разработки
+  docs/                         13 текущих документов
+  scripts/lab-install.sh        приватный установщик для macOS
   src/
-    cli/                        commands and daemon startup
-    core/                       Telegram/session/runtime infrastructure
-    mcp/tools/                  five toolsets and shared definitions
-    policy/                     identities, scopes, audit, untrusted text
-    services/                   Telegram reads, writes, exports, index and jobs
-    storage/                    contracts, SQLite and migrations
-    transport/                  HTTP server and stdio proxy
-    writegate/                  prepared actions and confirmation
-    __tests__/helpers/          shared test doubles and test runtime
-    runtime.ts                  process-level composition
-  package.json                  package and CLI metadata
-  package-lock.json             reproducible dependency graph
-  tsconfig*.json                TypeScript checks/build
-  vitest.config.ts              test configuration
+    cli/                        команды и запуск демона
+    core/                       инфраструктура Telegram, сессий и выполнения
+    mcp/tools/                  пять наборов инструментов и общие определения
+    policy/                     пользователи, доступ, аудит и недоверенный текст
+    services/                   чтение и запись в Telegram, экспорт, индекс и задания
+    storage/                    интерфейсы, SQLite и миграции
+    transport/                  HTTP-сервер и stdio-прокси
+    writegate/                  подготовленные действия и подтверждение
+    __tests__/helpers/          общие тестовые двойники и тестовое окружение
+    runtime.ts                  сборка зависимостей процесса
+  package.json                  метаданные пакета и CLI
+  package-lock.json             воспроизводимый граф зависимостей
+  tsconfig*.json                проверка и сборка TypeScript
+  vitest.config.ts              настройки тестов
   README.md, AGENTS.md,
-  CLAUDE.md, .gitignore          overview, agent rules and exclusions
+  CLAUDE.md, .gitignore          обзор, правила для агентов и исключения
 ```
 
-The tests are adjacent to each layer under its `__tests__/` directory. There is no tracked `.github/`, root `reference/`, current `src/automation/`, coverage directory or runtime-data directory in this checkout.
+Тесты лежат рядом с каждым слоем в его директории `__tests__/`. В этом каталоге нет `.github/` под контролем Git, корневой `reference/`, текущей `src/automation/`, директории отчётов о покрытии или директории данных работающего шлюза.
 
-| Area | Files in Git | Regular files on disk | Apparent file size | Role |
+| Область | Файлов в Git | Обычных файлов на диске | Суммарный размер файлов | Назначение |
 |---|---:|---:|---:|---|
-| Root files | 9 | 9 | 94.1 KiB | Metadata, lock file, compiler/test settings and agent instructions |
-| src/ | 87 | 87 | 750.8 KiB | 64 production modules, 21 test files, 2 helpers |
-| docs/ | 13 | 13 | 151.8 KiB | Architecture, owner decisions, operations, scenarios and release preparation |
-| scripts/ | 1 | 1 | 15.4 KiB | Existing private macOS installer |
-| dist/ | 0 | 234 | 1.22 MiB | Generated JavaScript, declarations and source maps |
-| node_modules/ | 0 | 4,879 | 80.31 MiB | Installed dependencies; also 9 symlinks |
-| .claude/ | 0 | 5,273 | 82.75 MiB | Older registered checkout and its own dependencies; also 9 symlinks |
-| .git/ | Git metadata | 343 | 2.90 MiB | Private history, refs and registered-worktree metadata |
+| Файлы в корне | 9 | 9 | 94.1 KiB | Метаданные, lock-файл, настройки компилятора и тестов, инструкции для агентов |
+| src/ | 87 | 87 | 750.8 KiB | 64 рабочих модуля, 21 файл тестов, 2 вспомогательных файла |
+| docs/ | 13 | 13 | 151.8 KiB | Архитектура, решения владельца, эксплуатация, сценарии и подготовка релиза |
+| scripts/ | 1 | 1 | 15.4 KiB | Существующий приватный установщик для macOS |
+| dist/ | 0 | 234 | 1.22 MiB | Сгенерированные JavaScript, декларации типов и карты исходников |
+| node_modules/ | 0 | 4,879 | 80.31 MiB | Установленные зависимости; дополнительно 9 символических ссылок |
+| .claude/ | 0 | 5,273 | 82.75 MiB | Зарегистрированный старый worktree и его зависимости; дополнительно 9 символических ссылок |
+| .git/ | Метаданные Git | 343 | 2.90 MiB | Приватная история, ссылки Git и метаданные зарегистрированного worktree |
 
-Sizes sum regular-file lengths without following symlinks; they are not allocated disk-block measurements. The 110 tracked files total 1,036,458 bytes and 22,328 physical lines, including JSON, comments and blank lines. Production TypeScript has 11,410 lines; tests and helpers have 6,079.
+Размеры получены суммированием длин обычных файлов без перехода по символическим ссылкам. Это не измерение реально выделенных блоков диска. Всего 110 файлов под контролем Git занимают 1,036,458 байт и содержат 22,328 физических строк, включая JSON, комментарии и пустые строки. В рабочих файлах TypeScript 11,410 строк; в тестах и вспомогательных файлах 6,079.
 
-## Current source structure
+## Структура текущих исходников
 
-The executable entry point is [src/cli/index.ts](../src/cli/index.ts). It redirects logging to stderr before dynamically importing `main`, sets a restrictive umask and dispatches the CLI. `serve` composes the runtime and services, registers the toolsets and starts HTTP. `stdio` forwards requests to that daemon and opens no Telegram session.
+Исполняемая точка входа: [src/cli/index.ts](../src/cli/index.ts). Она перенаправляет логи в stderr до динамического импорта `main`, устанавливает ограничительную umask и запускает CLI. Команда `serve` собирает окружение и сервисы, регистрирует наборы инструментов и запускает HTTP. Команда `stdio` пересылает запросы этому демону и не открывает сессии Telegram.
 
-The Telegram path is MCP tool, account/scope policy, service, `TgGateway`, account limiter and client pool. Writes additionally pass through the prepared-action store and `tg_confirm`. `jobs.ts` runs exports/indexing started by tool calls; it is not an agent scheduler. Core and service modules have no direct imports from MCP or transport.
+Запрос к Telegram проходит через MCP-инструмент, политику доступа к аккаунту и чату, сервис, `TgGateway`, лимитер аккаунта и пул клиентов. Запись дополнительно проходит через хранилище подготовленных действий и `tg_confirm`. Модуль `jobs.ts` выполняет экспорт и индексирование, начатые вызовами инструментов; он не является планировщиком агента. Модули ядра и сервисов не импортируют MCP или транспорт напрямую.
 
-| Source area | Production files | Test files | Production lines | Test lines | Responsibility |
+| Область исходников | Рабочих файлов | Файлов тестов | Строк рабочего кода | Строк тестов | Ответственность |
 |---|---:|---:|---:|---:|---|
-| src/cli/ | 7 | 1 | 924 | 302 | Commands, login, administration and daemon startup |
-| src/core/ | 15 | 6 | 2,017 | 1,046 | Sessions, configuration, limiter, errors, lock and safe files |
-| src/mcp/ | 11 | 3 | 2,298 | 1,378 | Tool contracts, registry and response formatting |
-| src/policy/ | 4 | 2 | 329 | 217 | Users/accounts, scopes, audit and untrusted text |
-| src/services/ | 18 | 5 | 3,891 | 1,552 | Gateway capabilities and tool-started jobs |
-| src/storage/ | 3 | 1 | 1,081 | 269 | Contracts, SQLite implementation and schema migration |
-| src/transport/ | 2 | 1 | 335 | 251 | HTTP and stdio |
-| src/writegate/ | 3 | 2 | 445 | 846 | Preview, consent workflow and execution journal |
-| src/runtime.ts | 1 | 0 | 90 | 0 | Shared dependency composition |
-| Shared test helpers | 0 | 0 | 0 | 218 | Two helper files, counted separately from test files |
+| src/cli/ | 7 | 1 | 924 | 302 | Команды, вход, администрирование и запуск демона |
+| src/core/ | 15 | 6 | 2,017 | 1,046 | Сессии, настройки, лимитер, ошибки, блокировка и безопасная работа с файлами |
+| src/mcp/ | 11 | 3 | 2,298 | 1,378 | Контракты инструментов, реестр и форматирование ответов |
+| src/policy/ | 4 | 2 | 329 | 217 | Пользователи и аккаунты, доступ, аудит и недоверенный текст |
+| src/services/ | 18 | 5 | 3,891 | 1,552 | Возможности шлюза и задания, запущенные инструментами |
+| src/storage/ | 3 | 1 | 1,081 | 269 | Интерфейсы, реализация SQLite и миграции схемы |
+| src/transport/ | 2 | 1 | 335 | 251 | HTTP и stdio |
+| src/writegate/ | 3 | 2 | 445 | 846 | Предпросмотр, согласование и журнал исполнения |
+| src/runtime.ts | 1 | 0 | 90 | 0 | Общая сборка зависимостей |
+| Общие вспомогательные файлы тестов | 0 | 0 | 0 | 218 | Два вспомогательных файла, учитываемые отдельно от файлов тестов |
 
-The largest production files are `mcp/tools/core.ts` (805 lines), `storage/sqlite.ts` (558), `services/write.ts` (427), `core/limiter.ts` (404) and `services/messages.ts` (376). These sizes correspond to multiple existing operations, not evidence of unused code.
+Самые крупные рабочие файлы: `mcp/tools/core.ts` (805 строк), `storage/sqlite.ts` (558), `services/write.ts` (427), `core/limiter.ts` (404) и `services/messages.ts` (376). Их размер связан с несколькими действующими операциями и сам по себе не свидетельствует о неиспользуемом коде.
 
-### Reachability and duplicates
+### Достижимость модулей и дубли
 
-TypeScript syntax and symbol analysis covered static imports, relative re-exports, literal dynamic imports, production use and test use. All relative imports resolve. All 64 production modules are reachable from the executable entry point when type dependencies are included; 63 have value-import paths. `storage/port.ts` is the required type-only contract.
+Анализ синтаксиса и символов TypeScript охватывал статические импорты, относительные реэкспорты, динамические импорты с литеральным путём, использование в рабочем коде и тестах. Все относительные импорты разрешаются. Все 64 рабочих модуля достижимы из исполняемой точки входа с учётом зависимостей типов; 63 модуля связаны импортами значений. `storage/port.ts` содержит необходимый контракт, используемый только для типов.
 
-No byte-identical duplicate tracked files were found. No unreferenced standalone exported function or constant was confirmed: the apparent `main` exception is the dynamically loaded CLI entry point. Some functions/constants are exported but only used inside their own module, such as `scopeTarget`, `loadEnvFile` and formatter helpers. Removing their export modifier would be an optional encapsulation change, not deleting unused behavior. Helpers directly imported by tests must remain available to those tests.
+Побайтово одинаковых файлов под контролем Git не найдено. Не подтверждено наличие отдельных экспортируемых функций или констант без обращений: кажущееся исключение `main` является динамически загружаемой точкой входа CLI. Некоторые функции и константы экспортируются, хотя используются только внутри своего модуля, например `scopeTarget`, `loadEnvFile` и вспомогательные функции форматирования. Удаление модификатора export было бы необязательным изменением инкапсуляции, а не удалением неиспользуемого поведения. Функции, которые тесты импортируют напрямую, должны оставаться доступными этим тестам.
 
-File reachability does not prove that every branch or public class method is necessary. This review therefore supplies no justified list of whole source modules to delete. The strict compiler also checks unused locals and parameters; green checks alone do not justify deleting exported contracts or behavior.
+Достижимость файла не доказывает необходимость каждой ветки или публичного метода класса. Поэтому обзор не даёт обоснованного списка целых исходных модулей для удаления. Строгие настройки компилятора также проверяют неиспользуемые локальные переменные и параметры; успешные проверки сами по себе не оправдывают удаление экспортируемых контрактов или поведения.
 
-## Complete tracked file inventory
+## Полный перечень файлов под контролем Git
 
-Each source and test path below belongs to the inspected 110-file snapshot. Production modules and tests are preservation candidates unless a later, specific analysis establishes an obsolete behavior. Documentation disposition is considered separately in the cleanup options.
+Каждый путь к исходнику или тесту ниже входит в проверенный снимок из 110 файлов. Рабочие модули и тесты следует сохранять, пока отдельный предметный анализ не подтвердит устаревшее поведение. Судьба документации рассматривается отдельно в вариантах очистки.
 
-### Root configuration and instructions
+### Настройки и инструкции в корне
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [.gitignore](../.gitignore) | 21 | Excludes installed dependencies, builds, common secrets, state and local client settings. |
-| [AGENTS.md](../AGENTS.md) | 64 | Agent constraints, architecture rules, language and private/public Git workflows. |
-| [CLAUDE.md](../CLAUDE.md) | 1 | Loads AGENTS.md for Claude Code; its single line is intentional. |
-| [README.md](../README.md) | 73 | Gateway overview, 23 tools, current verification status and directory map. |
-| [package-lock.json](../package-lock.json) | 2,438 | Resolved dependency graph and reproducible installation, lock format 3. |
-| [package.json](../package.json) | 30 | Private package metadata, CLI bin, dependency declarations and development commands. |
-| [tsconfig.build.json](../tsconfig.build.json) | 4 | Production emit settings; excludes tests and helpers. |
-| [tsconfig.json](../tsconfig.json) | 24 | Strict TypeScript settings including unused local/parameter checks; includes tests. |
-| [vitest.config.ts](../vitest.config.ts) | 9 | Test discovery, environment and timeout settings. |
+| [.gitignore](../.gitignore) | 21 | Исключает установленные зависимости, сборку, типовые секреты, состояние шлюза и локальные настройки клиентов. |
+| [AGENTS.md](../AGENTS.md) | 64 | Ограничения для агентов, правила архитектуры, язык и порядок работы с приватным и публичным Git. |
+| [CLAUDE.md](../CLAUDE.md) | 1 | Подключает AGENTS.md для Claude Code; одна строка здесь предусмотрена намеренно. |
+| [README.md](../README.md) | 73 | Обзор шлюза, 23 инструмента, текущее состояние проверок и карта директорий. |
+| [package-lock.json](../package-lock.json) | 2,438 | Зафиксированный граф зависимостей и воспроизводимая установка, формат lock-файла 3. |
+| [package.json](../package.json) | 30 | Метаданные приватного пакета, исполняемая команда CLI, зависимости и команды разработки. |
+| [tsconfig.build.json](../tsconfig.build.json) | 4 | Настройки генерации рабочей сборки; исключает тесты и вспомогательные файлы. |
+| [tsconfig.json](../tsconfig.json) | 24 | Строгие настройки TypeScript, включая проверки неиспользуемых локальных переменных и параметров; включает тесты. |
+| [vitest.config.ts](../vitest.config.ts) | 9 | Поиск тестов, окружение и ограничения времени выполнения. |
 
-### Installation script
+### Скрипт установки
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [scripts/lab-install.sh](../scripts/lab-install.sh) | 369 | Private macOS installation from a full SHA with a service user, protected Node/code, shared files and launchd. |
+| [scripts/lab-install.sh](../scripts/lab-install.sh) | 369 | Приватная установка на macOS по полному SHA: сервисный пользователь, защищённые Node и код, общие файлы и launchd. |
 
-### Documentation
+### Документация
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [docs/architecture.md](../docs/architecture.md) | 124 | Layers, request flow, storage, session ownership, writes and deployment. |
-| [docs/connect.md](../docs/connect.md) | 207 | Claude Code, Codex, OpenCode, Hermes and generic stdio configurations; includes lab-specific examples. |
-| [docs/decisions.md](../docs/decisions.md) | 489 | Stable numbered decisions 1 through 50 and their accepted/proposed status. |
-| [docs/deploy.md](../docs/deploy.md) | 173 | Existing private macOS deployment, owner administration, updates and diagnosis. |
-| [docs/findings.md](../docs/findings.md) | 52 | Historical Telegram, teleproto, Node and client findings, including lab observations. |
-| [docs/naming-research.md](../docs/naming-research.md) | 79 | Research supporting the selected public name and listing metadata. |
-| [docs/open-questions.md](../docs/open-questions.md) | 26 | Deferred preparation choices and other owner questions; initial review is closed. |
-| [docs/open-source-plan.md](../docs/open-source-plan.md) | 217 | Preparation stages, transfer order, responsibilities and publication gates. |
-| [docs/plan.md](../docs/plan.md) | 112 | Implementation and live verification evidence, preparation status and future ideas. |
-| [docs/risks.md](../docs/risks.md) | 63 | Account, security, operational and Telegram policy risks. |
-| [docs/scenarios.md](../docs/scenarios.md) | 79 | Step-by-step marketplace, summary, agent-owned monitoring/conversation and button scenarios. |
-| [docs/tools.md](../docs/tools.md) | 120 | Agent-facing tool contracts, toolsets, scopes and confirmation limits. |
-| [docs/use-cases.md](../docs/use-cases.md) | 65 | Owner use cases and their required gateway capabilities. |
+| [docs/architecture.md](../docs/architecture.md) | 124 | Слои, путь запроса, хранилище, владение сессиями, запись и развёртывание. |
+| [docs/connect.md](../docs/connect.md) | 207 | Настройки Claude Code, Codex, OpenCode, Hermes и общего stdio-клиента; включает примеры лабораторной установки. |
+| [docs/decisions.md](../docs/decisions.md) | 489 | Решения с постоянными номерами от 1 до 50 и статусами «принято» или «предложено». |
+| [docs/deploy.md](../docs/deploy.md) | 173 | Существующее приватное развёртывание на macOS, администрирование владельцем, обновления и диагностика. |
+| [docs/findings.md](../docs/findings.md) | 52 | Ранее установленные особенности Telegram, teleproto, Node и клиентов, включая наблюдения на лабораторной машине. |
+| [docs/naming-research.md](../docs/naming-research.md) | 79 | Исследование, обосновывающее выбранное публичное название и метаданные карточек проекта. |
+| [docs/open-questions.md](../docs/open-questions.md) | 26 | Отложенные решения подготовки и другие вопросы владельца; первоначальное обсуждение завершено. |
+| [docs/open-source-plan.md](../docs/open-source-plan.md) | 217 | Этапы подготовки, порядок переноса, ответственность и условия публикации. |
+| [docs/plan.md](../docs/plan.md) | 112 | Реализация и результаты живых проверок, состояние подготовки и будущие идеи. |
+| [docs/risks.md](../docs/risks.md) | 63 | Риски аккаунта, безопасности, эксплуатации и соблюдения условий Telegram. |
+| [docs/scenarios.md](../docs/scenarios.md) | 79 | Пошаговые сценарии объявлений, сводки, мониторинга и общения силами агента, работы с кнопками. |
+| [docs/tools.md](../docs/tools.md) | 120 | Контракты инструментов для агента, наборы инструментов, доступ и ограничения подтверждения. |
+| [docs/use-cases.md](../docs/use-cases.md) | 65 | Задачи владельца и необходимые для них возможности шлюза. |
 
 ### CLI
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/cli/admin.ts](../src/cli/admin.ts) | 199 | Storage operations for gateway users, tokens, account grants and scopes. |
-| [src/cli/doctor.ts](../src/cli/doctor.ts) | 161 | Installation checks, legacy-configuration warnings and optional account connection. |
-| [src/cli/index.ts](../src/cli/index.ts) | 18 | Executable entry point; redirects logs, sets umask and dynamically loads main. |
-| [src/cli/io.ts](../src/cli/io.ts) | 43 | Terminal output and interactive input, including hidden password input. |
-| [src/cli/login.ts](../src/cli/login.ts) | 66 | Owner login command and encrypted-session persistence. |
-| [src/cli/main.ts](../src/cli/main.ts) | 306 | Command parsing, help/version output and routing to daemon/proxy/admin commands. |
-| [src/cli/serve.ts](../src/cli/serve.ts) | 131 | Daemon lifecycle, session lock, HTTP server, job resumption and housekeeping. |
+| [src/cli/admin.ts](../src/cli/admin.ts) | 199 | Операции хранилища для пользователей шлюза, токенов, прав на аккаунты и доступа к чатам. |
+| [src/cli/doctor.ts](../src/cli/doctor.ts) | 161 | Проверка установки, предупреждения о старой конфигурации и необязательное подключение аккаунтов. |
+| [src/cli/index.ts](../src/cli/index.ts) | 18 | Исполняемая точка входа: перенаправляет логи, устанавливает umask и динамически загружает main. |
+| [src/cli/io.ts](../src/cli/io.ts) | 43 | Вывод в терминал и интерактивный ввод, включая скрытый ввод пароля. |
+| [src/cli/login.ts](../src/cli/login.ts) | 66 | Команда входа владельца и сохранение зашифрованной сессии. |
+| [src/cli/main.ts](../src/cli/main.ts) | 306 | Разбор команд, справка и версия, направление вызовов демону, прокси или административным командам. |
+| [src/cli/serve.ts](../src/cli/serve.ts) | 131 | Жизненный цикл демона, блокировка сессий, HTTP-сервер, возобновление заданий и обслуживание состояния. |
 
-### Core
+### Ядро
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/core/auth.ts](../src/core/auth.ts) | 120 | Fresh Telegram login with phone, code and 2FA; prevents unintended account signup. |
-| [src/core/chatId.ts](../src/core/chatId.ts) | 77 | Canonical marked chat IDs and conversions to MTProto peer identity. |
-| [src/core/clientPool.ts](../src/core/clientPool.ts) | 223 | One lazy MTProto client per account, connection coalescing, deadlines and shutdown. |
-| [src/core/config.ts](../src/core/config.ts) | 162 | Environment/default configuration, credentials, session key and retired-toolset compatibility. |
-| [src/core/crypto.ts](../src/core/crypto.ts) | 57 | AES-256-GCM session encryption, random tokens and token hashes. |
-| [src/core/entities.ts](../src/core/entities.ts) | 208 | Telegram entity normalization, response harvesting and InputPeer conversion. |
-| [src/core/errors.ts](../src/core/errors.ts) | 227 | Gateway error types, Telegram error classification and wait information. |
-| [src/core/limiter.ts](../src/core/limiter.ts) | 404 | Per-account queues, pacing, priority, FLOOD_WAIT, slow mode and call deadlines. |
-| [src/core/lock.ts](../src/core/lock.ts) | 117 | Unix-socket daemon lock, live-owner detection and stale-socket handling. |
-| [src/core/log.ts](../src/core/log.ts) | 94 | Stderr logger, sensitive-field redaction and console redirection. |
-| [src/core/reactions.ts](../src/core/reactions.ts) | 48 | Reaction identifiers, normalized counters and totals. |
-| [src/core/recovery.ts](../src/core/recovery.ts) | 50 | Fatal recovery after a hung call, queue shutdown and process exit. |
-| [src/core/safeFs.ts](../src/core/safeFs.ts) | 106 | Trusted directories and safe shared-file creation without following symlinks. |
-| [src/core/tg.ts](../src/core/tg.ts) | 84 | Service Telegram entry point through client pool, limiter and entity cache. |
-| [src/core/time.ts](../src/core/time.ts) | 40 | Deadlines and delays for external asynchronous operations. |
+| [src/core/auth.ts](../src/core/auth.ts) | 120 | Новый вход в Telegram по телефону, коду и 2FA; предотвращает непреднамеренную регистрацию аккаунта. |
+| [src/core/chatId.ts](../src/core/chatId.ts) | 77 | Канонические маркированные ID чатов и преобразование к идентификаторам собеседников MTProto. |
+| [src/core/clientPool.ts](../src/core/clientPool.ts) | 223 | Один лениво создаваемый MTProto-клиент на аккаунт, объединение одновременных подключений, сроки ожидания и завершение. |
+| [src/core/config.ts](../src/core/config.ts) | 162 | Настройки окружения и значения по умолчанию, реквизиты API, ключ сессий и совместимость со снятыми наборами инструментов. |
+| [src/core/crypto.ts](../src/core/crypto.ts) | 57 | Шифрование сессий AES-256-GCM, случайные токены и хеши токенов. |
+| [src/core/entities.ts](../src/core/entities.ts) | 208 | Нормализация сущностей Telegram, сбор сущностей из ответов и преобразование в InputPeer. |
+| [src/core/errors.ts](../src/core/errors.ts) | 227 | Типы ошибок шлюза, классификация ошибок Telegram и сведения о времени ожидания. |
+| [src/core/limiter.ts](../src/core/limiter.ts) | 404 | Очереди аккаунтов, интервалы, приоритеты, FLOOD_WAIT, медленный режим чата и сроки выполнения вызовов. |
+| [src/core/lock.ts](../src/core/lock.ts) | 117 | Блокировка демона через Unix-сокет, обнаружение работающего владельца сессий и обработка оставшихся сокетов. |
+| [src/core/log.ts](../src/core/log.ts) | 94 | Логгер в stderr, скрытие чувствительных полей и перенаправление консоли. |
+| [src/core/reactions.ts](../src/core/reactions.ts) | 48 | Идентификаторы реакций, нормализованные счётчики и суммы. |
+| [src/core/recovery.ts](../src/core/recovery.ts) | 50 | Аварийное завершение после зависшего вызова, остановка очереди и выход процесса. |
+| [src/core/safeFs.ts](../src/core/safeFs.ts) | 106 | Доверенные директории и безопасное создание общих файлов без перехода по символическим ссылкам. |
+| [src/core/tg.ts](../src/core/tg.ts) | 84 | Точка обращения сервисов к Telegram через пул клиентов, лимитер и кэш сущностей. |
+| [src/core/time.ts](../src/core/time.ts) | 40 | Сроки ожидания и задержки для внешних асинхронных операций. |
 
 ### MCP
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/mcp/args.ts](../src/mcp/args.ts) | 74 | Date windows, limits and other shared tool argument parsing. |
-| [src/mcp/cursor.ts](../src/mcp/cursor.ts) | 34 | Opaque cursor encoding, decoding and tool-kind validation. |
-| [src/mcp/format.ts](../src/mcp/format.ts) | 246 | Compact message, counter, date, media, link and button output. |
-| [src/mcp/server.ts](../src/mcp/server.ts) | 58 | Toolset registry, instructions and a request-scoped MCP server. |
-| [src/mcp/tool.ts](../src/mcp/tool.ts) | 164 | Tool definitions, account/scope context, audit and common error handling. |
-| [src/mcp/tools/analytics.ts](../src/mcp/tools/analytics.ts) | 106 | One channel-statistics tool. |
-| [src/mcp/tools/core.ts](../src/mcp/tools/core.ts) | 805 | Eleven core reading, search, export and media tools. |
-| [src/mcp/tools/discover.ts](../src/mcp/tools/discover.ts) | 140 | Three discovery tools: channel lookup, recommendations and forward sources. |
-| [src/mcp/tools/indexTools.ts](../src/mcp/tools/indexTools.ts) | 220 | Two tools for index management and local search. |
-| [src/mcp/tools/shared.ts](../src/mcp/tools/shared.ts) | 101 | Shared schemas, chat labels, message lookup and byte formatting. |
-| [src/mcp/tools/write.ts](../src/mcp/tools/write.ts) | 350 | Six tools for prepared writes, button presses and confirmation/rejection. |
+| [src/mcp/args.ts](../src/mcp/args.ts) | 74 | Временные окна, лимиты и разбор других общих аргументов инструментов. |
+| [src/mcp/cursor.ts](../src/mcp/cursor.ts) | 34 | Кодирование и декодирование непрозрачных курсоров, проверка принадлежности инструменту. |
+| [src/mcp/format.ts](../src/mcp/format.ts) | 246 | Компактный вывод сообщений, счётчиков, дат, медиа, ссылок и кнопок. |
+| [src/mcp/server.ts](../src/mcp/server.ts) | 58 | Реестр наборов инструментов, инструкции и MCP-сервер для отдельного запроса. |
+| [src/mcp/tool.ts](../src/mcp/tool.ts) | 164 | Определения инструментов, контекст аккаунта и доступа, аудит и общая обработка ошибок. |
+| [src/mcp/tools/analytics.ts](../src/mcp/tools/analytics.ts) | 106 | Один инструмент статистики канала. |
+| [src/mcp/tools/core.ts](../src/mcp/tools/core.ts) | 805 | Одиннадцать основных инструментов чтения, поиска, экспорта и работы с медиа. |
+| [src/mcp/tools/discover.ts](../src/mcp/tools/discover.ts) | 140 | Три инструмента поиска каналов, рекомендаций и источников пересылок. |
+| [src/mcp/tools/indexTools.ts](../src/mcp/tools/indexTools.ts) | 220 | Два инструмента управления индексом и локального поиска. |
+| [src/mcp/tools/shared.ts](../src/mcp/tools/shared.ts) | 101 | Общие схемы, подписи чатов, поиск сообщения и форматирование объёма данных. |
+| [src/mcp/tools/write.ts](../src/mcp/tools/write.ts) | 350 | Шесть инструментов подготовки записи, нажатия кнопок, подтверждения и отклонения. |
 
-### Policy
+### Политики доступа и обработки данных
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/policy/access.ts](../src/policy/access.ts) | 69 | Bearer-token identity and personal/shared account access. |
-| [src/policy/audit.ts](../src/policy/audit.ts) | 63 | Tool-call audit records and pruning. |
-| [src/policy/envelope.ts](../src/policy/envelope.ts) | 85 | Untrusted-text markers, sanitization, safe labels and bounded text. |
-| [src/policy/scopes.ts](../src/policy/scopes.ts) | 112 | Chat allow/deny rules, private-chat modes and permanently blocked service chats. |
+| [src/policy/access.ts](../src/policy/access.ts) | 69 | Идентификация по bearer-токену и доступ к личным и общим аккаунтам. |
+| [src/policy/audit.ts](../src/policy/audit.ts) | 63 | Записи аудита вызовов инструментов и удаление старых записей. |
+| [src/policy/envelope.ts](../src/policy/envelope.ts) | 85 | Маркеры недоверенного текста, очистка, безопасные подписи и ограничение длины. |
+| [src/policy/scopes.ts](../src/policy/scopes.ts) | 112 | Правила разрешения и запрета чатов, режимы личных переписок и постоянно закрытые сервисные чаты. |
 
-### Services
+### Сервисы
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/services/buttons.ts](../src/services/buttons.ts) | 88 | Inline-button types, positions, labels, URLs and revalidation fingerprints. |
-| [src/services/comments.ts](../src/services/comments.ts) | 174 | Linked discussion threads, comment pages, ranking and search. |
-| [src/services/dialogs.ts](../src/services/dialogs.ts) | 140 | Account dialog pagination, including archived dialogs. |
-| [src/services/discover.ts](../src/services/discover.ts) | 191 | Channel discovery, similar channels and forwarding-source counts. |
-| [src/services/export.ts](../src/services/export.ts) | 269 | JSONL/CSV jobs, author hashing, phone masking, media previews and safe output. |
-| [src/services/history.ts](../src/services/history.ts) | 164 | History windows, message IDs, surrounding context, forum topics and albums. |
-| [src/services/index.ts](../src/services/index.ts) | 89 | Service composition and registration of tool-started export/index jobs. |
-| [src/services/jobs.ts](../src/services/jobs.ts) | 166 | Persisted export/index jobs, progress, waiting, restart resumption and shutdown. |
-| [src/services/links.ts](../src/services/links.ts) | 321 | Pure parsing and construction of Telegram usernames, IDs, links and invites. |
-| [src/services/localIndex.ts](../src/services/localIndex.ts) | 318 | SQLite chat/message indexing and trigram FTS5 search with scopes. |
-| [src/services/media.ts](../src/services/media.ts) | 271 | Photo/thumbnail retrieval, DC redirects, cache, size limits and disk quotas. |
-| [src/services/messages.ts](../src/services/messages.ts) | 376 | Canonical message objects, authors, media, forwarding, links and keyboards. |
-| [src/services/phones.ts](../src/services/phones.ts) | 114 | Phone-number recognition and masking for exported text. |
-| [src/services/resolve.ts](../src/services/resolve.ts) | 255 | Cached entity resolution, username/invite lookup and chat cards. |
-| [src/services/search.ts](../src/services/search.ts) | 167 | Search within account categories, public hashtags and individual chats. |
-| [src/services/stats.ts](../src/services/stats.ts) | 269 | Observed subscriber snapshots, album handling and public-counter statistics. |
-| [src/services/topics.ts](../src/services/topics.ts) | 92 | Forum-topic listing and title filtering. |
-| [src/services/write.ts](../src/services/write.ts) | 427 | Executors for send/reply/react/join/press, daily limits and outgoing-result parsing. |
+| [src/services/buttons.ts](../src/services/buttons.ts) | 88 | Типы inline-кнопок, позиции, подписи, URL и отпечатки для повторной проверки. |
+| [src/services/comments.ts](../src/services/comments.ts) | 174 | Ветки связанных обсуждений, страницы комментариев, ранжирование и поиск. |
+| [src/services/dialogs.ts](../src/services/dialogs.ts) | 140 | Постраничное получение диалогов аккаунта, включая архив. |
+| [src/services/discover.ts](../src/services/discover.ts) | 191 | Поиск каналов, похожие каналы и подсчёт источников пересылок. |
+| [src/services/export.ts](../src/services/export.ts) | 269 | Задания JSONL/CSV, хеширование авторов, маскирование телефонов, превью медиа и безопасные выходные файлы. |
+| [src/services/history.ts](../src/services/history.ts) | 164 | Временные окна истории, ID сообщений, соседний контекст, темы форума и альбомы. |
+| [src/services/index.ts](../src/services/index.ts) | 89 | Сборка сервисов и регистрация заданий экспорта и индексирования, начатых инструментами. |
+| [src/services/jobs.ts](../src/services/jobs.ts) | 166 | Сохраняемые задания экспорта и индексирования, прогресс, ожидание, возобновление после перезапуска и остановка. |
+| [src/services/links.ts](../src/services/links.ts) | 321 | Чистые функции разбора и построения имён пользователей, ID, ссылок и приглашений Telegram. |
+| [src/services/localIndex.ts](../src/services/localIndex.ts) | 318 | Индексирование чатов и сообщений в SQLite, триграммный поиск FTS5 с учётом доступа. |
+| [src/services/media.ts](../src/services/media.ts) | 271 | Получение фотографий и миниатюр, перенаправления между DC, кэш, ограничения размеров и квоты диска. |
+| [src/services/messages.ts](../src/services/messages.ts) | 376 | Канонические объекты сообщений, авторы, медиа, пересылки, ссылки и клавиатуры. |
+| [src/services/phones.ts](../src/services/phones.ts) | 114 | Распознавание и маскирование телефонных номеров в экспортируемом тексте. |
+| [src/services/resolve.ts](../src/services/resolve.ts) | 255 | Разрешение сущностей через кэш, поиск имён и приглашений, карточки чатов. |
+| [src/services/search.ts](../src/services/search.ts) | 167 | Поиск по категориям чатов аккаунта, публичным хештегам и отдельным чатам. |
+| [src/services/stats.ts](../src/services/stats.ts) | 269 | Снимки числа подписчиков при обращении, обработка альбомов и статистика публичных счётчиков. |
+| [src/services/topics.ts](../src/services/topics.ts) | 92 | Список тем форума и фильтрация по заголовку. |
+| [src/services/write.ts](../src/services/write.ts) | 427 | Исполнители send/reply/react/join/press, суточные лимиты и разбор результатов исходящих действий. |
 
-### Storage
+### Хранилище
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/storage/migrations.ts](../src/storage/migrations.ts) | 348 | Eight ordered schema migrations, including removal of the former automation schema. |
-| [src/storage/port.ts](../src/storage/port.ts) | 175 | Storage interfaces and record types; a required type-only module. |
-| [src/storage/sqlite.ts](../src/storage/sqlite.ts) | 558 | node:sqlite implementation, transactions, migrations and storage repositories. |
+| [src/storage/migrations.ts](../src/storage/migrations.ts) | 348 | Восемь последовательных миграций схемы, включая удаление прежней схемы автоматизации. |
+| [src/storage/port.ts](../src/storage/port.ts) | 175 | Интерфейсы хранилища и типы записей; необходимый модуль, используемый только для типов. |
+| [src/storage/sqlite.ts](../src/storage/sqlite.ts) | 558 | Реализация на node:sqlite, транзакции, миграции и методы доступа к данным. |
 
-### Transport
+### Транспорт
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/transport/http.ts](../src/transport/http.ts) | 180 | Local Streamable HTTP transport, bearer auth, host/origin checks and health endpoint. |
-| [src/transport/stdio.ts](../src/transport/stdio.ts) | 155 | JSON-RPC forwarding to the daemon over HTTP, without owning Telegram sessions. |
+| [src/transport/http.ts](../src/transport/http.ts) | 180 | Локальный Streamable HTTP, bearer-аутентификация, проверки host/origin и endpoint состояния. |
+| [src/transport/stdio.ts](../src/transport/stdio.ts) | 155 | Пересылка JSON-RPC демону по HTTP без владения сессиями Telegram. |
 
-### Write gate
+### Шлюз подтверждения записи
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/writegate/approvals.ts](../src/writegate/approvals.ts) | 169 | Write request preview, expiry, confirmation, rejection and execution outcomes. |
-| [src/writegate/index.ts](../src/writegate/index.ts) | 112 | Write-gate composition, rechecked scopes and registered action executors. |
-| [src/writegate/store.ts](../src/writegate/store.ts) | 164 | Approval persistence and executed-write journal used by daily limits. |
+| [src/writegate/approvals.ts](../src/writegate/approvals.ts) | 169 | Предпросмотр запросов записи, истечение срока, подтверждение, отклонение и результаты исполнения. |
+| [src/writegate/index.ts](../src/writegate/index.ts) | 112 | Сборка шлюза записи, повторная проверка доступа и регистрация исполнителей действий. |
+| [src/writegate/store.ts](../src/writegate/store.ts) | 164 | Хранение подтверждений и журнал выполненных действий для суточных лимитов. |
 
-### Runtime
+### Окружение выполнения
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/runtime.ts](../src/runtime.ts) | 90 | Composes storage, account limiter, client pool, Telegram gateway and shutdown. |
+| [src/runtime.ts](../src/runtime.ts) | 90 | Собирает хранилище, лимитер аккаунтов, пул клиентов, шлюз Telegram и порядок завершения. |
 
-### Tests
+### Тесты
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/cli/__tests__/cli.test.ts](../src/cli/__tests__/cli.test.ts) | 302 | Admin, login, doctor, locking/races and CLI routing. |
-| [src/core/__tests__/chatId.test.ts](../src/core/__tests__/chatId.test.ts) | 43 | Canonical chat IDs and peer conversions. |
-| [src/core/__tests__/entities.test.ts](../src/core/__tests__/entities.test.ts) | 86 | Entity normalization, harvesting and InputPeer construction. |
-| [src/core/__tests__/errors.test.ts](../src/core/__tests__/errors.test.ts) | 131 | Wait extraction and error classification using real teleproto error classes. |
-| [src/core/__tests__/limiter.test.ts](../src/core/__tests__/limiter.test.ts) | 349 | Queues, waits, slow mode, deadlines, hangs and fatal recovery. |
-| [src/core/__tests__/misc.test.ts](../src/core/__tests__/misc.test.ts) | 99 | Crypto, logger/redaction, reactions and time helpers. |
-| [src/core/__tests__/pool.test.ts](../src/core/__tests__/pool.test.ts) | 338 | Client pool, Telegram entry point, login, configuration and teleproto seams. |
-| [src/mcp/__tests__/format.test.ts](../src/mcp/__tests__/format.test.ts) | 195 | Counters, dates, durations, messages, output limits and cursors. |
-| [src/mcp/__tests__/tools.test.ts](../src/mcp/__tests__/tools.test.ts) | 480 | Tool contracts, account/scope security, errors, audit and owner scenarios. |
-| [src/mcp/__tests__/toolsets.test.ts](../src/mcp/__tests__/toolsets.test.ts) | 703 | Dialogs, discovery, statistics, local index and toolset contracts. |
-| [src/policy/__tests__/envelope.test.ts](../src/policy/__tests__/envelope.test.ts) | 51 | Untrusted-content boundaries, sanitization and Unicode behavior. |
-| [src/policy/__tests__/policy.test.ts](../src/policy/__tests__/policy.test.ts) | 166 | User/account access, chat scopes, private modes and audit. |
-| [src/services/__tests__/links.test.ts](../src/services/__tests__/links.test.ts) | 525 | Telegram references, rejects and message-link round trips. |
-| [src/services/__tests__/media-jobs.test.ts](../src/services/__tests__/media-jobs.test.ts) | 349 | Media sizes, redirects/cache, export values and persisted jobs. |
-| [src/services/__tests__/messages.test.ts](../src/services/__tests__/messages.test.ts) | 201 | Messages, hidden links, media and private-chat author identity. |
-| [src/services/__tests__/phones.test.ts](../src/services/__tests__/phones.test.ts) | 67 | Phone masking and non-phone false positives. |
-| [src/services/__tests__/read.test.ts](../src/services/__tests__/read.test.ts) | 410 | Resolution, history, search, comments and forum topics. |
-| [src/storage/__tests__/sqlite.test.ts](../src/storage/__tests__/sqlite.test.ts) | 269 | Schema upgrades, obsolete-schema removal, accounts, sessions, cache, audit, jobs and transactions. |
-| [src/transport/__tests__/transport.test.ts](../src/transport/__tests__/transport.test.ts) | 251 | HTTP security, MCP requests, stdio proxy and daemon lifecycle. |
-| [src/writegate/__tests__/press.test.ts](../src/writegate/__tests__/press.test.ts) | 251 | Button output, supported/rejected types and two-step presses. |
-| [src/writegate/__tests__/write.test.ts](../src/writegate/__tests__/write.test.ts) | 595 | Confirmation, scopes, expiry, idempotency, limits, reactions and write outcomes. |
+| [src/cli/__tests__/cli.test.ts](../src/cli/__tests__/cli.test.ts) | 302 | Администрирование, вход, doctor, блокировка и гонки, маршрутизация CLI. |
+| [src/core/__tests__/chatId.test.ts](../src/core/__tests__/chatId.test.ts) | 43 | Канонические ID чатов и преобразование собеседников. |
+| [src/core/__tests__/entities.test.ts](../src/core/__tests__/entities.test.ts) | 86 | Нормализация сущностей, сбор из ответов и построение InputPeer. |
+| [src/core/__tests__/errors.test.ts](../src/core/__tests__/errors.test.ts) | 131 | Извлечение времени ожидания и классификация ошибок с реальными классами ошибок teleproto. |
+| [src/core/__tests__/limiter.test.ts](../src/core/__tests__/limiter.test.ts) | 349 | Очереди, ожидание, медленный режим, сроки выполнения, зависания и аварийное восстановление. |
+| [src/core/__tests__/misc.test.ts](../src/core/__tests__/misc.test.ts) | 99 | Криптография, логгер и скрытие данных, реакции и вспомогательные функции времени. |
+| [src/core/__tests__/pool.test.ts](../src/core/__tests__/pool.test.ts) | 338 | Пул клиентов, точка обращения к Telegram, вход, настройки и взаимодействие с teleproto. |
+| [src/mcp/__tests__/format.test.ts](../src/mcp/__tests__/format.test.ts) | 195 | Счётчики, даты, длительности, сообщения, ограничения вывода и курсоры. |
+| [src/mcp/__tests__/tools.test.ts](../src/mcp/__tests__/tools.test.ts) | 480 | Контракты инструментов, безопасность аккаунтов и доступа, ошибки, аудит и сценарии владельца. |
+| [src/mcp/__tests__/toolsets.test.ts](../src/mcp/__tests__/toolsets.test.ts) | 703 | Диалоги, поиск каналов, статистика, локальный индекс и контракты наборов инструментов. |
+| [src/policy/__tests__/envelope.test.ts](../src/policy/__tests__/envelope.test.ts) | 51 | Границы недоверенного контента, очистка и обработка Unicode. |
+| [src/policy/__tests__/policy.test.ts](../src/policy/__tests__/policy.test.ts) | 166 | Доступ пользователей к аккаунтам, правила чатов, режимы личных переписок и аудит. |
+| [src/services/__tests__/links.test.ts](../src/services/__tests__/links.test.ts) | 525 | Ссылки Telegram, отклонение неверных значений и обратимость преобразования ссылок сообщений. |
+| [src/services/__tests__/media-jobs.test.ts](../src/services/__tests__/media-jobs.test.ts) | 349 | Размеры медиа, перенаправления и кэш, значения экспорта и сохраняемые задания. |
+| [src/services/__tests__/messages.test.ts](../src/services/__tests__/messages.test.ts) | 201 | Сообщения, скрытые ссылки, медиа и определение автора в личных чатах. |
+| [src/services/__tests__/phones.test.ts](../src/services/__tests__/phones.test.ts) | 67 | Маскирование телефонов и ложные срабатывания на другие числа. |
+| [src/services/__tests__/read.test.ts](../src/services/__tests__/read.test.ts) | 410 | Разрешение чатов, история, поиск, комментарии и темы форума. |
+| [src/storage/__tests__/sqlite.test.ts](../src/storage/__tests__/sqlite.test.ts) | 269 | Обновление схемы, удаление устаревшей схемы, аккаунты, сессии, кэш, аудит, задания и транзакции. |
+| [src/transport/__tests__/transport.test.ts](../src/transport/__tests__/transport.test.ts) | 251 | Безопасность HTTP, запросы MCP, stdio-прокси и жизненный цикл демона. |
+| [src/writegate/__tests__/press.test.ts](../src/writegate/__tests__/press.test.ts) | 251 | Вывод кнопок, поддерживаемые и запрещённые типы, нажатия в два шага. |
+| [src/writegate/__tests__/write.test.ts](../src/writegate/__tests__/write.test.ts) | 595 | Подтверждение, доступ, истечение срока, идемпотентность, лимиты, реакции и результаты записи. |
 
-### Shared test helpers
+### Общие вспомогательные файлы тестов
 
-| File | Lines | Contents |
+| Файл | Строк | Содержимое |
 |---|---:|---|
-| [src/__tests__/helpers/fakeTg.ts](../src/__tests__/helpers/fakeTg.ts) | 102 | Telegram test double with controlled calls/responses. |
-| [src/__tests__/helpers/gateway.ts](../src/__tests__/helpers/gateway.ts) | 116 | In-memory test runtime, users/accounts and service assembly. |
+| [src/__tests__/helpers/fakeTg.ts](../src/__tests__/helpers/fakeTg.ts) | 102 | Тестовый двойник Telegram с управляемыми вызовами и ответами. |
+| [src/__tests__/helpers/gateway.ts](../src/__tests__/helpers/gateway.ts) | 116 | Тестовое окружение в памяти, пользователи и аккаунты, сборка сервисов. |
 
-## Local artifacts outside the main tracked snapshot
+## Локальные артефакты вне основного снимка Git
 
-### Build output
+### Результаты сборки
 
-Current production sources imply 192 emitted files: one `.js`, `.d.ts` and `.js.map` for each of 64 modules. All 192 are present. `dist/` additionally retains 42 outputs for 14 deleted modules. Running `npm run build` leaves these extras in place because the command invokes `tsc` without cleaning its output directory.
+Текущим рабочим исходникам соответствуют 192 генерируемых файла: по одному `.js`, `.d.ts` и `.js.map` на каждый из 64 модулей. Все 192 файла присутствуют. В `dist/` дополнительно остаются 42 файла от 14 удалённых модулей. Команда `npm run build` сохраняет их, поскольку запускает `tsc` без очистки директории результатов сборки.
 
-| Obsolete module prefix under dist/ | Extra files |
+| Префикс устаревшего модуля внутри dist/ | Лишних файлов |
 |---|---:|
 | automation/approvals | 3 |
 | automation/botApi | 3 |
@@ -294,126 +294,126 @@ Current production sources imply 192 emitted files: one `.js`, `.d.ts` and `.js.
 | mcp/tools/tasks | 3 |
 | services/prices | 3 |
 
-For every prefix, the three files are `.js`, `.d.ts` and `.js.map`. They have no current matching production source. The old automation implementation was removed from source before this review, including the pure-MCP change at `9b527bc`. These artifacts are not part of Git but are included by the current npm dry run.
+Для каждого префикса присутствуют три файла: `.js`, `.d.ts` и `.js.map`. Соответствующих текущих рабочих исходников нет. Прежняя реализация автоматизации была удалена из исходников до этого обзора, в том числе при переходе к чистому MCP в коммите `9b527bc`. Эти артефакты не входят в Git, но включаются текущей пробной упаковкой npm.
 
-### Registered nested worktree
+### Зарегистрированный вложенный worktree
 
-`.claude/worktrees/gracious-williams-c8c91a` is a registered Git worktree, detached at `3bb040f3483d00c8ccd245df4f7f84c2d9810490`. Its working tree was clean at inspection. It is excluded by the local `.git/info/exclude` rule `.claude/worktrees/`, not by the committed `.gitignore`.
+`.claude/worktrees/gracious-williams-c8c91a` является зарегистрированным Git worktree с detached HEAD на коммите `3bb040f3483d00c8ccd245df4f7f84c2d9810490`. На момент проверки незакоммиченных изменений в нём не было. Он исключён локальным правилом `.claude/worktrees/` из `.git/info/exclude`, а не правилом в закоммиченном `.gitignore`.
 
-| Contents inside that older worktree | Regular files | Role |
+| Содержимое старого worktree | Обычных файлов | Назначение |
 |---|---:|---|
-| src/ | 85 | Older project implementation, separate from current main |
-| docs/ | 13 | Older documents, including prior-art and borrowing notes |
-| scripts/ | 2 | Older installation/operational scripts |
-| reference/ | 95 | Source snapshots from other repositories |
-| dist/ | 189 | Its own generated build |
-| node_modules/ | 4,879 | Its own installed dependencies |
-| Other root files | 10 | Metadata, configuration, instructions and worktree Git pointer |
+| src/ | 85 | Старая реализация проекта, отдельная от текущей main |
+| docs/ | 13 | Старые документы, включая анализ аналогов и заметки о заимствованиях |
+| scripts/ | 2 | Старые скрипты установки и эксплуатации |
+| reference/ | 95 | Снимки исходников других репозиториев |
+| dist/ | 189 | Собственная сгенерированная сборка |
+| node_modules/ | 4,879 | Собственные установленные зависимости |
+| Другие файлы в корне | 10 | Метаданные, настройки, инструкции и указатель Git для worktree |
 
-The 95 reference files comprise `reference/channel-scope/` (48), `reference/helper/` (43), `reference/canary/` (1), and `MANIFEST.txt`, `README.md`, `SNAPSHOT.md` (3). The root `reference/` was already removed from current main in commit `743c6f4`; it survives here in the older checkout.
+В число 95 справочных файлов входят `reference/channel-scope/` (48), `reference/helper/` (43), `reference/canary/` (1), а также `MANIFEST.txt`, `README.md`, `SNAPSHOT.md` (3). Корневая директория `reference/` уже удалена из текущей main в коммите `743c6f4`; здесь она сохранилась в старом worktree.
 
-A clean worktree does not establish that its owner no longer needs it. Any retirement should use Git's worktree lifecycle after the owner selects it, preserving needed state. Do not delete `.git` metadata or treat this checkout as an ordinary cache. Its source snapshots are not selected for the public transfer.
+Отсутствие незакоммиченных изменений не означает, что worktree больше не нужен его владельцу. После выбора владельца выводить его из использования следует штатными средствами Git, сохраняя необходимые данные. Нельзя удалять метаданные `.git` или считать этот worktree обычным кэшем. Его снимки исходников не выбраны для публичного переноса.
 
-### Installed dependencies
+### Установленные зависимости
 
-Root `node_modules/` is ignored, generated installation material. It can be recreated from `package-lock.json` using `npm ci`; its absence would prevent local compilation/tests until reinstallation. The separate worktree has its own copy. Removing these directories would reclaim local space but would not simplify the tracked project source.
+Корневая директория `node_modules/` содержит игнорируемые сгенерированные файлы установки. Её можно восстановить из `package-lock.json` командой `npm ci`; до переустановки отсутствие этой директории помешает локальной компиляции и тестам. У отдельного worktree есть собственная копия. Удаление этих директорий освободит локальное место, но не упростит исходники проекта под контролем Git.
 
-## npm package contents
+## Содержимое npm-пакета
 
-A dry run after the build, using `npm pack --dry-run --ignore-scripts --json` with a temporary npm cache, selects **545 entries**, 884,371 compressed bytes and 3,877,819 uncompressed bytes. No package archive was written or published. These counts precede adding this report.
+Пробная упаковка после сборки командой `npm pack --dry-run --ignore-scripts --json` с временным кэшем npm выбирает **545 файлов**, 884,371 байт в сжатом виде и 3,877,819 байт в несжатом. Архив пакета не записывался и не публиковался. Эти числа получены до добавления данного отчёта.
 
-| Selected area | Entries |
+| Выбранная область | Файлов |
 |---|---:|
 | .claude/worktrees/gracious-williams-c8c91a/ | 203 |
 | dist/ | 234 |
 | src/ | 87 |
 | docs/ | 13 |
 | scripts/ | 1 |
-| Other root files | 7 |
-| Total | 545 |
+| Другие файлы в корне | 7 |
+| Всего | 545 |
 
-All 95 worktree reference files are selected, along with older project source/documents and a second lock file. Root/worktree `node_modules/` and the worktree's ignored build are excluded. The 234 main build entries include the 42 obsolete outputs listed above.
+Выбраны все 95 справочных файлов worktree, старые исходники и документы проекта, а также второй lock-файл. Корневая и вложенная `node_modules/`, а также игнорируемая сборка worktree исключены. В 234 файла основной сборки входят перечисленные выше 42 устаревших файла.
 
-`package.json` has no `files` allowlist and no `.npmignore` exists. The local Git exclusion does not keep the nested checkout out of this npm package. `private: true` is the current publication guard; it does not prevent inspection or construction of a package archive.
+В `package.json` нет разрешённого списка `files`, а `.npmignore` отсутствует. Локальное исключение Git не исключает вложенный worktree из npm-пакета. Текущее `private: true` защищает от публикации, но не препятствует проверке или созданию архива пакета.
 
-Before public packaging, choose an explicit distribution manifest, build from a clean output directory and verify the actual tarball. Those changes have not been applied. Packaging an isolated snapshot also avoids picking up local worktrees, but it does not replace an explicit package-content check.
+Перед публичной упаковкой нужно выбрать явный список распространяемых файлов, собирать в чистой директории результатов и проверить реальный архив. Эти изменения не применялись. Упаковка отдельного снимка также позволяет не захватить локальные worktree, но не заменяет явную проверку содержимого пакета.
 
-## Dependency inventory
+## Перечень зависимостей
 
-| Direct dependency | Declared | Locked | Role | Lock-file license label |
+| Прямая зависимость | Заявленная версия | Зафиксированная версия | Назначение | Лицензия по lock-файлу |
 |---|---|---|---|---|
-| @modelcontextprotocol/sdk | ^1.31.0 | 1.31.0 | MCP server/transports and client test support | MIT |
-| big-integer | ^1.6.52 | 1.6.52 | MTProto integer identities | Unlicense |
-| teleproto | 1.229.1 | 1.229.1 | Telegram MTProto client, sessions and protocol types | MIT |
-| zod | ^4.6.5 | 4.6.5 | Tool argument schemas | MIT |
-| @types/node, development | ^22.18.0 | 22.20.4 | Node TypeScript declarations | MIT |
-| typescript, development | ^5.9.3 | 5.9.3 | Compiler and type checking | Apache-2.0 |
-| vitest, development | ^5.0.3 | 5.0.3 | Tests | MIT |
+| @modelcontextprotocol/sdk | ^1.31.0 | 1.31.0 | MCP-сервер и транспорты, клиентская поддержка тестов | MIT |
+| big-integer | ^1.6.52 | 1.6.52 | Целочисленные идентификаторы MTProto | Unlicense |
+| teleproto | 1.229.1 | 1.229.1 | Клиент MTProto Telegram, сессии и типы протокола | MIT |
+| zod | ^4.6.5 | 4.6.5 | Схемы аргументов инструментов | MIT |
+| @types/node, для разработки | ^22.18.0 | 22.20.4 | Объявления типов Node для TypeScript | MIT |
+| typescript, для разработки | ^5.9.3 | 5.9.3 | Компилятор и проверка типов | Apache-2.0 |
+| vitest, для разработки | ^5.0.3 | 5.0.3 | Тесты | MIT |
 
-All four runtime dependencies are imported by current production source. `vitest` is used by tests/configuration; TypeScript and Node types support the configured compiler. None is an established removal candidate. There is no declared model SDK, external database driver or Bot API package.
+Все четыре рабочие зависимости импортируются текущими рабочими исходниками. `vitest` используется тестами и конфигурацией; TypeScript и типы Node обеспечивают работу настроенного компилятора. Ни для одной зависимости нет подтверждённых оснований для удаления. В декларациях зависимостей нет SDK моделей, драйвера внешней базы данных или пакета Bot API.
 
-The lock file records 168 dependency locations: 105 production and 63 development. These are locations, not a deduplicated count of package identities. All resolved archive URLs use the npm registry. The only `hasInstallScript` flag is the development dependency `fsevents` 2.3.3.
+В lock-файле зафиксированы 168 мест установки зависимостей: 105 рабочих и 63 для разработки. Это число путей установки, а не уникальных пакетов после удаления дублей. Все URL загружаемых архивов относятся к реестру npm. Единственный флаг `hasInstallScript` указан у зависимости для разработки `fsevents` 2.3.3.
 
-Production license labels are MIT (91), ISC (10), BSD-3-Clause (2), BSD-2-Clause (1) and Unlicense (1). Development labels are MIT (46), MPL-2.0 (12), Apache-2.0 (3), ISC (1) and BSD-3-Clause (1). Actual license texts, provenance and distributed notices still need the planned audit; these metadata counts do not settle redistribution obligations.
+Для рабочих зависимостей указаны лицензии MIT (91), ISC (10), BSD-3-Clause (2), BSD-2-Clause (1) и Unlicense (1). Для зависимостей разработки: MIT (46), MPL-2.0 (12), Apache-2.0 (3), ISC (1) и BSD-3-Clause (1). Реальные тексты лицензий, происхождение материалов и включаемые при распространении уведомления ещё требуют запланированного аудита; сведения из метаданных не определяют окончательно обязательства при распространении.
 
-## Existing compatibility and historical material
+## Совместимость и исторические материалы
 
-- [migrations.ts](../src/storage/migrations.ts) contains eight ordered migrations. Earlier migrations create the former watchers/rules/task schema; migrations 6 and 7 remove it, and migration 8 removes the former reply cap. This is required upgrade history, not active automation. Existing migrations must remain intact under AGENTS.md; tests exercise upgrading old schema and dropping obsolete tables/columns.
-- `RETIRED_TOOLSETS = ['automate']` in [config.ts](../src/core/config.ts) is used by parsing and [doctor.ts](../src/cli/doctor.ts). It keeps old configuration usable and emits a warning. CLI/config tests verify that behavior. Removing it would be a compatibility decision, not an obvious garbage deletion.
-- Three headings in [sqlite.test.ts](../src/storage/__tests__/sqlite.test.ts) still call export/index jobs "tasks" (lines 214, 225 and 236). Their bodies use `storage.jobs`; renaming the headings would improve terminology without deleting tests or functionality.
-- Version `0.1.0` appears both in package metadata and `src/cli/main.ts`. The MCP server name is currently `telegram-gateway`, while the selected future package/repository is `telegram-mcp-gateway` and the CLI remains `tg-mcp`. Align release metadata during its preparation stage; the first public version is still deferred.
+- [migrations.ts](../src/storage/migrations.ts) содержит восемь последовательных миграций. Ранние миграции создают прежнюю схему наблюдателей, правил и задач; миграции 6 и 7 её удаляют, а миграция 8 удаляет прежнее ограничение на ответы. Это необходимая история обновления базы, а не работающая автоматизация. По AGENTS.md существующие миграции должны оставаться неизменными; тесты проверяют обновление старой схемы и удаление устаревших таблиц и столбцов.
+- `RETIRED_TOOLSETS = ['automate']` в [config.ts](../src/core/config.ts) используется разбором настроек и [doctor.ts](../src/cli/doctor.ts). Это сохраняет работоспособность старой конфигурации и выдаёт предупреждение. Поведение проверяется тестами CLI и настроек. Его удаление было бы решением о совместимости, а не очевидным удалением мусора.
+- Три заголовка в [sqlite.test.ts](../src/storage/__tests__/sqlite.test.ts) всё ещё называют задания экспорта и индексирования словом "tasks" (строки 214, 225 и 236). Тела тестов используют `storage.jobs`; переименование заголовков улучшит терминологию без удаления тестов или функций.
+- Версия `0.1.0` указана и в метаданных пакета, и в `src/cli/main.ts`. Имя MCP-сервера сейчас `telegram-gateway`, тогда как выбранное будущее имя пакета и репозитория: `telegram-mcp-gateway`, а команда CLI остаётся `tg-mcp`. Метаданные релиза следует согласовать на этапе его подготовки; первая публичная версия пока отложена.
 
-## Documentation and publication preparation
+## Документация и подготовка публикации
 
-The 13 documents serve different purposes. Architecture, tool contracts and general client instructions describe the product. Decisions, open questions, implementation evidence, naming research and the open-source plan contain owner/project preparation context. Deployment and parts of the client guide describe the current private lab. These roles overlap in places, especially the repeated preparation status, but are not byte-identical duplicates.
+У 13 документов разные назначения. Архитектура, контракты инструментов и общие инструкции клиентов описывают продукт. Решения, открытые вопросы, результаты реализации, исследование названия и план открытия содержат контекст владельца и подготовки проекта. Развёртывание и части руководства по подключению описывают текущую приватную лабораторную установку. В отдельных местах содержание пересекается, особенно в повторяющемся описании состояния подготовки, но побайтовых дублей нет.
 
-Choose public disposition file by file. Preserve current private operations and decision records while a public guide is prepared. The following require particular attention:
+Состав публичной документации нужно выбирать пофайлово. Пока готовится публичное руководство, следует сохранять текущие приватные инструкции эксплуатации и записи решений. Особого внимания требуют:
 
-| Material | Existing locations | Public preparation concern |
+| Материал | Текущие места | Что учесть перед публикацией |
 |---|---|---|
-| Lab host, user layout and personal usage | README, AGENTS, decisions, deploy, findings, use cases | Generalize or retain only explicitly selected public context |
-| Root-owned private installation and GH_TOKEN | deploy, connect, lab-install.sh | Prepare a public installation path while retaining current private deployment |
-| Local paths and profile examples | connect and deploy | Replace owner-specific examples with portable placeholders |
-| Live capability evidence and limitations | plan, findings, tools | Retain accurate verified/partial status; update when the candidate is tested |
-| Initial planning/research records | decisions, open questions, open-source plan, naming research | Keep private, condense, or select for publication; owner chooses |
-| Agent-owned monitoring/conversation scenarios | use cases, scenarios, connect | Distinguish agent behavior from pure MCP; complete the planned public data/terms review |
+| Лабораторный хост, пользователи ОС и личное использование | README, AGENTS, decisions, deploy, findings, use cases | Обобщить или оставить только явно выбранный публичный контекст |
+| Приватная установка с владельцем root и GH_TOKEN | deploy, connect, lab-install.sh | Подготовить публичный способ установки, сохранив текущее приватное развёртывание |
+| Локальные пути и примеры профилей | connect и deploy | Заменить примеры владельца переносимыми шаблонными значениями |
+| Результаты живых проверок и ограничения | plan, findings, tools | Сохранить точное разделение проверенного и частично проверенного; обновить после проверки кандидата |
+| Первоначальные планы и исследования | decisions, open questions, open-source plan, naming research | Оставить приватными, сократить или выбрать для публикации; решает владелец |
+| Мониторинг и общение силами агента | use cases, scenarios, connect | Различать поведение агента и чистый MCP; завершить запланированный обзор публичных данных и условий использования |
 
-The public files `LICENSE`, `.env.example`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` and `.github/` are absent. No third-party notice inventory exists; whether additional NOTICE material is necessary belongs to the licensing audit. Package metadata still uses the private name and `private: true`, and lacks `license`, `repository`, `homepage`, `bugs` and a `files` allowlist. These are preparation tasks, not files to delete.
+Публичные файлы `LICENSE`, `.env.example`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` и `.github/` отсутствуют. Перечня сторонних уведомлений нет; необходимость дополнительных материалов NOTICE определяется аудитом лицензий. В метаданных пакета остаются приватное имя и `private: true`, отсутствуют `license`, `repository`, `homepage`, `bugs` и разрешённый список `files`. Это задачи подготовки, а не файлы для удаления.
 
-The committed ignore rules do not explicitly exclude `session.key`, `.claude/worktrees/`, generic logs or backups. No protected secret/state filenames were found among the 110 tracked paths or main top-level entries. Actual Telegram state lives outside this checkout according to configuration and the deployment guide; it was not opened. Absence of secret filenames does not prove absence of embedded credentials or personal data.
+Закоммиченные правила исключения не исключают явно `session.key`, `.claude/worktrees/`, обычные логи или резервные копии. Среди 110 путей под контролем Git и объектов верхнего уровня основного каталога не обнаружены защищённые файлы секретов и состояния. Согласно настройкам и руководству по развёртыванию, реальное состояние Telegram находится вне этого каталога; оно не открывалось. Отсутствие характерных имён файлов не доказывает отсутствие встроенных реквизитов доступа или персональных данных.
 
-This inventory report itself contains private operational paths and worktree details. It should remain a private preparation record unless the owner explicitly selects a sanitized public version.
+Сам отчёт содержит приватные эксплуатационные пути и сведения о worktree. Его следует оставить приватным документом подготовки, если владелец явно не выберет очищенную публичную версию.
 
-## Cleanup options for owner selection
+## Варианты очистки для выбора владельцем
 
-No option below has been executed. The choices distinguish deleting local artifacts, excluding material from publication and changing maintained source.
+Ни один вариант ниже не выполнен. Здесь отдельно рассматриваются удаление локальных артефактов, исключение материалов из публикации и изменение поддерживаемых исходников.
 
-| ID | Scope | Evidence | Concrete option | Consequence or condition |
+| ID | Область | Основание | Конкретный вариант | Последствие или условие |
 |---|---|---|---|---|
-| C1 | Main dist/ | 42 orphan outputs for 14 removed modules; build preserves them | Recreate dist from current source and make release builds start clean | Generated files are removed/rebuilt; retain the 192 current outputs required by the CLI/package |
-| C2 | Nested .claude worktree | Registered detached checkout, clean, older source and 95 reference files | Retire/archive the whole worktree if the owner no longer needs it | Use the Git worktree lifecycle; current main is independent, but cleanliness alone does not establish disposability |
-| C3 | Root node_modules/ | Ignored and reproducible from the lock file | Keep for development, or remove/reinstall if local-space cleanup is wanted | No tracked-source simplification; build/tests need reinstallation |
-| C4 | npm distribution | Dry run includes the old worktree and stale output | Add an explicit package allowlist and verify a clean build/tarball | Separate packaging change; decide whether source/declarations/maps/docs are intentionally distributed |
-| C5 | Private documentation | Lab deployment, owner details and repeated planning status | Retain private records and select/generalize the public document set | Preserve accepted decisions and working private instructions; no blanket document deletion |
-| C6 | Test terminology | Three SQLite headings say tasks while testing storage.jobs | Rename those headings to jobs | Text-only cleanup; preserve tests |
-| C7 | Module exports | Some exported helpers are used only locally, all implementations remain referenced | Optionally reduce unnecessary exports in a separately reviewed change | Encapsulation work of low priority; not evidence that the functions should be deleted |
-| C8 | Ignore rules | session.key and worktrees rely on missing/local-only exclusions | Add selected state/worktree/log/backup exclusions | Does not remove any data and does not replace the public-snapshot audit |
+| C1 | Основная dist/ | 42 оставшихся файла от 14 удалённых модулей; сборка их сохраняет | Пересоздать dist из текущих исходников и начинать релизную сборку с чистого каталога | Генерируемые файлы удаляются и пересобираются; сохраняются 192 текущих файла, необходимых CLI и пакету |
+| C2 | Вложенный worktree в .claude | Зарегистрированный detached worktree без незакоммиченных изменений, со старыми исходниками и 95 справочными файлами | Вывести весь worktree из использования или архивировать, если он больше не нужен владельцу | Использовать штатные средства Git для worktree; текущая main независима, но отсутствие изменений само по себе не означает, что worktree можно удалить |
+| C3 | Корневая node_modules/ | Игнорируется и воспроизводится из lock-файла | Сохранить для разработки либо удалить и переустановить, если нужна очистка локального места | Исходники под контролем Git не упрощаются; сборка и тесты требуют переустановки |
+| C4 | Распространяемый npm-пакет | Пробная упаковка включает старый worktree и устаревшую сборку | Добавить явный разрешённый список файлов пакета и проверить чистую сборку и архив | Отдельное изменение упаковки; решить, нужно ли распространять исходники, декларации, карты исходников и документацию |
+| C5 | Приватная документация | Лабораторная установка, сведения владельца и повторяющееся состояние подготовки | Сохранить приватные записи, выбрать и обобщить публичный набор документов | Сохранить принятые решения и рабочие приватные инструкции; не удалять документацию целиком |
+| C6 | Терминология тестов | Три заголовка SQLite говорят tasks, хотя проверяют storage.jobs | Переименовать эти заголовки в jobs | Только изменение текста; тесты сохраняются |
+| C7 | Экспорты модулей | Некоторые экспортируемые функции используются только локально; все реализации остаются востребованными | При необходимости сократить лишние экспорты отдельным проверяемым изменением | Работа над инкапсуляцией с низким приоритетом; нет оснований удалять сами функции |
+| C8 | Правила исключения | Для session.key и worktree нет явных правил либо действуют только локальные исключения | Добавить выбранные исключения состояния, worktree, логов и резервных копий | Данные не удаляются; это не заменяет аудит публичного снимка |
 
-The current source, tests, dependency lock and migration history have no justified blanket deletion scope. Native Windows/Linux work, the installation model, the first public version, npm identity, licensing and CI remain separate preparation tasks. This review does not choose those deferred matters for the owner.
+Нет обоснований для сплошного удаления текущих исходников, тестов, lock-файла зависимостей или истории миграций. Работа для нативных Windows и Linux, модель установки, первая публичная версия, npm-аккаунт, лицензирование и CI остаются отдельными задачами подготовки. Этот обзор не принимает отложенные решения за владельца.
 
-## Verification
+## Проверки
 
-| Check on the inspected source | Result |
+| Проверка исследованных исходников | Результат |
 |---|---|
-| npm run build | Passed |
-| npm run typecheck | Passed |
-| npm test | 21 files, 694 tests passed |
-| bash -n scripts/lab-install.sh | Passed; syntax only, installer not executed |
-| Local Markdown link targets | All existing local targets resolve |
-| Tracked-text Cyrillic and literal em dash scan | No matches in the 110 baseline files |
-| Relative TypeScript import resolution | All resolved |
-| Core/services imports from MCP or transport | None |
-| Exact duplicate tracked-file hashes | None |
-| npm dry-run file selection | Reproduced the 545-entry package and the inclusion problems above |
+| npm run build | Успешно |
+| npm run typecheck | Успешно |
+| npm test | 21 файл, 694 теста прошли |
+| bash -n scripts/lab-install.sh | Успешно; проверен только синтаксис, установщик не запускался |
+| Цели локальных ссылок Markdown | Все существующие локальные пути разрешаются |
+| Поиск кириллицы и символа длинного тире в файлах Git | В 110 файлах исходного снимка совпадений нет |
+| Разрешение относительных импортов TypeScript | Все разрешаются |
+| Импорты MCP или транспорта из ядра и сервисов | Нет |
+| Побайтовые дубли файлов под контролем Git | Нет |
+| Выбор файлов пробной упаковкой npm | Воспроизведён пакет из 545 файлов и описанные проблемы включения |
 
-Windows/Linux runtime, actual installation of a tarball, full three-client scenarios, fresh Telegram writes, remote CI/settings and the full secret/license audit are not established by these checks. The current candidate-selection boundary is the owner's choice of cleanup scope.
+Эти проверки не подтверждают работу на Windows и Linux, реальную установку архива пакета, полные сценарии в трёх клиентах, новые записи в Telegram, удалённые CI и настройки репозитория, полный аудит секретов и лицензий. Следующий шаг: выбор владельцем объёма очистки.
