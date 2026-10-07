@@ -33,3 +33,44 @@ Stage 3: removed both write-only DeadlineError fields and 26 module-local value 
 Stage 3 validation: build/typecheck, 726 tests, bash syntax and ShellCheck pass; commit `f23b12f`.
 
 Stage 4: prepared an explicit source-to-destination manifest. Generalized README, architecture, tool contracts, connections, risks and synthetic scenarios; prepared portable public AGENTS.md separately so current private operating rules remain intact. Test identities/handles are synthetic (user_a/user_b, fixture_channel/fixture_market); permissions and session state are untouched. Private plan/decisions/questions/research/evidence, Russian audit, laboratory instructions and installer remain excluded. Package metadata stays private; public version, installation, license and release preparation are explicit pending gates.
+
+## Stage 5 verification (October 7, 2026)
+
+Verified source revision: `7a7600c32e29f8858107afbb4f59e454a2ffcc7c`. Environment: macOS arm64, Node 24.10.0, npm 11.6.1.
+
+| Check | Result |
+| --- | --- |
+| Build, typecheck, tests | Pass; 21 files, 726 tests (baseline 694) |
+| Output hygiene | 192 outputs for 64 current modules; 42 obsolete outputs removed; rebuild drops synthetic stale output |
+| Installer syntax and ShellCheck | Pass; installer not executed |
+| Documentation links, public selection, English/U+2014 checks | Pass; Russian owner audit is private and excluded |
+| Migrations | Byte-identical to baseline; eight published migrations retained |
+| Source transfer selection | 103 explicit source/destination files; 13 tracked preparation/operations files excluded |
+| Real npm archive | 130 allowed files, 141922 bytes; no stale modules, maps, tests, worktrees, private documents or runtime state |
+| Archive SHA-256 | `49e5d7f3f0f62ff49deeb4973b1f8d756b298360abdf4de870449d21bc0d6083` |
+| Clean archive installation | Pass, isolated temporary directory/cache, production dependencies only, install scripts disabled |
+| Installed CLI and modules | help/version pass; all 64 module paths verified (63 imports plus CLI entry point); no vitest/TypeScript installed |
+| Installed MCP over HTTP and stdio | Pass; 13 core/index tools, four search pages, IDs 40,38,36,34,32,30,28,26,24,22 exactly once; INVALID_ARGUMENT for impossible date; zero date displayed |
+| claude -p 2.1.219 | Attempted; expired OAuth login returns 401 before scenario execution; compatibility remains open |
+| codex exec 0.141.0 | Attempted; normal CLI startup permitted after sandbox escalation. Service rejects default gpt-5.4 and user-configured gpt-6.1-sol for the signed-in ChatGPT account; scenario remains open |
+| opencode run | Not installed in the checked local CLI locations; scenario remains open |
+
+The same English regression prompt is saved in `scenarios.md`. SDK transport proof is separate from model-client scenario proof. Stage 5 is complete for local code/package checks, but the three-client compatibility gate is not closed. Owner action is needed for working client/provider access; no credentials were displayed or copied, and no user client configuration was changed.
+
+The archive contains the current private metadata, not a selected public version. LICENSE/notices are still release gates. No new repository, public snapshot, publication, release, deployment or live Telegram operation was performed. Old worktree, primary node_modules and runtime state remain.
+
+## Commits
+
+```text
+7a7600c docs: prepare public files and synthetic examples
+f23b12f refactor: narrow exports and correct internal comments
+72eac32 fix(args): include zero date boundaries in headers
+0d87d38 fix(log): reject inherited log level keys
+53aa446 fix(args): reject impossible calendar dates
+6dde678 fix(media): enforce full-file limits on actual bytes
+8782654 fix(index): filter short terms before pagination
+9f2fe5a fix(media): stop all queues after a hung download
+9f3a741 build: clean outputs and restrict package contents
+```
+
+Revert an implementation step with a new revert commit if needed; preserve private history. Final reporting changes only the private audit/plan/progress documents, so the verified public source/package payload remains unchanged.

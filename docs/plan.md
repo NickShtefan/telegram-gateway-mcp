@@ -83,6 +83,8 @@ At the owner's request, the report was extended with a symbol and content review
 
 The owner then requested a cleanup plan based on the audit. The private [repository report](repository-audit.md) now contains the proposed sequence, scope and completion criteria: clean builds and explicit package exclusions, independent fixes for F1-F6, narrow symbol/comment cleanup, public transfer contents, final verification and snapshot preparation. The proposal retains test-only repository methods, working modules, tests and published migrations; worktree archiving is a separate optional item. Writing the plan does not start cleanup, deployment, migration or publication.
 
+The owner authorized cleanup stages 1-5. Implementation and source selection are complete at `7a7600c32e29f8858107afbb4f59e454a2ffcc7c`: clean builds/package allowlist, F1-F6 regressions, two unused fields, 26 local exports, M1-M8 comments, synthetic fixtures and portable public docs. The [cleanup journal](cleanup-progress.md) records every implementation commit and verification. The [transfer manifest](public-transfer-manifest.json) selects 103 files, retaining private planning/evidence/lab operations separately. Build/typecheck, 726 tests, installer lint, links/language and isolated real archive installation pass. HTTP and stdio SDK scenarios pass. Full model-client compatibility remains open: expired Claude OAuth, Codex CLI model access rejection and absent local OpenCode. No deployment, live Telegram operation, worktree archive, transfer or publication occurred.
+
 ## Code structure
 
 One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.
@@ -95,7 +97,7 @@ tg-mcp/
 │   ├── storage/      # storage port, SQLite implementation, migrations
 │   ├── policy/       # users, access, chat scopes, untrusted-text labels, audit
 │   ├── services/     # links, resolver, reads, search, comments, topics, dialogs,
-│   │                 # discovery, statistics, index, export, media, actions, tasks
+│   │                 # discovery, statistics, index, export, media, actions, jobs
 │   ├── writegate/    # write requests, confirmation, limit journal
 │   ├── mcp/          # tools, framework, formatting, cursors, argument parsing
 │   ├── transport/    # Streamable HTTP and stdio proxy
