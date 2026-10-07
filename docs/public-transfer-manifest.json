@@ -439,6 +439,10 @@
       "reason": "Private planning, evidence or laboratory operations"
     },
     {
+      "path": "docs/installation-plan.md",
+      "reason": "Private installation preparation plan; public guide follows verified implementation"
+    },
+    {
       "path": "docs/naming-research.md",
       "reason": "Private planning, evidence or laboratory operations"
     },
@@ -494,7 +498,7 @@
     "Vetted source commit and full snapshot secrets/PII review (stage 6)",
     "MIT copyright holder, provenance and required notices; add LICENSE and notices to the selection",
     "Public package name and release version metadata, retaining tg-mcp command",
-    "Public installation/isolation model and verified platform matrix",
+    "Implement the selected isolated service with convenient owner management and verify the platform matrix",
     "CI, contribution/security documents and release procedure under accepted owner decisions"
   ]
 }

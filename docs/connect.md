@@ -2,7 +2,7 @@
 
 Start one daemon and connect each client to its Streamable HTTP endpoint (default `http://127.0.0.1:7777/mcp`). Stdio clients can launch the proxy instead. Client configuration below uses placeholders; never commit real bearer tokens.
 
-The public installation/isolation model remains pending. Administration examples describe the CLI and must run in the authorized daemon-owner environment. They do not choose a same-user deployment or a universal sudo policy.
+Public installation will use a separate service identity with convenient owner management; that workflow is not implemented yet. Administration examples describe the current CLI and must run in the authorized daemon-owner environment. They do not define a universal sudo policy.
 
 ## Users and accounts
 

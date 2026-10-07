@@ -16,7 +16,7 @@ Ordered from highest impact to lower impact.
 
 **One session in multiple processes.** Concurrent session use causes `AUTH_KEY_DUPLICATED` and session revocation. Only the daemon owns sessions; it holds a socket lock. Stdio opens none; `doctor --connect` requires a stopped daemon. Gateway sessions are independent of other projects.
 
-**Agent theft of a session.** Shell-enabled agents compromised through prompt injection could read a session and encryption key, obtaining full account access. Protect database/key/`.env` and daemon code from agent shells using OS-level separation. The public installation model remains pending.
+**Agent theft of a session.** Shell-enabled agents compromised through prompt injection could read a session and encryption key, obtaining full account access. Protect database/key/`.env` and daemon code/runtime from agent shells using OS-level separation. Public installation will use a separate service identity with convenient owner management; implementation and platform verification remain pending.
 
 ## Medium
 

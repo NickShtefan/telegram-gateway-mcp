@@ -6,7 +6,7 @@ Numbers remain stable because code and other documents reference them. Supersede
 
 Changes must be explicit: record a new decision and explain why the previous one no longer applies.
 
-The owner concluded the initial open-source question review on October 6, 2026, after decisions 33 through 50. The first public version and public installation model were deferred during that review and remain preparation follow-ups. Closing the review does not select either earlier proposal; see [open-questions.md](open-questions.md) and [open-source-plan.md](open-source-plan.md).
+The owner concluded the initial open-source question review on October 6, 2026, after decisions 33 through 50. The first public version and public installation model were deferred during that review. Decision 51 selects the isolated installation direction during preparation on October 7; the first public version and administration mechanism remain preparation follow-ups. Closing the earlier review did not select either deferred proposal; see [open-questions.md](open-questions.md) and [open-source-plan.md](open-source-plan.md).
 
 ## 1. One process owns sessions (proposed)
 
@@ -487,3 +487,15 @@ Keep `tg-mcp` as the public CLI command, including `tg-mcp serve` and `tg-mcp st
 Retain the `tg-mcp` bin entry when preparing the public package, and verify that clean installation provides the command. Public installation instructions must use the selected npm package name; the prohibition on running the third-party `npx tg-mcp` remains in force. This decision does not rename the state directory or environment variables, change the installation/isolation model, or publish the package.
 
 Reason: the owner approved retaining the CLI command while using the agreed public package name.
+
+## 51. Isolated service with convenient owner management (accepted 2026-10-07)
+
+Prepare the public installation around a separate OS service identity, protecting Telegram sessions, the database, encryption key, configuration, executable code and Node runtime from agent shells. The owner selected this direction over same-user execution when prioritizing installation redesign on the main Mac.
+
+Make setup and owner management easier. Ordinary MCP calls already require no `sudo`; reduce fragmented setup and repeated manual administration without giving agents service-user or administrative authority. Initial protected installation and updates require an appropriate owner-authorized privilege path. The owner interface, authorization mechanism and exact privilege prompts remain design work; this decision does not select a browser UI or promise passwordless administration.
+
+Current lab decisions 17/22 remain in force. Keep its installation working while preparing and testing the new workflow. Test the first implementation on the main Mac with a new gateway-created session, followed by the selected Linux and native Windows environments. Platform isolation must be verified rather than inferred from Unix file modes.
+
+The [installation redesign plan](installation-plan.md) records the current implementation, gaps, proposed user journey and acceptance checks. This decision authorizes the chosen design direction; it does not record an executed installation, a live login, platform proof or publication.
+
+Reason: the owner chose a separate service with convenient management when asked to resolve the previously deferred installation model.

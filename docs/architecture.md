@@ -121,6 +121,6 @@ Without a tool call, the daemon only maintains existing account connections; it 
 
 ## Deployment boundary
 
-Keep daemon credentials, database and session key inaccessible to agent shells. A distinct OS identity can enforce this boundary; running everything under the same user cannot. The public installation/isolation model remains pending. HTTP tokens enforce logical account access, not OS separation. Shared exports/media must be readable by authorized clients without exposing account state.
+Keep daemon credentials, database and session key inaccessible to agent shells. Public installation will use a separate service identity with protected code/runtime and convenient owner management; the workflow remains to be implemented and verified. Running everything under the same user cannot enforce this boundary. HTTP tokens enforce logical account access, not OS separation. Shared exports/media must be readable by authorized clients without exposing account state.
 
 The current lock uses a Unix socket. Native Windows and the full target-platform matrix need release verification.

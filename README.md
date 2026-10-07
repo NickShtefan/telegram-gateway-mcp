@@ -24,7 +24,7 @@ Write tools return a preview and `approval_id`. The agent must show it to the ow
 
 The current repository and package remain private and unpublished. The selected public repository and npm name is `telegram-mcp-gateway`; the command stays `tg-mcp`. Do not run `npx tg-mcp`: that package belongs to a different project.
 
-MIT is the selected license, but the license file, copyright holder, provenance review and any required notices are still release gates. The first public version, installation/isolation model and release platform matrix are pending. Native Windows support is a target, not a verified capability. No production installation recommendation is implied by the development commands below.
+MIT is the selected license; the license file, provenance review and any required notices are still release gates. Public installation will use a separate service identity with convenient owner management. That workflow is not implemented yet. The first public version and release platform matrix are pending. Native Windows support is a target, not a verified capability. No production installation recommendation is implied by the development commands below.
 
 ## Development
 
