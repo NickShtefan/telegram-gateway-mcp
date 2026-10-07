@@ -509,6 +509,10 @@
     {
       "path": "docs/installer-trust-design.md",
       "reason": "Private installer design and owner-review evidence; public guide follows verified implementation"
+    },
+    {
+      "path": "docs/release-progress.md",
+      "reason": "Private staged implementation, review and release evidence"
     }
   ],
   "excludedLocalPaths": [

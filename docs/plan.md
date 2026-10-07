@@ -99,6 +99,8 @@ The next step implements the independent [shared setup foundation for #5](setup.
 
 Foundation verification on October 8: build/typecheck and all 773 tests in 22 files pass on macOS 26.6.2 arm64 / Node 24.10.0, including 47 new setup cases. Built CLI preflight leaves a nonexistent `TG_MCP_HOME` absent and suppresses synthetic secret-bearing invalid inputs. Safe status returns `status_unavailable` without a native publisher. Changed-document links/language, diff whitespace and the updated public-transfer selection pass. These are synthetic/common-engine checks, not no-Node, root/service isolation, independent owner login or actual Codex-tool proof. No MCP tools changed, so the model-client scenario matrix was not rerun for this step.
 
+On October 8 the owner selected public 0.2.0, terminal installation without Apple membership, manual same-user owner input with accepted screen/control limitations, macOS 13+ arm64/Intel plus Linux/native Windows and automatic adapters for four clients. Decisions 54-60 supersede the earlier unaccepted native-package/separate-human-login proposal. Repository and npm onboarding are deferred; live tests use a controlled owner test account/channel. The [stage journal](release-progress.md) starts with design reconciliation and then reviews the existing foundation/session-lock fix. Every stage receives one independent review round with medium-or-higher corrections. Previous verification counts describe their original commits and do not qualify this expanded release.
+
 ## Code structure
 
 One private npm package, `telegram-gateway-mcp`, with the `tg-mcp` command.

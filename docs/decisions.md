@@ -521,3 +521,57 @@ Independent installation must not require an agent, a model provider key or an A
 Prepare instructions and acceptance checks for both entries, including a fresh machine without Node/npm and interruption/resume. Protected owner participation and the separate service identity remain required under decisions 51/52. The exact human interface remains design work; no installation was executed by this decision.
 
 Reason: the owner explicitly required that users be able to launch and finish installation themselves without an agent.
+
+## 54. Public 0.2.0 across macOS, Linux and native Windows (accepted 2026-10-08)
+
+Complete the work through a first public `0.2.0` release, including GitHub Release and npm publication after the existing owner approval gates. Native Windows is required in this release, rather than optional under decision 40. Target macOS 13+ on arm64 and Intel; platform/version support still requires real qualification. Linux and native Windows are part of the release workstream, not silently marked complete by the narrower macOS issue #2.
+
+The selected version has no prerelease suffix. Do not infer a production-readiness guarantee from this choice; release notes must state verified support and limitations. Updates, destructive uninstall and broader administration remain follow-ups unless required to resolve a release-blocking defect.
+
+Reason: owner answers 1A, 5A, 6B and version 0.2.0.
+
+## 55. Terminal installer without paid Apple dependency (accepted 2026-10-08)
+
+Use a terminal wizard and an independently verifiable signed artifact bundle with installer-managed Node. Do not depend on Apple Developer Program, Developer ID or notarization. This replaces the earlier native `.pkg`/GUI/XPC design proposal, which was never accepted. Keep both independent and agent-assisted presentations of one shared setup engine.
+
+Project cryptographic signatures do not constitute Apple notarization, Authenticode or OS publisher assessment. Define the initial trust anchor, verifier trust, artifact acquisition and protected privilege transition explicitly. Agent-provided checksums, public keys or a copied root-owned installer alone do not establish authenticity.
+
+Reason: owner answers 2B and 3 (no paid Apple dependency).
+
+## 56. Owner terminal in the existing OS login (accepted 2026-10-08)
+
+The owner manually enters system authorization and Telegram application credentials/phone/code/2FA through a human-controlled terminal in the existing OS login, with agents stopped and UI control/capture disabled for the sensitive step. Do not drive this terminal with an agent tool, read its output or capture screenshots/accessibility state while secrets are entered. Secrets never pass through chat, arguments, logs or agent-managed input.
+
+This explicitly accepts an operational limitation: stopping agents and disabling UI access is not independent protection against arbitrary same-user software. Do not claim an isolated input channel or require a separate human OS login as an accepted default. Keep the separate service identity and protected persistent sessions/code/runtime under decision 51. Do not add broad passwordless sudo or unrestricted service-user administration.
+
+Reason: owner answer 4B. This refines the input-boundary design under decision 52 without weakening persistent service isolation.
+
+## 57. Automatic adapters for four clients (accepted 2026-10-08)
+
+Prepare automatic connection adapters for Codex Desktop, Claude Code, OpenCode and Hermes in this release workstream. Preserve unrelated client settings, use direct token handoff and verify actual tool loading separately from configuration/SDK connectivity. Do not assume unsupported client configuration or credential mechanisms; inspect the actual version and supported interface. Installing/authenticating model providers is outside gateway setup.
+
+This brings issue #19 forward from the original macOS follow-up scope. Client selection remains optional; gateway setup can complete independently.
+
+Reason: owner answer 8B.
+
+## 58. Repository and npm onboarding deferred until publication preparation (accepted 2026-10-08)
+
+Focus on development now. The owner will create the new private `NickShtefan/telegram-mcp-gateway` repository later, preserving decisions 33/39. Do not create it, change current repository visibility or transfer private history/issues/PRs. npm account verification/registration is also deferred. Prepare CI, clean snapshots and publishing workflows without needing publishing secrets.
+
+These prerequisites must be completed before their actual remote/publication gates; their deferral is not permission to publish from the current repository. Owner merge approval and separate exact-candidate release approval remain required under decisions 44/48.
+
+Reason: owner answers 9 and 10.
+
+## 59. Controlled owner test account and channel (accepted 2026-10-08)
+
+Use a separate owner-controlled Telegram test account and an owner-controlled test channel/chat for live qualification. Each machine creates its own gateway session; never copy one. The account holder enters secrets manually. Every real write still requires its own preview and owner consent before confirmation. Do not create Telegram accounts through the gateway or interact with strangers for testing.
+
+Reason: owner answer 11A. This chooses test resources, not blanket authorization for live writes.
+
+## 60. One independent review round after each stage (accepted 2026-10-08)
+
+The implementation agent automatically starts a separate read-only review agent at the end of each documented stage. Review the exact candidate and report evidence, severity and affected files. Fix all confirmed medium, high and critical findings, then rerun affected checks. Low findings are recorded and do not automatically expand scope.
+
+There is exactly one independent review round per stage. Post-fix self-verification and tests are required, but do not start an automatic second review round. Do not mark a stage complete while a confirmed medium-or-higher finding remains unresolved. The next stage starts only after the reviewed stage's required corrections/checks are complete. Record the reviewed SHA and corrected SHA separately.
+
+Reason: owner's staged release instruction and answer 12A.

@@ -6,6 +6,8 @@ Goal: publish source code that lets an external user understand the gateway's li
 
 The publication method, license, copyright line, name, npm distribution, package name, repository owner and address, cleanup and transfer order, target platforms, Node policy, English-only repository language, the PR/merge policy, maintenance commitment, private vulnerability channel, contribution terms, release approval workflow, conduct rules, and public CLI command have been selected. The owner concluded the initial question review on October 6, 2026. Deferred choices and preparation follow-ups are recorded in [open-questions.md](open-questions.md). Repository-wide language cleanup is complete and locally verified; see [plan.md](plan.md). General code cleanup, snapshot audit, license files, and publication remain ahead.
 
+The October 8 owner decisions 54-60 select public 0.2.0 with required native Windows, terminal installation without paid Apple dependency, accepted same-user human input limitations and four automatic client adapters. The [staged delivery journal](release-progress.md) is the current execution protocol. Earlier deferred-version/interface and optional-Windows statements below are historical planning context; the new decisions take precedence. Repository creation/npm onboarding remain deferred owner actions, and separate merge/release approvals remain in force.
+
 ## Baseline
 
 Verified at `e297ee2adb9d7afc47968c000d3f8781797c1d64` on `main` and GitHub on October 5, 2026. This is the plan's baseline, not a release candidate.

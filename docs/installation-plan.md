@@ -4,7 +4,9 @@ Prepared October 7, 2026, from source commit `d57f0ae581845a4876edd9b03ccf90396d
 
 This is the implementation workstream for section 4 of the [open-source plan](open-source-plan.md). The owner requested that installation preparation take priority over installing the existing gateway on the main Mac, then selected a separate service with convenient owner management (decision 51). This document proposes implementation work; no deployment has been executed.
 
-The first milestone task, [issue #3](https://github.com/NickShtefan/telegram-gateway-mcp/issues/3), now has a concrete [bootstrap trust and owner-handoff design](installer-trust-design.md). It proposes a signed/notarized no-Node macOS package, a native owner interaction, a narrow privilege broker and shared resumable setup. Signing identity and a separate human OS login remain owner-review gates, not accepted policy. Implementation and live qualification remain pending under [tracking issue #2](https://github.com/NickShtefan/telegram-gateway-mcp/issues/2).
+Decisions 54-60 now select a terminal installer without Apple Developer dependency, human-controlled input in the current OS login with explicit limitations, public 0.2.0 on macOS/Linux/native Windows and four automatic client adapters. The [current trust design](installer-trust-design.md) replaces the unaccepted native-package proposal. The [stage journal](release-progress.md) governs implementation, one independent review round per stage and required corrections. Issue #2 remains the narrower initial macOS checklist; the public workstream also includes its selected follow-ups.
+
+The remaining sequences below are the original planning baseline. Where they refer to an unspecified interface, independent owner-input proof or platform/client follow-ups, decisions 54-60 and the current trust design take precedence. No old planning statement is permission to install, read secrets or update the lab.
 
 ## Current implementation
 
