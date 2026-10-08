@@ -82,7 +82,7 @@ export function patchClientConfig(client: ClientKind, original: string, port: nu
       rendered = `${prefix}\n${begin}\n[mcp_servers.${CLIENT_SERVER}]\nurl = ${JSON.stringify(desired.url)}\nenabled = true\nhttp_headers = { Authorization = ${JSON.stringify(`Bearer ${token}`)} }\n${end}\n`;
       after = parseToml(rendered, { integersAsBigInt: true });
     } else if (client === 'hermes') {
-      const document = parseDocument(original || '{}', { prettyErrors: false, uniqueKeys: true });
+      const document = parseDocument(original || '{}', { prettyErrors: false, uniqueKeys: true, intAsBigInt: true });
       if (document.errors.length || document.warnings.length || !isMap(document.contents)) throw new SetupError('invalid_state');
       before = document.toJS({ maxAliasCount: 0 });
       const prior = existing(before, client); if (equal(prior, desired)) return original;
@@ -90,7 +90,7 @@ export function patchClientConfig(client: ClientKind, original: string, port: nu
       const servers = document.get('mcp_servers', true);
       if (servers !== undefined && !isMap(servers)) throw new SetupError('invalid_state');
       document.setIn(['mcp_servers', CLIENT_SERVER], desired);
-      rendered = document.toString(); after = parseDocument(rendered, { prettyErrors: false }).toJS({ maxAliasCount: 0 });
+      rendered = document.toString(); after = parseDocument(rendered, { prettyErrors: false, intAsBigInt: true }).toJS({ maxAliasCount: 0 });
     } else {
       before = checkedJson(original, client === 'opencode').root;
       const prior = existing(before, client); if (equal(prior, desired)) return original;
@@ -116,7 +116,7 @@ export function configuredGatewayToken(client: ClientKind, text: string, port: n
   try {
     if (Buffer.byteLength(text) > 1048576) return null;
     const root = client === 'codex' ? parseToml(text, { integersAsBigInt: true })
-      : client === 'hermes' ? parseDocument(text, { prettyErrors: false }).toJS({ maxAliasCount: 0 })
+      : client === 'hermes' ? parseDocument(text, { prettyErrors: false, intAsBigInt: true }).toJS({ maxAliasCount: 0 })
       : checkedJson(text, client === 'opencode').root;
     const server = existing(root, client);
     if (!object(server) || server.url !== `http://127.0.0.1:${port}/mcp`) return null;

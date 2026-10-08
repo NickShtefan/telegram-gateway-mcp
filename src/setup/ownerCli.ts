@@ -78,7 +78,7 @@ async function main(): Promise<number> {
             withSetupLease: work => work(), withStoppedDaemon: work => work(), storage,
             credentials: new ApiCredentialFile(layout.state, attestState), sessionSecret: secret, io: workerIo(input, process.stdout),
           });
-          const prepared = prepareOwnerClients(message.plan,result,storage,secret,receipt.plan.port,message.existing_token,receipt.plan.setup_id);
+          const prepared = prepareOwnerClients(message.plan,result,storage,secret,receipt.plan.port,(message.existing_tokens.length?message.existing_tokens:message.existing_token),receipt.plan.setup_id);
           result=prepared.result;if(prepared.message) await sendPrivate(process.stdout,prepared.message);
           await sendPrivate(process.stdout, { kind: 'result', result });
           return result.phase === 'failed' ? 1 : 0;
@@ -88,7 +88,7 @@ async function main(): Promise<number> {
   }
   const channel = mode === 'root-channel';
   const parentInput = channel ? privateLines(process.stdin)[Symbol.asyncIterator]() : null;
-  let plan; let existingToken: string | null = null;
+  let plan; let existingToken: string | string[] | null = null;
   if (channel) {
     const uid = Number(process.env.SUDO_UID);
     if (!Number.isSafeInteger(uid) || uid <= 0 || uid === identity.uid) throw new SetupError('protection_unverified');
@@ -96,7 +96,7 @@ async function main(): Promise<number> {
     const first = await withTimeout(parentInput!.next(), 300000, 'owner plan'); if (first.done) throw new SetupError('invalid_state');
     const message = coordinatorMessageSchema.parse(JSON.parse(first.value));
     if (message.kind !== 'plan' || message.plan.setup_id !== ownerOperationId(sha!, message.plan.user)) throw new SetupError('invalid_state');
-    plan = message.plan; existingToken = message.existing_token;
+    plan = message.plan; existingToken = message.existing_tokens.length?message.existing_tokens:message.existing_token;
   } else {
     if (!process.stdin.isTTY || !process.stderr.isTTY) throw new SetupError('protection_unverified');
     terminalIo.err('Stop all agents and disable terminal capture/UI automation before continuing. Inputs are hidden, but same-user software is outside this protection.');
@@ -123,7 +123,7 @@ async function main(): Promise<number> {
       let result: ReturnType<typeof workerMessageSchema.parse> | undefined;
       let sequence = 0;
       try {
-        await sendPrivate(child.stdin, { kind: 'plan', plan, existing_token: existingToken });
+        await sendPrivate(child.stdin, { kind: 'plan', plan, existing_tokens: Array.isArray(existingToken)?existingToken:existingToken?[existingToken]:[] });
         for await (const line of privateLines(child.stdout)) {
           const message = workerMessageSchema.parse(JSON.parse(line));
           if (result) throw new SetupError('invalid_state');

@@ -50,9 +50,9 @@ async function main(): Promise<void> {
     await attest(temporary); await rename(temporary, join(mailbox, name));
   };
   const config = z.object({ port: z.number().int().min(1).max(65535) }).parse(JSON.parse(await read(join(layout.prefix, 'service.json'))));
-  let existingToken: string | null = null;
+  let existingToken: string[] | null = null;
   try {
-    existingToken = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/) }).parse(JSON.parse(await read(join(mailbox, 'existing-credential.json')))).token;
+    existingToken = z.strictObject({ tokens: z.array(z.string().regex(/^[A-Za-z0-9_-]{32,256}$/)).max(4) }).parse(JSON.parse(await read(join(mailbox, 'existing-credential.json')))).tokens;
     await unlink(join(mailbox, 'existing-credential.json'));
   } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
   const setup = await acquireFileLease(layout.state, 'setup.lock');

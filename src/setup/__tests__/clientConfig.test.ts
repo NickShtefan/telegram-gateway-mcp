@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { patchClientConfig, type ClientKind } from '../clientConfig.js';
 import { parse as toml } from 'smol-toml';
 import { parse as jsonc } from 'jsonc-parser';
-import { parse as yaml } from 'yaml';
+import { parse as yaml, parseDocument } from 'yaml';
 const token = 'synthetic_credential_012345678901234567890';
 describe('private four-client transformations', () => {
   it.each(['codex', 'claude', 'opencode', 'hermes'] as ClientKind[])('adds %s and repeats without changing unrelated settings', client => {
@@ -37,5 +37,14 @@ describe('private four-client transformations', () => {
   it('rejects credential/header injection and oversized input with fixed errors', () => {
     expect(() => patchClientConfig('claude', '{}', 7777, token+'\r\nX-Key: injected')).toThrow('invalid_state');
     expect(() => patchClientConfig('claude', ' '.repeat(1048577), 7777, token)).toThrow('invalid_state');
+  });
+});
+
+describe('exact Hermes preservation',()=>{
+  it('keeps decimal and hexadecimal integers outside the safe Number range',()=>{
+    const source='# retain\nbudget: 9007199254740993\nhex_budget: 0x20000000000001\n';
+    const result=patchClientConfig('hermes',source,7777,token);
+    const parsed=parseDocument(result,{intAsBigInt:true}).toJS();
+    expect(parsed.budget).toBe(9007199254740993n);expect(parsed.hex_budget).toBe(9007199254740993n);expect(result).toContain('# retain');
   });
 });

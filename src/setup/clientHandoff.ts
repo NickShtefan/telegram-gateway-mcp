@@ -19,7 +19,7 @@ export function validatedClientHandoff(value: unknown, setupId: string, port: nu
   return message.token;
 }
 export async function handoffOwnerClients(plan: OwnerPlan, result: OwnerResult, storage: Storage, secret: string, port: number,
-  existingToken: string | null, send: (message: unknown) => Promise<void>, receive: () => Promise<unknown>, legacySetupId?: string): Promise<OwnerResult> {
+  existingToken: string | string[] | null, send: (message: unknown) => Promise<void>, receive: () => Promise<unknown>, legacySetupId?: string): Promise<OwnerResult> {
   const prepared = prepareOwnerClients(plan, result, storage, secret, port, existingToken, legacySetupId);
   if (!prepared.message) return prepared.result;
   await send(prepared.message);
@@ -29,14 +29,15 @@ export async function handoffOwnerClients(plan: OwnerPlan, result: OwnerResult, 
   return prepared.result;
 }
 export function prepareOwnerClients(plan: OwnerPlan, result: OwnerResult, storage: Storage, secret: string, port: number,
-  existingToken: string | null, legacySetupId?: string): { result: OwnerResult; message: null | { kind: 'handoff'; setup_id: string; port: number; token: string; clients: OwnerPlan['clients'] } } {
+  existingToken: string | string[] | null, legacySetupId?: string): { result: OwnerResult; message: null | { kind: 'handoff'; setup_id: string; port: number; token: string; clients: OwnerPlan['clients'] } } {
   if (result.phase === 'failed' || !plan.clients.length) return { result, message: null };
   let pendingId = plan.setup_id; let pending = pendingClientToken(storage, pendingId, secret);
   if (!pending && legacySetupId) {
     const legacy = pendingClientToken(storage, legacySetupId, secret);
     if (legacy?.user === plan.user) { pending = legacy; pendingId = legacySetupId; }
   }
-  const token = pending?.user === plan.user ? pending.token : existingToken;
+  const candidates=Array.isArray(existingToken)?existingToken:existingToken?[existingToken]:[];
+  const token=pending?.user===plan.user?pending.token:candidates.find(value=>storage.users.get(plan.user)?.tokenSha256===sha256Hex(value))??null;
   if (!token || storage.users.get(plan.user)?.tokenSha256 !== sha256Hex(token)) return { result: { ...result, phase: 'needs_existing_client_credential' }, message: null };
   return { result: { ...result, phase: 'needs_service_start' }, message: { kind: 'handoff', setup_id: plan.setup_id, port, token, clients: plan.clients } };
 }

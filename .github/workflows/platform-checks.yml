@@ -52,3 +52,7 @@ jobs:
       - name: Synthetic owner operation identity parity
         shell: powershell
         run: ./scripts/checks/windows-owner-contract.ps1
+
+      - name: Silent open stdin does not block owner deadlines
+        shell: powershell
+        run: ./scripts/checks/windows-owner-input.ps1

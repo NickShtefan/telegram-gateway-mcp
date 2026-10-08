@@ -63,3 +63,16 @@ describe('service-first handoff',()=>{
     }finally{storage.close();}
   });
 });
+
+describe('credential candidates are independent of profile selection order',()=>{
+  it('selects the current user hash from a bounded mixed-profile set',async()=>{
+    const {storage,token}=fixture();storage.kv.set(`setup.handoff.${plan.setup_id}`,'');
+    try{
+      const foreign='foreign_credential_012345678901234567890';
+      for(const candidates of [[foreign,token],[token,foreign]]){
+        const prepared=prepareOwnerClients(plan,result,storage,secret,7777,candidates);
+        expect(prepared.message?.token).toBe(token);expect(prepared.result.phase).toBe('needs_service_start');
+      }
+    }finally{storage.close();}
+  });
+});

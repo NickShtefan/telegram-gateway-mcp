@@ -11,7 +11,7 @@ import { sha256Hex } from '../core/crypto.js';
 import { installLayout } from '../install/platform.js';
 import { ownerPlanSchema } from './owner.js';
 import { originalOwnerProfile } from './ownerProfile.js';
-import { configureClient, readSelectedClientToken } from './clientFile.js';
+import { configureClient, readSelectedClientTokens } from './clientFile.js';
 import { ClientEntryConflict, type ClientKind } from './clientConfig.js';
 import { privateLines, sendPrivate, workerMessageSchema, questions } from './promptChannel.js';
 import { probeConfiguredGateway } from './clientProbe.js';
@@ -67,8 +67,8 @@ async function main(): Promise<number> {
       if (result) throw new SetupError('invalid_state');
       if (message.kind === 'profile') {
         if (setupId) throw new SetupError('invalid_state'); setupId = ownerOperationId(sha, preview.user); port = message.port;
-        const existingToken = await readSelectedClientToken(owner, preview.clients, port);
-        await sendPrivate(output, { kind: 'plan', plan: { ...preview, setup_id: setupId }, existing_token: existingToken });
+        const existingTokens = await readSelectedClientTokens(owner, preview.clients, port);
+        await sendPrivate(output, { kind: 'plan', plan: { ...preview, setup_id: setupId }, existing_tokens: existingTokens });
       } else if (message.kind === 'prompt') {
         if (!setupId || message.sequence !== ++sequence) throw new SetupError('invalid_state');
         const value = await terminalIo.prompt(questions[message.question], { hidden: true, signal: life.signal });

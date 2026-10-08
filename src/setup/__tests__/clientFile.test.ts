@@ -2,7 +2,7 @@ import { mkdtemp, writeFile, readFile, rm, lstat, symlink } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { configureClient, type OwnerProfile } from '../clientFile.js';
+import { configureClient, readSelectedClientTokens, type OwnerProfile } from '../clientFile.js';
 const roots: string[] = []; const token = 'synthetic_credential_012345678901234567890';
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 async function fixture(): Promise<OwnerProfile> {
@@ -52,5 +52,14 @@ describe('credential bytes are never written before private-file proof', () => {
   it('preserves invalid UTF-8 instead of normalizing unrelated bytes', async () => {
     const owner=await fixture();const path=join(owner.home,'.claude.json');const bytes=Buffer.from([123,34,120,34,58,34,255,34,125]);
     await writeFile(path,bytes);await expect(configureClient(owner,'claude',7777,token)).rejects.toThrow('invalid_state');expect(await readFile(path)).toEqual(bytes);
+  });
+});
+
+describe('selected profile candidates',()=>{
+  it('collects distinct own-gateway credentials without choosing their user in the client process',async()=>{
+    const owner=await fixture();const other='second_credential_012345678901234567890';
+    await configureClient(owner,'claude',7777,token);await configureClient(owner,'hermes',7777,other);
+    expect(await readSelectedClientTokens(owner,['claude','hermes'],7777)).toEqual([token,other]);
+    expect(await readSelectedClientTokens(owner,['hermes','claude'],7777)).toEqual([other,token]);
   });
 });

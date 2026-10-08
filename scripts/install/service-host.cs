@@ -118,3 +118,29 @@ public sealed class GatewayService : ServiceBase {
         catch {Environment.ExitCode=1;}
     }
 }
+
+// Console.In.ReadAsync is synchronous on .NET Framework's SyncTextReader.
+// One bounded background reader keeps coordinator deadlines/service-exit checks live.
+public sealed class OwnerInputReader : IDisposable {
+    private readonly System.Collections.Concurrent.BlockingCollection<string> lines=new System.Collections.Concurrent.BlockingCollection<string>(1);
+    private volatile bool failed;
+    private volatile bool stopping;
+    public bool Failed { get { return failed&&lines.Count==0; } }
+    public OwnerInputReader() {
+        var thread=new System.Threading.Thread(Read);thread.IsBackground=true;thread.Start();
+    }
+    private void Read() {
+        try {
+            var input=Console.OpenStandardInput();var bytes=new MemoryStream();var encoding=new System.Text.UTF8Encoding(false,true);
+            while(!stopping) {
+                int value=input.ReadByte();if(value<0){failed=true;return;}
+                if(value==10) {
+                    string line=encoding.GetString(bytes.ToArray());bytes.SetLength(0);
+                    if(!lines.TryAdd(line,5000)){failed=true;return;}
+                } else {if(bytes.Length>=2048){failed=true;return;}bytes.WriteByte((byte)value);}
+            }
+        } catch { failed=true; }
+    }
+    public string TryRead(int milliseconds) { string line;return lines.TryTake(out line,milliseconds)?line:null; }
+    public void Dispose() { stopping=true; }
+}

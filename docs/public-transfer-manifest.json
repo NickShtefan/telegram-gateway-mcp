@@ -671,6 +671,10 @@
     {
       "source": "src/setup/ackWindows.ts",
       "destination": "src/setup/ackWindows.ts"
+    },
+    {
+      "source": "scripts/checks/windows-owner-input.ps1",
+      "destination": "scripts/checks/windows-owner-input.ps1"
     }
   ],
   "excludedTrackedFiles": [

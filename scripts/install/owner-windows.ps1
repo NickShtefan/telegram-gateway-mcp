@@ -55,17 +55,17 @@ try {
     if([Text.Encoding]::UTF8.GetByteCount($text) -gt 2048){throw 'frame_too_large'}
     [Console]::Out.WriteLine($text);[Console]::Out.Flush()
   }
+  $brokerReader=$null
+  if($BrokerStdio){
+    $null=[Reflection.Assembly]::LoadFrom($hostPath)
+    $brokerReader=New-Object OwnerInputReader
+  }
   function BrokerRead {
-    $buffer=New-Object char[] 1;$text=New-Object Text.StringBuilder
     while([DateTime]::UtcNow -lt $deadline){
-      $read=[Console]::In.ReadAsync($buffer,0,1)
-      while(-not $read.IsCompleted){
-        if([DateTime]::UtcNow -ge $deadline -or ($started -and (Get-Service $service).Status -eq 'Stopped')){throw 'worker_ended'}
-        Start-Sleep -Milliseconds 100
-      }
-      if($read.Result -eq 0){throw 'coordinator_ended'}
-      if($buffer[0] -eq "`n"){return ($text.ToString()|ConvertFrom-Json)}
-      if($text.Length -ge 2048){throw 'frame_too_large'};$null=$text.Append($buffer[0])
+      if($started -and (Get-Service $service).Status -eq 'Stopped'){throw 'worker_ended'}
+      $line=$brokerReader.TryRead(100)
+      if($null -ne $line){return ($line|ConvertFrom-Json)}
+      if($brokerReader.Failed){throw 'coordinator_ended'}
     }
     throw 'input_timeout'
   }
@@ -91,10 +91,10 @@ try {
     BrokerWrite @{kind='profile';setup_id=$id;port=$receipt.port}
     $frame=BrokerRead
     if($frame.kind -cne 'plan' -or $frame.plan.replace_session -ne $false -or $frame.plan.rotate_token -ne $false){throw 'invalid'}
-    $account=$frame.plan.account;$user=$frame.plan.user;$clients=@($frame.plan.clients);$brokerToken=$frame.existing_token
+    $account=$frame.plan.account;$user=$frame.plan.user;$clients=@($frame.plan.clients);$brokerToken=@($frame.existing_tokens)
     $id=OwnerOperationId $user;if($frame.plan.setup_id -cne $id){throw 'invalid'}
     if($clients.Count -gt 4 -or @($clients|Select-Object -Unique).Count -ne $clients.Count -or @($clients|Where-Object {$_ -cnotin @('codex','claude','opencode','hermes')}).Count){throw 'invalid'}
-    if($null -ne $brokerToken -and $brokerToken -cnotmatch '^[A-Za-z0-9_-]{32,256}$'){throw 'invalid'}
+    if($brokerToken.Count -gt 4 -or @($brokerToken|Where-Object {$_ -cnotmatch '^[A-Za-z0-9_-]{32,256}$'}).Count){throw 'invalid'}
   } else {
     [Console]::Error.WriteLine('Stop all agents and disable terminal capture/UI automation. Same-user software is outside this protection.')
     if((Read-Host 'Type OWNER READY after completing those steps') -cne 'OWNER READY'){throw 'invalid'}
@@ -115,7 +115,7 @@ try {
     $path=Join-Path $mailbox $name
     if(Test-Path -LiteralPath $path){$null=AssertProtected $path $sid $true $true;Remove-Item -LiteralPath $path}
   }
-  if($null -ne $brokerToken){$credentialPath=Join-Path $mailbox 'existing-credential.json';@{token=$brokerToken}|ConvertTo-Json -Compress|Set-Content -LiteralPath $credentialPath -Encoding UTF8;Protect $credentialPath $sid $true $false;$brokerToken=$null}
+  if($null -ne $brokerToken){$credentialPath=Join-Path $mailbox 'existing-credential.json';@{tokens=$brokerToken}|ConvertTo-Json -Compress|Set-Content -LiteralPath $credentialPath -Encoding UTF8;Protect $credentialPath $sid $true $false;$brokerToken=$null}
   $null=& $sc start $service owner-setup $id;if($LASTEXITCODE -ne 0){throw 'invalid'};$started=$true
   $questions=@{api_id='Telegram application id';api_hash='Telegram application hash';phone='Telegram phone (international format)';code='Telegram verification code';password='Telegram two-factor password'}
   function ReadPrivate([string]$Question) {
@@ -216,5 +216,6 @@ try {
 } catch {[Console]::Error.WriteLine('{"format_version":1,"error_code":"owner_step_failed"}');exit 1}
 finally {
   if($mailbox){foreach($name in @('client-ack.json','client-ack.json.next','client-acknowledged.json','client-acknowledged.json.next')){$path=Join-Path $mailbox $name;if(Test-Path -LiteralPath $path){$null=AssertProtected $path $sid $true $true;Remove-Item -LiteralPath $path}}}
+  if($brokerReader){$brokerReader.Dispose()}
   if($ownerLock){$ownerLock.Dispose()}
 }

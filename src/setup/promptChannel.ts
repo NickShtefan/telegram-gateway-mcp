@@ -22,7 +22,7 @@ export const workerMessageSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('result'), result: ownerResultSchema }),
 ]);
 export const coordinatorMessageSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('plan'), plan: ownerPlanSchema, existing_token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/).nullable().default(null) }),
+  z.strictObject({ kind: z.literal('plan'), plan: ownerPlanSchema, existing_token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/).nullable().default(null), existing_tokens: z.array(z.string().regex(/^[A-Za-z0-9_-]{32,256}$/)).max(4).default([]) }),
   z.strictObject({ kind: z.literal('client_ack'), setup_id: setupIdSchema, token_sha256: z.string().regex(/^[0-9a-f]{64}$/) }),
   z.strictObject({ kind: z.literal('answer'), sequence: z.number().int().positive(), value: z.string().max(512) }),
 ]);

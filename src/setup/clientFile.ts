@@ -64,7 +64,8 @@ export async function configureClient(owner: OwnerProfile, client: ClientKind, p
     return { client, evidence: 'configuration_written', tool_loading_verified: false };
   } catch (err) { if (err instanceof ClientEntryConflict) throw err; throw new SetupError('invalid_state'); }
 }
-export async function readSelectedClientToken(owner: OwnerProfile, clients: ClientKind[], port: number): Promise<string | null> {
+export async function readSelectedClientTokens(owner: OwnerProfile, clients: ClientKind[], port: number): Promise<string[]> {
+  const tokens: string[]=[];
   await owner.authorize(); await owner.attest(owner.home, false);
   for (const client of clients) {
     const path = join(owner.home, ...clientRelativePath(client));
@@ -72,8 +73,8 @@ export async function readSelectedClientToken(owner: OwnerProfile, clients: Clie
       await owner.attest(dirname(path), false);
       const existing = await readExisting(path, owner);
       const token = existing ? configuredGatewayToken(client, new TextDecoder('utf-8', { fatal: true }).decode(existing.bytes), port) : null;
-      if (token) return token;
+      if(token&&!tokens.includes(token))tokens.push(token);
     } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw new SetupError('invalid_state'); }
   }
-  return null;
+  return tokens;
 }
