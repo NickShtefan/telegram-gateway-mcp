@@ -345,7 +345,8 @@ describe('config', () => {
     const second = loadSessionSecret(home, {});
     expect(first).toBe(second);
     expect(readFileSync(join(home, 'session.key'), 'utf8').trim()).toBe(first);
-    expect(statSync(join(home, 'session.key')).mode & 0o777).toBe(0o600);
+    // POSIX mode bits are not Windows ACL evidence; service ACLs have their own checks.
+    if (process.platform !== 'win32') expect(statSync(join(home, 'session.key')).mode & 0o777).toBe(0o600);
     expect(loadSessionSecret(home, { TG_MCP_SESSION_KEY: 'from-env' })).toBe('from-env');
   });
 });
