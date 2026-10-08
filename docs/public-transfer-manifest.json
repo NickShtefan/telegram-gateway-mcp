@@ -607,6 +607,10 @@
     {
       "source": "scripts/install/owner-windows.ps1",
       "destination": "scripts/install/owner-windows.ps1"
+    },
+    {
+      "source": "src/cli/__tests__/io.test.ts",
+      "destination": "src/cli/__tests__/io.test.ts"
     }
   ],
   "excludedTrackedFiles": [

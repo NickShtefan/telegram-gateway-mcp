@@ -1,7 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TelegramClient } from 'teleproto';
+import { Api, type TelegramClient } from 'teleproto';
+import { signInUser } from 'teleproto/client/auth';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loginAccount, normalizePhone } from '../auth.js';
 import { ClientPool, type ClientFactory } from '../clientPool.js';
@@ -360,5 +361,46 @@ describe('queued authentication RPC boundary', () => {
     expect(invoke).toHaveBeenCalledWith(request, 4, options);
     restore(); limiter.shutdown();
     expect(client.invoke).toBe(invoke); expect(client.connect).toBe(connect);
+  });
+});
+
+describe('authentication library regressions', () => {
+  it('reaches the pinned library password branch after SESSION_PASSWORD_NEEDED', async () => {
+    const control = Object.assign(new Error('password required'), { errorMessage: 'SESSION_PASSWORD_NEEDED' });
+    const password = vi.fn(async () => 'synthetic-password');
+    const signInWithPassword = vi.fn(async (_credentials, params) => { await params.password(); return { id: 1 }; });
+    const client = { invoke: vi.fn(async (request: { className: string }) => {
+      if (request.className === 'auth.SendCode') return new Api.auth.SentCode({ type: new Api.auth.SentCodeTypeApp({ length: 5 }), phoneCodeHash: 'synthetic' });
+      throw control;
+    }), signInWithPassword } as unknown as TelegramClient;
+    const limiter = new AccountLimiter({ log: silent, minIntervalMs: 0, onFatal: () => { throw new Error('fatal'); } });
+    const restore = queueLoginCalls(client, 'login', limiter, () => { throw new Error('fatal'); });
+    try {
+      await expect(signInUser(client, { apiId: 1, apiHash: 'synthetic' }, {
+        phoneNumber: '+15550000000', phoneCode: async () => '12345', password,
+        onError: async () => { throw new Error('2FA must not enter generic retry'); },
+      })).resolves.toEqual({ id: 1 });
+      expect(password).toHaveBeenCalledOnce(); expect(signInWithPassword).toHaveBeenCalledOnce();
+    } finally { restore(); limiter.shutdown(); }
+  });
+  it('executes nested migration calls in order under the auth owner while other work stays queued', async () => {
+    const order: string[] = []; const fatal = vi.fn();
+    const client = { invoke: vi.fn(async (request: { className: string }) => {
+      order.push(request.className);
+      if (request.className === 'auth.SendCode') {
+        await client.invoke({ className: 'updates.GetState' } as never);
+        await Promise.all([client.invoke({ className: 'help.GetConfig' } as never), client.invoke({ className: 'auth.ExportAuthorization' } as never)]);
+      }
+      return { ok: true };
+    }) } as unknown as TelegramClient;
+    const limiter = new AccountLimiter({ log: silent, minIntervalMs: 2, defaultDeadlineMs: 200, interactiveWaitBudgetMs: 50, onFatal: fatal });
+    const restore = queueLoginCalls(client, 'login', limiter, () => { throw new Error('fatal'); });
+    try {
+      const auth = client.invoke({ className: 'auth.SendCode' } as never);
+      const unrelated = limiter.run('login', async () => { order.push('unrelated'); return true; }, { label: 'unrelated' });
+      await auth; await unrelated;
+      expect(order).toEqual(['auth.SendCode', 'updates.GetState', 'help.GetConfig', 'auth.ExportAuthorization', 'unrelated']);
+      expect(limiter.status('login').callsInWindow).toBe(5); expect(fatal).not.toHaveBeenCalled();
+    } finally { restore(); limiter.shutdown(); }
   });
 });

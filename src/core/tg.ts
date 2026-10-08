@@ -24,7 +24,7 @@ export function queueLoginCalls(client: TelegramClient, accountId: string, limit
     catch (err) { if (err instanceof DeadlineError) return fatal(); throw err; }
   }) as TelegramClient['connect'];
   client.invoke = (async (request: Api.AnyRequest, dcId?: number, options?: Api.ApiCallOptions) => limiter.run(accountId, () => invoke(request, dcId, options), {
-    label: (request as { className?: string }).className ?? 'auth', write: true,
+    label: (request as { className?: string }).className ?? 'auth', write: true, authentication: true,
   })) as TelegramClient['invoke'];
   return () => { client.invoke = original; client.connect = connect; };
 }

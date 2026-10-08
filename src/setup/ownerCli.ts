@@ -75,6 +75,8 @@ async function main(): Promise<number> {
       });
       // Start waiting immediately so an early worker failure cannot lose its exit event.
       const exited = once(child, 'close').then(([code]) => code as number | null);
+      const inputLife = new AbortController();
+      void exited.then(() => inputLife.abort(), () => inputLife.abort());
       let result: ReturnType<typeof workerMessageSchema.parse> | undefined;
       let sequence = 0;
       try {
@@ -84,7 +86,7 @@ async function main(): Promise<number> {
           if (result) throw new SetupError('invalid_state');
           if (message.kind === 'result') { result = message; continue; }
           if (message.sequence !== ++sequence) throw new SetupError('invalid_state');
-          const value = await terminalIo.prompt(questions[message.question], { hidden: true });
+          const value = await terminalIo.prompt(questions[message.question], { hidden: true, signal: inputLife.signal });
           await sendPrivate(child.stdin, { kind: 'answer', sequence, value });
         }
         const code = await exited;
@@ -92,6 +94,7 @@ async function main(): Promise<number> {
         terminalIo.out(JSON.stringify(result.result));
         return code === 0 ? 0 : 1;
       } finally {
+        inputLife.abort();
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
         // Supervision is restored only after OS-confirmed worker termination.
         await exited;

@@ -95,7 +95,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
         lastError = aborted ?? err;
         options.log.warn('login step failed', { error: lastError.message, attempt: errors });
         // true aborts login; otherwise teleproto keeps asking for another code.
-        return aborted !== null || errors >= maxAttempts;
+        return aborted !== null || classifyError(err).code === 'FLOOD_WAIT' || errors >= maxAttempts;
       },
     });
 

@@ -77,6 +77,24 @@ try {
   }
   $null=& $sc start $service owner-setup $id;if($LASTEXITCODE -ne 0){throw 'invalid'};$started=$true
   $questions=@{api_id='Telegram application id';api_hash='Telegram application hash';phone='Telegram phone (international format)';code='Telegram verification code';password='Telegram two-factor password'}
+  function ReadPrivate([string]$Question) {
+    $secretInput=New-Object Security.SecureString
+    $prior=[Console]::TreatControlCAsInput;[Console]::TreatControlCAsInput=$true
+    [Console]::Error.Write($Question+': ')
+    try {
+      while([DateTime]::UtcNow -lt $deadline){
+        if((Get-Service $service).Status -eq 'Stopped'){throw 'worker_ended'}
+        if(-not [Console]::KeyAvailable){Start-Sleep -Milliseconds 100;continue}
+        $key=[Console]::ReadKey($true)
+        if(($key.Modifiers -band [ConsoleModifiers]::Control) -and $key.Key -in @([ConsoleKey]::C,[ConsoleKey]::Z)){throw 'cancelled'}
+        if($key.Key -eq [ConsoleKey]::Enter){[Console]::Error.WriteLine();return $secretInput}
+        if($key.Key -eq [ConsoleKey]::Backspace){if($secretInput.Length){$secretInput.RemoveAt($secretInput.Length-1)};continue}
+        if(-not [char]::IsControl($key.KeyChar)){if($secretInput.Length -ge 512){throw 'input_too_long'};$secretInput.AppendChar($key.KeyChar)}
+      }
+      throw 'input_timeout'
+    } catch {$secretInput.Dispose();throw}
+    finally {[Console]::TreatControlCAsInput=$prior}
+  }
   $sequence=0;$deadline=[DateTime]::UtcNow.AddMinutes(15);$requestPath=Join-Path $mailbox 'request.json';$result=$null
   while([DateTime]::UtcNow -lt $deadline){
     if(Test-Path -LiteralPath $requestPath){
@@ -87,7 +105,7 @@ try {
       if($request.kind -cne 'prompt' -or -not $questions.ContainsKey($request.question)){throw 'invalid'}
       if($request.sequence -eq $sequence){Start-Sleep -Milliseconds 100;continue}
       if($request.sequence -ne ($sequence+1)){throw 'invalid'};$sequence++
-      $secure=Read-Host $questions[$request.question] -AsSecureString
+      $secure=ReadPrivate $questions[$request.question]
       $pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
       try{$answer=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer);if($answer.Length -gt 512){throw 'invalid'}
         $path=Join-Path $mailbox 'answer.json.next'
