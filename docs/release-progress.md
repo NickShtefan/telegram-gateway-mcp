@@ -66,3 +66,5 @@ Stage 5 single review: `/root/stage5_review` reviewed `adc8af94c95cd23af39b1a8a2
 Stage 5 post-fix local validation: build/typecheck and 855 tests pass (2 native Windows pipe cases skipped locally). All three findings are addressed by code and regressions. Corrected-candidate hosted checks remain pending; no real installation/login or second independent review occurred.
 
 Corrected run 37713711854: macOS/Linux common checks and Windows source parsing/compilation pass; the Windows common job exposed an old POSIX-mode assertion in the newly included legacy config suite. Restricting that assertion to POSIX does not claim Windows protection from mode bits: the service profile uses separate ACL attestation and qualification. Auth/input regressions themselves pass on Windows. Hosted retry follows.
+
+Hosted retry 37714211898 exposed a scheduling-sensitive 50ms synthetic nested-call budget on Windows; no real RPC was involved. The regression now asserts ownership/order/counting with zero synthetic pacing and generous finite deadlines, while the limiter suite independently tests pacing and budget enforcement. No production timing/default changed.

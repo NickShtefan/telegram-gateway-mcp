@@ -394,7 +394,7 @@ describe('authentication library regressions', () => {
       }
       return { ok: true };
     }) } as unknown as TelegramClient;
-    const limiter = new AccountLimiter({ log: silent, minIntervalMs: 2, defaultDeadlineMs: 200, interactiveWaitBudgetMs: 50, onFatal: fatal });
+    const limiter = new AccountLimiter({ log: silent, minIntervalMs: 0, defaultDeadlineMs: 2000, interactiveWaitBudgetMs: 1000, onFatal: fatal });
     const restore = queueLoginCalls(client, 'login', limiter, () => { throw new Error('fatal'); });
     try {
       const auth = client.invoke({ className: 'auth.SendCode' } as never);
