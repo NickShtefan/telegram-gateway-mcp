@@ -9,6 +9,8 @@ import type { ClientFactory, AccountIdentity } from './clientPool.js';
 import { classifyError, GatewayError } from './errors.js';
 import type { Logger } from './log.js';
 import { withTimeout } from './time.js';
+import { AccountLimiter } from './limiter.js';
+import { queueLoginCalls } from './tg.js';
 
 export interface LoginPrompts {
   code(): Promise<string>;
@@ -27,6 +29,11 @@ export interface LoginOptions {
   inputTimeoutMs?: number;
   /** Maximum invalid code/password attempts before aborting login. */
   maxAttempts?: number;
+  accountId?: string;
+  /** A hung auth call or cleanup must terminate the worker, never release its lease in process. */
+  onFatal?: () => never;
+  cleanupTimeoutMs?: number;
+  connectTimeoutMs?: number;
 }
 
 export interface LoginResult {
@@ -56,6 +63,9 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
   const maxAttempts = options.maxAttempts ?? 3;
   const phone = normalizePhone(options.phone);
   const client = options.factory({ session: '', apiId: options.apiId, apiHash: options.apiHash, log: options.log });
+  const fatal = options.onFatal ?? (() => process.exit(1));
+  const limiter = new AccountLimiter({ onFatal: () => fatal(), log: options.log, maxFloodRetries: 0 });
+  const restore = queueLoginCalls(client, options.accountId ?? 'login', limiter, fatal, options.connectTimeoutMs);
 
   let errors = 0;
   let lastError: Error | null = null;
@@ -89,6 +99,8 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
       },
     });
 
+    if (aborted) throw aborted;
+
     const me = (await client.getMe()) as MeLike | null;
     if (!me || me.id === undefined || me.id === null) {
       throw lastError ?? new GatewayError('ACCOUNT_UNAUTHORIZED', 'Login did not complete: Telegram did not authorize the session.');
@@ -112,9 +124,10 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
   } finally {
     // Always close the login client; the daemon opens its own client with the session.
     try {
-      await withTimeout(client.destroy(), 5_000, 'client.destroy');
+      await withTimeout(client.destroy(), options.cleanupTimeoutMs ?? 5_000, 'client.destroy');
     } catch {
-      // Preserve the result or original error.
+      fatal();
     }
+    limiter.shutdown(); restore();
   }
 }

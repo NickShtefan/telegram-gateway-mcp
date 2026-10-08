@@ -22,7 +22,7 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - name: Common contracts and native pipe ownership
-        run: npx --no-install vitest run src/install/__tests__/provision.test.ts src/core/__tests__/windowsLease.test.ts
+        run: npx --no-install vitest run src/install/__tests__/provision.test.ts src/core/__tests__/windowsLease.test.ts src/setup/__tests__/promptChannel.test.ts
   windows-sources:
     runs-on: windows-latest
     steps:

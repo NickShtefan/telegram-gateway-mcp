@@ -15,7 +15,7 @@ const identitySchema = z.union([
   z.strictObject({ kind: z.literal('windows'), sid: z.string().regex(/^S-1-5-80-(?:\d+-){4}\d+$/) }),
 ]);
 export type ServiceIdentity = z.infer<typeof identitySchema>;
-const receiptSchema = z.strictObject({
+export const receiptSchema = z.strictObject({
   format_version: z.literal(1), plan: provisionPlanSchema,
   completed: z.array(z.enum(['identity', 'release', 'state', 'definition', 'commands'])),
   identity: identitySchema.nullable(),

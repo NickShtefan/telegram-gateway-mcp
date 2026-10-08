@@ -9,7 +9,7 @@ import { loadConfig, loadSessionSecret, parseToolsets, requireApiCredentials } f
 import { seal } from '../crypto.js';
 import { AccountLimiter } from '../limiter.js';
 import { createLogger } from '../log.js';
-import { TgGateway } from '../tg.js';
+import { TgGateway, queueLoginCalls } from '../tg.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
 
 const silent = createLogger('test', { level: 'silent' });
@@ -275,6 +275,18 @@ describe('loginAccount', () => {
     expect(normalizePhone('79991234567')).toBe('+79991234567');
     expect(() => normalizePhone('abc')).toThrow(/international format/);
   });
+  it('does not return a session after cancelled input even if the library returns normally', async () => {
+    const {factory}=makeFactory(c=>{
+      c.start.mockImplementation(async(params:{phoneCode:()=>Promise<string>})=>{await params.phoneCode().catch(()=>undefined)});
+    });
+    await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>{throw new Error('cancelled')},password:async()=>''},log:silent})).rejects.toMatchObject({code:'UNAVAILABLE'});
+  });
+  it('requires worker termination rather than continuing after stuck cleanup', async () => {
+    const {factory}=makeFactory(c=>{c.destroy.mockImplementation(async()=>new Promise(()=>undefined))});
+    const fatal=vi.fn(()=>{throw new Error('fatal_worker_exit')});
+    await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,cleanupTimeoutMs:5,onFatal:fatal})).rejects.toThrow('fatal_worker_exit');
+    expect(fatal).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('config', () => {
@@ -334,5 +346,19 @@ describe('config', () => {
     expect(readFileSync(join(home, 'session.key'), 'utf8').trim()).toBe(first);
     expect(statSync(join(home, 'session.key')).mode & 0o777).toBe(0o600);
     expect(loadSessionSecret(home, { TG_MCP_SESSION_KEY: 'from-env' })).toBe('from-env');
+  });
+});
+
+describe('queued authentication RPC boundary', () => {
+  it('preserves DC migration and call options, then restores the original methods', async () => {
+    const invoke = vi.fn(async () => ({ ok: true })); const connect = vi.fn(async () => true);
+    const client = { invoke, connect } as unknown as TelegramClient;
+    const limiter = new AccountLimiter({ log: silent, onFatal: () => { throw new Error('fatal'); } });
+    const restore = queueLoginCalls(client, 'login', limiter, () => { throw new Error('fatal'); });
+    const request = { className: 'auth.SignIn' }; const options = { floodSleepThreshold: 0 };
+    await client.invoke(request as never, 4, options as never);
+    expect(invoke).toHaveBeenCalledWith(request, 4, options);
+    restore(); limiter.shutdown();
+    expect(client.invoke).toBe(invoke); expect(client.connect).toBe(connect);
   });
 });

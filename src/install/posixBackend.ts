@@ -141,7 +141,13 @@ export class PosixProvisionBackend implements ProvisionBackend {
     const agent = this.agentCommand(layout, this.plan!.port);
     try { if (!(await boundedRootFile(join(commandDir, 'tg-mcp'), 16384)).equals(Buffer.from(agent))) throw new ProtectionError(); }
     catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; await writeProtectedFile(commandDir, 'tg-mcp', Buffer.from(agent), 0o755); }
-    // Owner administration is added in the next stage; no generic root shell wrapper.
+    const owner = this.ownerCommand(layout);
+    try { if (!(await boundedRootFile(join(commandDir, 'tg-mcp-owner'), 16384)).equals(Buffer.from(owner))) throw new ProtectionError(); }
+    catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; await writeProtectedFile(commandDir, 'tg-mcp-owner', Buffer.from(owner), 0o755); }
+  }
+  private ownerCommand(layout: InstallLayout): string {
+    const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+    return `#!/bin/sh\n[ "$#" -eq 1 ] && [ "$1" = setup ] || exit 1\nexec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin ${quote(layout.node)} ${quote(join(layout.application, 'dist/setup/ownerCli.js'))} terminal ${quote(basename(layout.release))}\n`;
   }
   private agentCommand(layout: InstallLayout, port: number): string {
     const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -184,6 +190,8 @@ export class PosixProvisionBackend implements ProvisionBackend {
         await attestAncestry(join(layout.prefix, 'bin'));
         const command = join(layout.prefix, 'bin', 'tg-mcp');
         if (!(await boundedRootFile(command, 16384)).equals(Buffer.from(this.agentCommand(layout, receipt.plan.port))) || ((await lstat(command)).mode & 0o111) !== 0o111) return false;
+        const owner = join(layout.prefix, 'bin', 'tg-mcp-owner');
+        if (!(await boundedRootFile(owner, 16384)).equals(Buffer.from(this.ownerCommand(layout))) || ((await lstat(owner)).mode & 0o111) !== 0o111) return false;
       }
       return true;
     } catch { return false; }

@@ -559,6 +559,54 @@
     {
       "source": "src/install/__tests__/permissions.test.ts",
       "destination": "src/install/__tests__/permissions.test.ts"
+    },
+    {
+      "source": "docs/owner-setup.md",
+      "destination": "docs/owner-setup.md"
+    },
+    {
+      "source": "src/setup/owner.ts",
+      "destination": "src/setup/owner.ts"
+    },
+    {
+      "source": "src/setup/credentials.ts",
+      "destination": "src/setup/credentials.ts"
+    },
+    {
+      "source": "src/setup/serviceControl.ts",
+      "destination": "src/setup/serviceControl.ts"
+    },
+    {
+      "source": "src/setup/__tests__/owner.test.ts",
+      "destination": "src/setup/__tests__/owner.test.ts"
+    },
+    {
+      "source": "src/setup/installed.ts",
+      "destination": "src/setup/installed.ts"
+    },
+    {
+      "source": "src/setup/promptChannel.ts",
+      "destination": "src/setup/promptChannel.ts"
+    },
+    {
+      "source": "src/setup/ownerCli.ts",
+      "destination": "src/setup/ownerCli.ts"
+    },
+    {
+      "source": "src/setup/ownerWindows.ts",
+      "destination": "src/setup/ownerWindows.ts"
+    },
+    {
+      "source": "src/setup/__tests__/promptChannel.test.ts",
+      "destination": "src/setup/__tests__/promptChannel.test.ts"
+    },
+    {
+      "source": "scripts/install/owner-protection.ps1",
+      "destination": "scripts/install/owner-protection.ps1"
+    },
+    {
+      "source": "scripts/install/owner-windows.ps1",
+      "destination": "scripts/install/owner-windows.ps1"
     }
   ],
   "excludedTrackedFiles": [

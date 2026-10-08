@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, copyFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 if (process.platform === 'darwin') {
@@ -14,4 +14,9 @@ if (process.platform === 'win32') {
   mkdirSync(new URL('../dist/native/',import.meta.url),{recursive:true});
   const compiler=(process.env.SystemRoot || 'C:\\Windows')+'\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe';
   execFileSync(compiler,['/nologo','/target:exe','/out:'+output,'/r:System.ServiceProcess.dll','/r:System.Web.Extensions.dll',source],{stdio:'inherit',timeout:30000});
+}
+
+if (process.platform === 'win32') {
+  mkdirSync(new URL('../dist/setup/', import.meta.url), { recursive: true });
+  for (const name of ['owner-protection.ps1', 'owner-windows.ps1', 'provision-windows.ps1']) copyFileSync(new URL('./install/' + name, import.meta.url), new URL('../dist/setup/' + name, import.meta.url));
 }

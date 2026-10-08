@@ -9,8 +9,25 @@ import { isGatewayError } from './errors.js';
 import type { AccountLimiter, CallOptions, LaneStatus } from './limiter.js';
 import { createLogger, type Logger } from './log.js';
 import type { EntitiesRepo } from '../storage/port.js';
+import { DeadlineError, withTimeout } from './time.js';
 
 export type TgCallOptions = Partial<CallOptions>;
+
+/** Authentication library calls also enter the same core queue/deadline boundary. */
+export function queueLoginCalls(client: TelegramClient, accountId: string, limiter: AccountLimiter, fatal: () => never, connectTimeoutMs = 30_000): () => void {
+  const original = client.invoke;
+  if (typeof original !== 'function') return () => undefined;
+  const invoke = original.bind(client);
+  const connect = client.connect;
+  if (typeof connect === 'function') client.connect = (async () => {
+    try { return await withTimeout(connect.call(client), connectTimeoutMs, 'auth connection'); }
+    catch (err) { if (err instanceof DeadlineError) return fatal(); throw err; }
+  }) as TelegramClient['connect'];
+  client.invoke = (async (request: Api.AnyRequest, dcId?: number, options?: Api.ApiCallOptions) => limiter.run(accountId, () => invoke(request, dcId, options), {
+    label: (request as { className?: string }).className ?? 'auth', write: true,
+  })) as TelegramClient['invoke'];
+  return () => { client.invoke = original; client.connect = connect; };
+}
 
 export interface Tg {
   /** MTProto request in the account lane; cache response entities per account. */
