@@ -8,7 +8,7 @@ import { ownerSetup, pendingClientToken, acknowledgeClientToken, type OwnerWorke
 import { ApiCredentialFile } from '../credentials.js';
 import { sha256Hex, unseal } from '../../core/crypto.js';
 
-const plan: OwnerPlan = { setup_id: '12345678-1234-4234-8234-123456789012', account: 'fixture_account', user: 'fixture_user', replace_session: false, rotate_token: false };
+const plan: OwnerPlan = { setup_id: '12345678-1234-4234-8234-123456789012', account: 'fixture_account', user: 'fixture_user', replace_session: false, rotate_token: false, clients: [] };
 const stores: SqliteStorage[]=[];const roots: string[]=[];
 afterEach(()=>{for(const store of stores.splice(0))store.close();for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true})});
 function fixture() {
@@ -62,10 +62,10 @@ describe('authorized owner worker core',()=>{
     const result=await ownerSetup(plan,f.deps);expect(result.phase).toBe('failed');expect(f.prompts).not.toHaveBeenCalled();expect(f.factory).not.toHaveBeenCalled();expect(f.storage.users.list()).toEqual([]);
     expect(JSON.stringify(result)).not.toContain('fixture-secret');
   });
-  it('cancels human input without issuing tokens/accounts and retains entered credentials for resume',async()=>{
+  it('cancels human input without issuing accounts or caching an unverified API pair',async()=>{
     const f=fixture();f.prompts.mockImplementation(async question=>{if(question.includes('phone'))throw new Error('fixture-secret-cancel');return question.includes('id')?'12345':'a'.repeat(32)});
     expect((await ownerSetup(plan,f.deps)).phase).toBe('failed');expect(f.factory).not.toHaveBeenCalled();expect(f.storage.sessions.get(plan.account)).toBeNull();expect(f.storage.users.list()).toEqual([]);
-    expect(await f.deps.credentials.read()).toEqual({apiId:12345,apiHash:'a'.repeat(32)});
+    expect(await f.deps.credentials.read()).toBeNull();
   });
   it('requires explicit token rotation and preserves sessions when it is approved',async()=>{
     const f=fixture();await ownerSetup(plan,f.deps);const old=f.storage.users.get(plan.user)!.tokenSha256;

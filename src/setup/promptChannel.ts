@@ -4,6 +4,7 @@ import type { Readable, Writable } from 'node:stream';
 import type { CliIo } from '../cli/io.js';
 import { ownerPlanSchema } from './owner.js';
 import { setupIdSchema, SetupError } from './contract.js';
+import { withTimeout } from '../core/time.js';
 
 export const questions = {
   api_id: 'Telegram application id: ', api_hash: 'Telegram application hash: ',
@@ -11,14 +12,18 @@ export const questions = {
 } as const;
 const questionSchema = z.enum(['api_id', 'api_hash', 'phone', 'code', 'password']);
 export const ownerResultSchema = z.strictObject({ format_version: z.literal(1), setup_id: setupIdSchema,
-  phase: z.enum(['needs_client_configuration', 'needs_existing_client_credential', 'failed']),
+  phase: z.enum(['needs_client_configuration', 'needs_existing_client_credential', 'needs_service_start', 'failed']),
   error_code: z.enum(['invalid_owner_input', 'owner_step_failed']).nullable() });
 export const workerMessageSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('profile'), setup_id: setupIdSchema, port: z.number().int().min(1).max(65535) }),
+  z.strictObject({ kind: z.literal('handoff'), setup_id: setupIdSchema, port: z.number().int().min(1).max(65535),
+    token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/), clients: z.array(z.enum(['codex', 'claude', 'opencode', 'hermes'])).min(1).max(4) }),
   z.strictObject({ kind: z.literal('prompt'), sequence: z.number().int().positive(), question: questionSchema }),
   z.strictObject({ kind: z.literal('result'), result: ownerResultSchema }),
 ]);
 export const coordinatorMessageSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('plan'), plan: ownerPlanSchema }),
+  z.strictObject({ kind: z.literal('plan'), plan: ownerPlanSchema, existing_token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/).nullable().default(null) }),
+  z.strictObject({ kind: z.literal('client_ack'), setup_id: setupIdSchema, token_sha256: z.string().regex(/^[0-9a-f]{64}$/) }),
   z.strictObject({ kind: z.literal('answer'), sequence: z.number().int().positive(), value: z.string().max(512) }),
 ]);
 /** No readline buffering: reject oversized/partial/multiple queued messages before allocating more. */
@@ -45,6 +50,15 @@ export async function sendPrivate(output: Writable, message: unknown): Promise<v
   const bytes = JSON.stringify(message) + '\n';
   if (Buffer.byteLength(bytes) > 2049) throw new SetupError('invalid_state');
   await new Promise<void>((resolve, reject) => output.write(bytes, err => err ? reject(new SetupError('invalid_state')) : resolve()));
+}
+export async function nextPrivate(input: AsyncIterator<string>, signal: AbortSignal, timeoutMs = 300000): Promise<IteratorResult<string>> {
+  let cancel: () => void = () => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    cancel = () => reject(new SetupError('invalid_state'));
+    signal.addEventListener('abort', cancel, { once: true }); if (signal.aborted) cancel();
+  });
+  try { return await withTimeout(Promise.race([input.next(), aborted]), timeoutMs, 'private owner input'); }
+  finally { signal.removeEventListener('abort', cancel); }
 }
 export function workerIo(input: AsyncIterator<string>, output: Writable): CliIo {
   let sequence = 0;

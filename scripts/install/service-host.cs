@@ -3,6 +3,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using Microsoft.Win32.SafeHandles;
 using System.ServiceProcess;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
@@ -47,6 +53,54 @@ public sealed class GatewayService : ServiceBase {
     }
     private static readonly object logLock=new object();
     private static void Append(string directory,string name,string line) { lock(logLock){try{File.AppendAllText(Path.Combine(directory,name),line+Environment.NewLine);}catch{}} }
-    protected override void OnStop() { if(child!=null){try{if(!child.HasExited)child.Kill();child.WaitForExit();}catch{throw new InvalidOperationException("gateway_worker_stop_failed");}child.Dispose();child=null;} }
-    public static void Main() { ServiceBase.Run(new GatewayService()); }
+    protected override void OnStop() { if(child!=null){try{if(!child.HasExited){try{child.Kill();}catch{if(!child.HasExited)throw;}}child.WaitForExit();}catch{throw new InvalidOperationException("gateway_worker_stop_failed");}child.Dispose();child=null;} }
+    [DllImport("kernel32.dll",SetLastError=true)] private static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe,out uint pid);
+    [DllImport("kernel32.dll",SetLastError=true)] private static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
+    [DllImport("advapi32.dll",SetLastError=true)] private static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+    private static void Immutable(string path) {
+        FileSystemInfo item=Directory.Exists(path)?(FileSystemInfo)new DirectoryInfo(path):new FileInfo(path);
+        if(!item.Exists||(item.Attributes&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException();
+        FileSystemSecurity acl;if(item is DirectoryInfo)acl=((DirectoryInfo)item).GetAccessControl();else acl=((FileInfo)item).GetAccessControl();
+        string owner=acl.GetOwner(typeof(SecurityIdentifier)).Value;
+        if(owner!="S-1-5-32-544"&&owner!="S-1-5-18")throw new InvalidDataException();
+        FileSystemRights mutation=FileSystemRights.Write|FileSystemRights.Delete|FileSystemRights.DeleteSubdirectoriesAndFiles|FileSystemRights.ChangePermissions|FileSystemRights.TakeOwnership;
+        if(String.Equals(path,"C:\\",StringComparison.OrdinalIgnoreCase)||String.Equals(path,"C:\\ProgramData",StringComparison.OrdinalIgnoreCase))mutation&=~(FileSystemRights.CreateFiles|FileSystemRights.CreateDirectories);
+        foreach(FileSystemAccessRule rule in acl.GetAccessRules(true,true,typeof(SecurityIdentifier))) {
+            string sid=rule.IdentityReference.Value;
+            if(rule.AccessControlType==AccessControlType.Allow&&sid!="S-1-5-32-544"&&sid!="S-1-5-18"&&(rule.FileSystemRights&mutation)!=0)throw new InvalidDataException();
+        }
+    }
+    private static void OwnerBroker(string id,string sha) {
+        if(!Regex.IsMatch(id,"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")||!Regex.IsMatch(sha,"^[0-9a-f]{40}$")
+            ||!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))throw new InvalidDataException();
+        string release=Path.Combine("C:\\ProgramData\\TelegramMCPGateway\\releases",sha);
+        string self=System.Reflection.Assembly.GetExecutingAssembly().Location;
+        if(!String.Equals(self,Path.Combine(release,"application","dist","native","service-host.exe"),StringComparison.OrdinalIgnoreCase))throw new InvalidDataException();
+        string script=Path.Combine(release,"application","dist","setup","owner-windows.ps1");
+        for(string path=script;path!=null;path=Path.GetDirectoryName(path)){Immutable(path);}
+        using(var pipe=new NamedPipeClientStream(".","TelegramMCPSetup-"+id,PipeDirection.InOut,PipeOptions.Asynchronous)) {
+            pipe.Connect(10000);uint pid;if(!GetNamedPipeServerProcessId(pipe.SafePipeHandle,out pid))throw new InvalidDataException();
+            IntPtr process=OpenProcess(0x1000,false,pid);IntPtr token=IntPtr.Zero;
+            try {
+                if(process==IntPtr.Zero||!OpenProcessToken(process,8,out token))throw new InvalidDataException();
+                using(var identity=new WindowsIdentity(token)){if(identity.User.Value!=WindowsIdentity.GetCurrent().User.Value)throw new InvalidDataException();}
+            } finally {if(token!=IntPtr.Zero)CloseHandle(token);if(process!=IntPtr.Zero)CloseHandle(process);}
+            string powershell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe");
+            var start=new ProcessStartInfo(powershell,"-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "+Quoted(script)+" -SourceSha "+sha+" -BrokerStdio");
+            start.UseShellExecute=false;start.CreateNoWindow=true;start.RedirectStandardInput=true;start.RedirectStandardOutput=true;start.RedirectStandardError=true;
+            start.EnvironmentVariables.Clear();start.EnvironmentVariables["SystemRoot"]=Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            using(var worker=Process.Start(start)) {
+                if(worker==null)throw new InvalidDataException();worker.ErrorDataReceived+=(sender,e)=>{};worker.BeginErrorReadLine();
+                Task.Run(()=>{try{pipe.CopyTo(worker.StandardInput.BaseStream);}catch{}finally{try{worker.StandardInput.Close();}catch{}}});
+                try {worker.StandardOutput.BaseStream.CopyTo(pipe);worker.WaitForExit();Environment.ExitCode=worker.ExitCode;}
+                finally {try{worker.StandardInput.Close();}catch{}if(!worker.HasExited){if(!worker.WaitForExit(30000)){worker.Kill();worker.WaitForExit();}}}
+            }
+        }
+    }
+    public static void Main(string[] args) {
+        if(args.Length==0){ServiceBase.Run(new GatewayService());return;}
+        try {if(args.Length!=3||args[0]!="owner-broker")throw new InvalidDataException();OwnerBroker(args[1],args[2]);}
+        catch {Environment.ExitCode=1;}
+    }
 }

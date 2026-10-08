@@ -9,7 +9,7 @@ import { readProtectedRootFile } from './installed.js';
 import { SetupError } from './contract.js';
 const run = promisify(execFile);
 const options = { env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }, timeout: 15000, maxBuffer: 16384 };
-export interface StoppedService { wasRunning: boolean; restore(): Promise<void>; }
+export interface StoppedService { wasRunning: boolean; restore(activate?: boolean): Promise<void>; }
 
 export async function stopPosixService(layout: InstallLayout): Promise<StoppedService> {
   if (process.getuid?.() !== 0 || process.platform !== layout.platform || layout.platform === 'win32') throw new SetupError('protection_unverified');
@@ -22,10 +22,11 @@ export async function stopPosixService(layout: InstallLayout): Promise<StoppedSe
     if (wasRunning) await run('/bin/launchctl', ['bootout', target], options);
     // The worker, running as the service owner, must acquire the session lease.
     // A root probe cannot use the service-owned lease's owner-only API.
-    return { wasRunning, restore: async () => {
-      if (!wasRunning) return;
+    return { wasRunning, restore: async (activate = false) => {
+      if (!wasRunning && !activate) return;
       await run('/bin/launchctl', ['enable', target], options);
       await run('/bin/launchctl', ['bootstrap', 'system', layout.definition], options);
+      await run('/bin/launchctl', ['kickstart', target], options);
     } };
   }
   const unit = `${layout.service}.service`;
@@ -49,10 +50,11 @@ export async function stopPosixService(layout: InstallLayout): Promise<StoppedSe
   }
   await run('/usr/bin/systemctl', ['daemon-reload'], options);
   await run('/usr/bin/systemctl', ['stop', unit], options);
-  return { wasRunning, restore: async () => {
+  return { wasRunning, restore: async (activate = false) => {
     await attestAncestry(dirname(dropFile));
     if (!(await readProtectedRootFile(dropFile, 1024)).equals(definition)) throw new SetupError('protection_unverified');
     await unlink(dropFile); await run('/usr/bin/systemctl', ['daemon-reload'], options);
-    if (wasRunning) await run('/usr/bin/systemctl', ['start', unit], options);
+    if (activate) await run('/usr/bin/systemctl', ['enable', unit], options);
+    if (wasRunning || activate) await run('/usr/bin/systemctl', ['start', unit], options);
   } };
 }

@@ -27,7 +27,7 @@ export const terminalIo: CliIo = {
         if (settled) return;
         settled = true; options.signal?.removeEventListener('abort', cancel); rl.close();
         if (options.hidden) process.stderr.write('\n');
-        if (answer === undefined) reject(new Error('Cancelled.')); else resolve(answer.trim());
+        if (answer === undefined) reject(new Error('Cancelled.')); else resolve(options.hidden ? answer : answer.trim());
       };
       const cancel = (): void => finish();
       rl.on('close', cancel); rl.on('SIGINT', cancel);

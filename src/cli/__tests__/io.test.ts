@@ -9,12 +9,12 @@ async function promptProcess(mode: 'eof' | 'abort' | 'answer'): Promise<{ code: 
     const life=new AbortController();
     if (${JSON.stringify(mode)} === 'abort') setTimeout(()=>life.abort(),25);
     terminalIo.prompt('Private input: ', {hidden:true,signal:life.signal})
-      .then(()=>process.stdout.write('answered')).catch(()=>process.stdout.write('cancelled'));`;
+      .then(answer=>process.stdout.write(answer==='  synthetic-hidden-answer  '?'answered-exact':'answered')).catch(()=>process.stdout.write('cancelled'));`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['pipe', 'pipe', 'pipe'] });
   let output = ''; child.stdout.on('data', bytes => { output += bytes; }); child.stderr.on('data', bytes => { output += bytes; });
   const exited = once(child, 'close');
   if (mode === 'eof') child.stdin.end();
-  if (mode === 'answer') child.stdin.end('synthetic-hidden-answer\n');
+  if (mode === 'answer') child.stdin.end('  synthetic-hidden-answer  \n');
   try { const [code] = await exited; return { code, output }; }
   finally { child.kill('SIGKILL'); }
 }
@@ -26,7 +26,7 @@ describe('cancelable human terminal input', () => {
     const result = await promptProcess('abort'); expect(result.code).toBe(0); expect(result.output).toContain('cancelled');
   });
   it('does not echo synthetic answers while still completing the prompt', async () => {
-    const result = await promptProcess('answer'); expect(result.code).toBe(0); expect(result.output).toContain('answered');
+    const result = await promptProcess('answer'); expect(result.code).toBe(0); expect(result.output).toContain('answered-exact');
     expect(result.output).not.toContain('synthetic-hidden-answer');
   });
 });

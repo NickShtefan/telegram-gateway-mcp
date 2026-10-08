@@ -1,0 +1,26 @@
+# Human terminal and four client adapters
+
+The managed owner terminal runs as the original unelevated OS user. Run the installed `tg-mcp-owner setup` on macOS/Linux, or the installed Node with `application/dist/setup/ownerLauncher.js` on Windows. Do not run the launcher as root/administrator. It requests system authorization for a narrowly scoped coordinator after the human stops agents and terminal capture. This operational acknowledgement does not provide independent protection against software running as that same user.
+
+The privileged coordinator owns service control; the service identity owns Telegram login and storage; the original user writes client profiles. No privileged process writes through user-controlled profile paths. macOS/Linux use private child pipes through sudo. Windows uses a first-instance private pipe and the compiled service-host broker: it checks the actual pipe-server process SID against the elevated caller SID before relaying the installed fixed script. Elevation as another user is rejected. Setup input and credentials never appear in process arguments, public status or logs.
+
+Choose any subset of `codex`, `claude`, `opencode` and `hermes`, or skip configuration. The default user-level adapters are:
+
+| Client | Default profile | HTTP configuration |
+|---|---|---|
+| Codex Desktop/CLI | `~/.codex/config.toml` | `mcp_servers.telegram_gateway`, `url`, `enabled`, `http_headers.Authorization` |
+| Claude Code | `~/.claude.json` | `mcpServers.telegram_gateway`, `type: http`, `url`, `headers.Authorization` |
+| OpenCode stable | `~/.config/opencode/opencode.json` | `mcp.telegram_gateway`, `type: remote`, `url`, `enabled`, `oauth: false`, `headers.Authorization` |
+| Hermes | `~/.hermes/config.yaml` | `mcp_servers.telegram_gateway`, `url`, `enabled`, `headers.Authorization` |
+
+These contracts were read from [official OpenAI MCP documentation](https://learn.chatgpt.com/docs/extend/mcp), [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp), [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) and [Hermes MCP configuration reference](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference/). Codex host clients share their MCP configuration. OpenCode's development/v2 schema is separate and is not silently treated as the stable schema. Provider installation/sign-in and custom, project or managed profiles remain separate operations. Recognized environment overrides stop default-profile setup rather than writing an inactive profile.
+
+JSON/JSONC changes target only the gateway entry; YAML uses document edits; TOML appends/replaces only a terminal managed block while preserving the original text elsewhere. Configuration is parsed again and unrelated semantics are compared after editing. Duplicate keys, unsupported aliases/tags, invalid UTF-8, redirects, oversized files and changed concurrent state fail without guessing a repair. A conflicting gateway entry requires a direct human replacement choice. Repeating identical configuration does not rewrite it.
+
+Credentials travel directly from service storage to the selected profiles through the private coordinator channel. New users' pending tokens remain sealed for retry until all selected writes acknowledge the exact token hash. Existing selected gateway profiles can supply a credential for reuse, but the service validates it against the chosen gateway user. The installer never prints a token or silently rotates one. To add another client after handoff, include a previously configured client in the selection so its existing credential can be reused. Operation UUIDs are stable per source/user and are correlation only; OS authorization and session ownership remain mandatory.
+
+New files are attested as private before any bearer bytes are written. Windows prepares an empty temporary file's explicit owner/System/Administrators ACL before filling it; POSIX uses owner-only permissions. The file is synced, the prior file/inode is rechecked, and replacement is atomic. Client processes should stay stopped during edits. These owner-readable credentials are intentionally available to that owner's agents; Telegram sessions and the session key remain service-private.
+
+After successful handoff, the worker exits and releases session ownership before the coordinator activates the service. The launcher makes a fresh bounded SDK initialize/tools-list/status check against the core-only loopback endpoint. It returns `sdk_connectivity_verified` separately from `model_tool_loading_verified: false`. SDK connectivity does not prove model/provider tool loading, OS service isolation, a complete no-Node installation or a successful real Telegram read/write. Those are qualification gates, with actual OS/client versions and evidence recorded before release.
+
+Synthetic tests cover transformation preservation, conflict/duplicate/alias rejection, private-before-write ordering, concurrent change preservation, invalid UTF-8, exact handoff receipts, reuse validation, nested ownership/input cancellation and an authenticated fake-gateway SDK probe. Native helper compilation/source checks and real owner-machine qualification are separate evidence.

@@ -18,5 +18,5 @@ if (process.platform === 'win32') {
 
 if (process.platform === 'win32') {
   mkdirSync(new URL('../dist/setup/', import.meta.url), { recursive: true });
-  for (const name of ['owner-protection.ps1', 'owner-windows.ps1', 'provision-windows.ps1']) copyFileSync(new URL('./install/' + name, import.meta.url), new URL('../dist/setup/' + name, import.meta.url));
+  for (const name of ['owner-protection.ps1', 'owner-windows.ps1', 'provision-windows.ps1', 'client-protection.ps1']) copyFileSync(new URL('./install/' + name, import.meta.url), new URL('../dist/setup/' + name, import.meta.url));
 }

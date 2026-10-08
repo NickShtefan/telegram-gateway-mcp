@@ -11,7 +11,9 @@ import { parseSafe, setupIdSchema, SetupError } from './contract.js';
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/);
 export const ownerPlanSchema = z.strictObject({ setup_id: setupIdSchema, account: id, user: id,
-  replace_session: z.boolean().default(false), rotate_token: z.boolean().default(false) });
+  replace_session: z.boolean().default(false), rotate_token: z.boolean().default(false),
+  clients: z.array(z.enum(['codex', 'claude', 'opencode', 'hermes'])).max(4).default([]),
+}).refine(p => new Set(p.clients).size === p.clients.length);
 export type OwnerPlan = z.infer<typeof ownerPlanSchema>;
 export interface ApiCredentials { apiId: number; apiHash: string; }
 const apiSchema = z.strictObject({ apiId: z.number().int().positive(), apiHash: z.string().regex(/^[0-9a-f]{32}$/) });
@@ -26,7 +28,7 @@ export interface OwnerWorkerDeps {
   onFatal?: () => never;
 }
 export interface OwnerResult { format_version: 1; setup_id: string;
-  phase: 'needs_client_configuration' | 'needs_existing_client_credential' | 'failed';
+  phase: 'needs_client_configuration' | 'needs_existing_client_credential' | 'needs_service_start' | 'failed';
   error_code: 'invalid_owner_input' | 'owner_step_failed' | null; }
 const pendingSchema = z.strictObject({ user: id, sealed: z.strictObject({ data: z.string().regex(/^[0-9a-f]{2,512}:[0-9a-f]{32}$/), iv: z.string().regex(/^[0-9a-f]{24}$/) }) });
 function pendingKey(setupId: string): string { return `setup.handoff.${setupId}`; }
@@ -40,12 +42,12 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
       const existingPending = pendingClientToken(deps.storage, p.setup_id, deps.sessionSecret);
       if (existingPending && existingPending.user !== p.user) throw new SetupError('invalid_state');
       let credentials = await deps.credentials.read();
+      const newCredentials = credentials === null;
       if (credentials === null) {
         deps.io.err('Obtain your own application credentials at https://my.telegram.org/apps. Enter them here; never send them to an agent.');
         const apiId = await deps.io.prompt('Telegram application id: ', { hidden: true });
-        const apiHash = await deps.io.prompt('Telegram application hash: ', { hidden: true });
+        const apiHash = (await deps.io.prompt('Telegram application hash: ', { hidden: true })).trim();
         credentials = parseSafe(apiSchema, { apiId: Number(apiId), apiHash }, 'invalid_request');
-        await deps.credentials.write(credentials);
       } else credentials = parseSafe(apiSchema, credentials, 'invalid_state');
       if (!deps.storage.sessions.get(p.account) || p.replace_session) {
         const phone = await deps.io.prompt('Telegram phone (international format): ', { hidden: true });
@@ -55,11 +57,14 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
             password: () => deps.io.prompt('Telegram two-factor password: ', { hidden: true }) },
           log: createLogger('owner-login', { level: 'silent' }), onFatal: deps.onFatal,
         });
+        // Do not cache a mistyped API pair on failed/canceled first login.
+        // Existing sessions with a missing API file require explicit repair.
+        if (newCredentials) await deps.credentials.write(credentials);
         deps.storage.transaction(() => {
           deps.storage.accounts.upsert({ id: p.account, ...logged.identity, status: 'active' });
           deps.storage.sessions.put(p.account, seal(logged.session, deps.sessionSecret));
         });
-      }
+      } else if (newCredentials) throw new SetupError('invalid_state');
       let pending = deps.storage.kv.get(pendingKey(p.setup_id));
       const user = deps.storage.users.get(p.user);
       deps.storage.transaction(() => {

@@ -611,6 +611,58 @@
     {
       "source": "src/cli/__tests__/io.test.ts",
       "destination": "src/cli/__tests__/io.test.ts"
+    },
+    {
+      "source": "docs/client-adapters.md",
+      "destination": "docs/client-adapters.md"
+    },
+    {
+      "source": "scripts/install/client-protection.ps1",
+      "destination": "scripts/install/client-protection.ps1"
+    },
+    {
+      "source": "src/setup/clientConfig.ts",
+      "destination": "src/setup/clientConfig.ts"
+    },
+    {
+      "source": "src/setup/clientFile.ts",
+      "destination": "src/setup/clientFile.ts"
+    },
+    {
+      "source": "src/setup/clientHandoff.ts",
+      "destination": "src/setup/clientHandoff.ts"
+    },
+    {
+      "source": "src/setup/clientProbe.ts",
+      "destination": "src/setup/clientProbe.ts"
+    },
+    {
+      "source": "src/setup/ownerProfile.ts",
+      "destination": "src/setup/ownerProfile.ts"
+    },
+    {
+      "source": "src/setup/ownerLauncher.ts",
+      "destination": "src/setup/ownerLauncher.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientConfig.test.ts",
+      "destination": "src/setup/__tests__/clientConfig.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientFile.test.ts",
+      "destination": "src/setup/__tests__/clientFile.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientHandoff.test.ts",
+      "destination": "src/setup/__tests__/clientHandoff.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientProbe.test.ts",
+      "destination": "src/setup/__tests__/clientProbe.test.ts"
+    },
+    {
+      "source": "scripts/checks/windows-owner-contract.ps1",
+      "destination": "scripts/checks/windows-owner-contract.ps1"
     }
   ],
   "excludedTrackedFiles": [
