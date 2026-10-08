@@ -17,7 +17,7 @@ export const ownerResultSchema = z.strictObject({ format_version: z.literal(1), 
 export const workerMessageSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('profile'), setup_id: setupIdSchema, port: z.number().int().min(1).max(65535) }),
   z.strictObject({ kind: z.literal('handoff'), setup_id: setupIdSchema, port: z.number().int().min(1).max(65535),
-    token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/), clients: z.array(z.enum(['codex', 'claude', 'opencode', 'hermes'])).min(1).max(4) }),
+    token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/), service_evidence: z.literal('listener_owned_by_service').optional(), clients: z.array(z.enum(['codex', 'claude', 'opencode', 'hermes'])).min(1).max(4) }),
   z.strictObject({ kind: z.literal('prompt'), sequence: z.number().int().positive(), question: questionSchema }),
   z.strictObject({ kind: z.literal('result'), result: ownerResultSchema }),
 ]);

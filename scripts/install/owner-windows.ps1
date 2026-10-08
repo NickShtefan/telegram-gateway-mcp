@@ -111,7 +111,7 @@ try {
   if(Test-Path -LiteralPath $planTemporary){$null=AssertProtected $planTemporary $sid $true $true;Remove-Item -LiteralPath $planTemporary}
   @{format_version=1;source_sha=$SourceSha;legacy_setup_id=$legacyId;plan=@{setup_id=$id;account=$account;user=$user;replace_session=$false;rotate_token=$false;clients=$clients}}|ConvertTo-Json -Depth 8 -Compress|Set-Content -LiteralPath $planTemporary -Encoding UTF8
   Protect $planTemporary $sid $true $false;Move-Item -LiteralPath $planTemporary -Destination $planPath -Force
-  foreach($name in @('answer.json','answer.json.next','request.json','request.json.next','existing-credential.json','client-ack.json','client-ack.json.next')){
+  foreach($name in @('answer.json','answer.json.next','request.json','request.json.next','existing-credential.json','client-ack.json','client-ack.json.next','client-acknowledged.json','client-acknowledged.json.next','handoff.json','handoff.json.next')){
     $path=Join-Path $mailbox $name
     if(Test-Path -LiteralPath $path){$null=AssertProtected $path $sid $true $true;Remove-Item -LiteralPath $path}
   }
@@ -143,16 +143,6 @@ try {
       if($item.PSIsContainer -or $item.Length -gt 2048){throw 'invalid'}
       $request=Get-Content -LiteralPath $requestPath -Raw|ConvertFrom-Json
       if($request.kind -ceq 'result'){$result=$request.result;break}
-      if($request.kind -ceq 'handoff'){
-        if(-not $BrokerStdio -or $request.setup_id -cne $id -or $request.port -ne $receipt.port -or $request.token -cnotmatch '^[A-Za-z0-9_-]{32,256}$' -or (@($request.clients) -join ',') -cne ($clients -join ',')){throw 'invalid'}
-        $digest=[Security.Cryptography.SHA256]::Create();try{$tokenHash= -join ($digest.ComputeHash([Text.Encoding]::UTF8.GetBytes($request.token))|ForEach-Object {$_.ToString('x2')})}finally{$digest.Dispose()}
-        if($handed){if($tokenHash -cne $handedHash){throw 'changed_handoff'};Start-Sleep -Milliseconds 100;continue}
-        BrokerWrite @{kind='handoff';setup_id=$id;port=$receipt.port;token=$request.token;clients=$clients};$ack=BrokerRead
-        if($ack.kind -cne 'client_ack' -or $ack.setup_id -cne $id -or $ack.token_sha256 -cne $tokenHash){throw 'invalid'}
-        $ackPath=Join-Path $mailbox 'client-ack.json.next';$ack|ConvertTo-Json -Compress|Set-Content -LiteralPath $ackPath -Encoding UTF8;Protect $ackPath $sid $true $false
-        Move-Item -LiteralPath $ackPath -Destination (Join-Path $mailbox 'client-ack.json');$handed=$true;$handedHash=$tokenHash
-        Start-Sleep -Milliseconds 100;continue
-      }
       if($request.kind -cne 'prompt' -or -not $questions.ContainsKey($request.question)){throw 'invalid'}
       if($request.sequence -eq $sequence){Start-Sleep -Milliseconds 100;continue}
       if($request.sequence -ne ($sequence+1)){throw 'invalid'};$sequence++
@@ -175,16 +165,56 @@ try {
   }
   if($null -eq $result -or $result.setup_id -cne $id -or $result.format_version -ne 1 -or $result.phase -notin @('needs_client_configuration','needs_existing_client_credential','needs_service_start','failed') -or $result.error_code -notin @($null,'invalid_owner_input','owner_step_failed')){throw 'invalid'}
   # Emit an explicit allowlist, never arbitrary service-private fields.
-  $activate=$result.phase -ceq 'needs_service_start'
+  if($result.phase -ceq 'needs_service_start'){
+    if(-not $BrokerStdio){throw 'invalid'};$handoffPath=Join-Path $mailbox 'handoff.json';$null=AssertProtected $handoffPath $sid $true $true
+    if((Get-Item -LiteralPath $handoffPath).Length -gt 2048){throw 'invalid'};$handoff=Get-Content -LiteralPath $handoffPath -Raw|ConvertFrom-Json
+    if($handoff.kind -cne 'handoff' -or $handoff.setup_id -cne $id -or $handoff.port -ne $receipt.port -or $handoff.token -cnotmatch '^[A-Za-z0-9_-]{32,256}$' -or (@($handoff.clients) -join ',') -cne ($clients -join ',')){throw 'invalid'}
+    $activate=$true
+  }
 } catch {[Console]::Error.WriteLine('{"format_version":1,"error_code":"owner_step_failed"}');$failed=$true}
 finally {
   if($started){Stop-Service $service;(Get-Service $service).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))}
-  if($mailbox){foreach($name in @('answer.json','answer.json.next','request.json','request.json.next','existing-credential.json','client-ack.json','client-ack.json.next')){$path=Join-Path $mailbox $name;if(Test-Path -LiteralPath $path){$null=AssertProtected $path $sid $true $true;Remove-Item -LiteralPath $path}}}
+  if($mailbox){foreach($name in @('answer.json','answer.json.next','request.json','request.json.next','existing-credential.json','client-ack.json','client-ack.json.next','client-acknowledged.json','client-acknowledged.json.next','handoff.json','handoff.json.next')){$path=Join-Path $mailbox $name;if(Test-Path -LiteralPath $path){$null=AssertProtected $path $sid $true $true;Remove-Item -LiteralPath $path}}}
   if($frozen){$null=& $sc failure $service reset= 86400 actions= restart/3000/restart/10000/restart/30000;if($LASTEXITCODE -ne 0){throw 'owner_restore_failed'};if($activate){$null=& $sc config $service start= auto;if($LASTEXITCODE -ne 0){throw 'owner_activate_failed'};@{source_sha=$SourceSha;activated=$true}|ConvertTo-Json -Compress|Set-Content -LiteralPath $readyPath -Encoding UTF8;Protect $readyPath $sid $false $false};if($wasRunning -or $activate){Start-Service $service}}
+}
+try {
+  if($failed -or ($result -and $result.phase -ceq 'failed')){exit 1}
+  if($activate){
+    $until=[DateTime]::UtcNow.AddSeconds(15);$listener=$false
+    while([DateTime]::UtcNow -lt $until){
+      $serviceNow=Get-CimInstance Win32_Service -Filter "Name='TelegramMCPGateway'"
+      if($serviceNow.State -cne 'Running' -or $serviceNow.ProcessId -le 0){Start-Sleep -Milliseconds 100;continue}
+      $processes=Get-CimInstance Win32_Process -Filter ("ParentProcessId="+$serviceNow.ProcessId)
+      foreach($process in $processes){
+        if($process.ExecutablePath -cne $config.node){continue}
+        $identity=Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid
+        if($identity.Sid -cne $sid){continue}
+        $connection=Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $receipt.port -State Listen -ErrorAction SilentlyContinue|Where-Object {$_.OwningProcess -eq $process.ProcessId}
+        if($connection){$listener=$true;break}
+      }
+      if($listener){break};Start-Sleep -Milliseconds 100
+    }
+    if(-not $listener){throw 'listener_unverified'}
+    $digest=[Security.Cryptography.SHA256]::Create();try{$tokenHash= -join ($digest.ComputeHash([Text.Encoding]::UTF8.GetBytes($handoff.token))|ForEach-Object {$_.ToString('x2')})}finally{$digest.Dispose()}
+    BrokerWrite @{kind='handoff';setup_id=$id;port=$receipt.port;token=$handoff.token;clients=$clients;service_evidence='listener_owned_by_service'}
+    $ack=BrokerRead
+    if($ack.kind -cne 'client_ack' -or $ack.setup_id -cne $id -or $ack.token_sha256 -cne $tokenHash){throw 'invalid'}
+    $ackPath=Join-Path $mailbox 'client-ack.json.next';$ack|ConvertTo-Json -Compress|Set-Content -LiteralPath $ackPath -Encoding UTF8;Protect $ackPath $sid $true $false
+    Move-Item -LiteralPath $ackPath -Destination (Join-Path $mailbox 'client-ack.json')
+    $null=& $sc control $service 129;if($LASTEXITCODE -ne 0){throw 'receipt_failed'}
+    $until=[DateTime]::UtcNow.AddSeconds(35);$received=$false;$receiptPath=Join-Path $mailbox 'client-acknowledged.json'
+    while([DateTime]::UtcNow -lt $until){
+      if(Test-Path -LiteralPath $receiptPath){$null=AssertProtected $receiptPath $sid $true $true;if((Get-Item -LiteralPath $receiptPath).Length -gt 2048){throw 'invalid'}
+        $confirmation=Get-Content -LiteralPath $receiptPath -Raw|ConvertFrom-Json
+        if($confirmation.setup_id -cne $id -or $confirmation.token_sha256 -cne $tokenHash){throw 'invalid'};$received=$true;break}
+      Start-Sleep -Milliseconds 100
+    }
+    if(-not $received){throw 'receipt_failed'}
+  }
+  $public=@{format_version=1;setup_id=$id;phase=$result.phase;error_code=$result.error_code}
+  if($BrokerStdio){BrokerWrite @{kind='result';result=$public}}else{$public|ConvertTo-Json -Compress}
+} catch {[Console]::Error.WriteLine('{"format_version":1,"error_code":"owner_step_failed"}');exit 1}
+finally {
+  if($mailbox){foreach($name in @('client-ack.json','client-ack.json.next','client-acknowledged.json','client-acknowledged.json.next')){$path=Join-Path $mailbox $name;if(Test-Path -LiteralPath $path){$null=AssertProtected $path $sid $true $true;Remove-Item -LiteralPath $path}}}
   if($ownerLock){$ownerLock.Dispose()}
 }
-if($failed -or ($result -and $result.phase -ceq 'failed')){exit 1}
-$public=@{format_version=1;setup_id=$id;phase=$result.phase;error_code=$result.error_code}
-if($BrokerStdio){BrokerWrite @{kind='result';result=$public}}else{$public|ConvertTo-Json -Compress}
-
-

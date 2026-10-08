@@ -17,7 +17,7 @@ import { privateLines, sendPrivate, workerMessageSchema, questions } from './pro
 import { probeConfiguredGateway } from './clientProbe.js';
 import { SetupError } from './contract.js';
 import { withTimeout } from '../core/time.js';
-import { ownerOperationId } from './clientHandoff.js';
+import { ownerOperationId, validatedClientHandoff } from './clientHandoff.js';
 
 async function main(): Promise<number> {
   if (process.argv.length !== 2 || !process.stdin.isTTY || !process.stderr.isTTY || !['darwin', 'linux', 'win32'].includes(process.platform)) throw new SetupError('protection_unverified');
@@ -60,7 +60,7 @@ async function main(): Promise<number> {
   }
   const life = new AbortController(); input.once('end', () => life.abort()); input.once('close', () => life.abort()); input.once('error', () => life.abort());
   let result: Extract<ReturnType<typeof workerMessageSchema.parse>, { kind: 'result' }> | null = null;
-  let setupId: string | null = null; let port = 0; let token: string | null = null; let sequence = 0;
+  let setupId: string | null = null; let port = 0; let token: string | null = null; let sequence = 0; let verified=false;
   try {
     for await (const line of privateLines(input)) {
       const message = workerMessageSchema.parse(JSON.parse(line));
@@ -74,8 +74,8 @@ async function main(): Promise<number> {
         const value = await terminalIo.prompt(questions[message.question], { hidden: true, signal: life.signal });
         await sendPrivate(output, { kind: 'answer', sequence, value });
       } else if (message.kind === 'handoff') {
-        if (!setupId || message.setup_id !== setupId || message.port !== port || message.clients.join(',') !== preview.clients.join(',') || token) throw new SetupError('invalid_state');
-        token = message.token;
+        if (!setupId || token) throw new SetupError('invalid_state');
+        token = validatedClientHandoff(message, setupId, port, preview.clients);
         for (const client of message.clients) {
           try { await configureClient(owner, client, port, token); }
           catch (err) {
@@ -85,6 +85,7 @@ async function main(): Promise<number> {
             await configureClient(owner, client, port, token, true);
           }
         }
+        verified=await probeConfiguredGateway(port,token);if(!verified) throw new SetupError('invalid_state');
         await sendPrivate(output, { kind: 'client_ack', setup_id: setupId, token_sha256: sha256Hex(token) });
       } else {
         if (!setupId || message.result.setup_id !== setupId) throw new SetupError('invalid_state'); result = message;
@@ -92,7 +93,6 @@ async function main(): Promise<number> {
     }
     const code = await close();
     if (!result || code !== 0 || result.result.phase === 'failed') throw new SetupError('invalid_state');
-    const verified = token && result.result.phase === 'needs_service_start' ? await probeConfiguredGateway(port, token) : false;
     terminalIo.out(JSON.stringify({ ...result.result, sdk_connectivity_verified: !!verified, model_tool_loading_verified: false, clients: preview.clients }));
     return result.result.phase === 'needs_service_start' && !verified ? 1 : 0;
   } finally { life.abort(); token = null; await close().catch(() => undefined); }

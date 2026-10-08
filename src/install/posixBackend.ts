@@ -147,7 +147,7 @@ export class PosixProvisionBackend implements ProvisionBackend {
   }
   private ownerCommand(layout: InstallLayout): string {
     const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
-    return `#!/bin/sh\n[ "$#" -eq 1 ] && [ "$1" = setup ] || exit 1\nexec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH ${quote(layout.node)} ${quote(join(layout.application, 'dist/setup/ownerLauncher.js'))}\n`;
+    return `#!/bin/sh\n[ "$#" -eq 1 ] && [ "$1" = setup ] || exit 1\nexec /usr/bin/env -u NODE_OPTIONS -u NODE_PATH -u NODE_USE_ENV_PROXY ${quote(layout.node)} ${quote(join(layout.application, 'dist/setup/ownerLauncher.js'))}\n`;
   }
   private agentCommand(layout: InstallLayout, port: number): string {
     const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;

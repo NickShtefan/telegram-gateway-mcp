@@ -16,16 +16,39 @@ import { ApiCredentialFile } from './credentials.js';
 import { ownerSetup, ownerPlanSchema } from './owner.js';
 import { coordinatorMessageSchema, privateLines, sendPrivate, workerIo, workerMessageSchema, questions, nextPrivate } from './promptChannel.js';
 import { SetupError } from './contract.js';
-import { handoffOwnerClients, ownerOperationId } from './clientHandoff.js';
+import { prepareOwnerClients, acknowledgePreparedClients, ownerOperationId } from './clientHandoff.js';
 import { withTimeout } from '../core/time.js';
+import { attestManagedListener } from './listener.js';
 
 async function main(): Promise<number> {
   const [mode, sha, ...extra] = process.argv.slice(2);
-  if (!['terminal', 'worker', 'root-channel'].includes(mode ?? '') || !/^[0-9a-f]{40}$/.test(sha ?? '') || extra.length) throw new SetupError('invalid_request');
+  if (!['terminal', 'worker', 'ack-worker', 'root-channel'].includes(mode ?? '') || !/^[0-9a-f]{40}$/.test(sha ?? '') || extra.length) throw new SetupError('invalid_request');
   const { layout, receipt } = await installedPosixProfile(sha!);
   const entry = join(layout.application, 'dist/setup/ownerCli.js');
   if (fileURLToPath(import.meta.url) !== entry || process.execPath !== layout.node || receipt.identity?.kind !== 'posix') throw new SetupError('protection_unverified');
   const identity = receipt.identity;
+  if (mode === 'ack-worker') {
+    process.setgroups!([]); process.setgid!(identity.gid); process.setuid!(identity.uid); process.umask(0o077);
+    const input = privateLines(process.stdin)[Symbol.asyncIterator]();
+    const first = await withTimeout(input.next(),30000,'acknowledgement plan'); if(first.done) throw new SetupError('invalid_state');
+    const message=coordinatorMessageSchema.parse(JSON.parse(first.value)); if(message.kind!=='plan') throw new SetupError('invalid_state');
+    const second=await withTimeout(input.next(),30000,'client receipt'); if(second.done) throw new SetupError('invalid_state');
+    const ack=coordinatorMessageSchema.parse(JSON.parse(second.value)); if(ack.kind!=='client_ack'||ack.setup_id!==message.plan.setup_id) throw new SetupError('invalid_state');
+    await attestDirectory(layout.state,[identity.uid],0o077);
+    const lease=await acquireFileLease(layout.state,'setup.lock');
+    try {
+      for(const name of await readdir(layout.state)) {
+        const path=join(layout.state,name);const st=await lstat(path);
+        if(name==='daemon.sock'&&st.isSocket()&&st.uid===identity.uid)continue;
+        if(!st.isFile()||st.isSymbolicLink()||st.uid!==identity.uid||st.nlink!==1||(st.mode&0o077))throw new SetupError('protection_unverified');
+        await attestFile(path,st);
+      }
+      const storage=openStorage(join(layout.state,'gateway.sqlite'));
+      try { acknowledgePreparedClients(message.plan,storage,loadSessionSecret(layout.state,{}),ack.token_sha256,receipt.plan.setup_id); }
+      finally { storage.close(); }
+    } finally { await lease.release(); }
+    return 0;
+  }
   if (mode === 'worker') {
     // Drop supplementary administrator groups before dropping gid/uid.
     process.setgroups!([]); process.setgid!(identity.gid); process.setuid!(identity.uid); process.umask(0o077);
@@ -55,11 +78,8 @@ async function main(): Promise<number> {
             withSetupLease: work => work(), withStoppedDaemon: work => work(), storage,
             credentials: new ApiCredentialFile(layout.state, attestState), sessionSecret: secret, io: workerIo(input, process.stdout),
           });
-          result = await handoffOwnerClients(message.plan, result, storage, secret, receipt.plan.port, message.existing_token,
-            value => sendPrivate(process.stdout, value), async () => {
-              const next = await withTimeout(input.next(), 300000, 'client configuration acknowledgement');
-              if (next.done) throw new SetupError('invalid_state'); return JSON.parse(next.value) as unknown;
-            }, receipt.plan.setup_id);
+          const prepared = prepareOwnerClients(message.plan,result,storage,secret,receipt.plan.port,message.existing_token,receipt.plan.setup_id);
+          result=prepared.result;if(prepared.message) await sendPrivate(process.stdout,prepared.message);
           await sendPrivate(process.stdout, { kind: 'result', result });
           return result.phase === 'failed' ? 1 : 0;
         } finally { storage.close(); }
@@ -88,6 +108,9 @@ async function main(): Promise<number> {
   try {
     const stopped = await stopPosixService(layout);
     let activate = false;
+    let completed: Extract<ReturnType<typeof workerMessageSchema.parse>, {kind:'result'}> | null=null;
+    let pendingHandoff: Extract<ReturnType<typeof workerMessageSchema.parse>, {kind:'handoff'}> | null=null;
+    let exitCode=1;
     try {
       const child = spawn(layout.node, [entry, 'worker', sha!], {
         cwd: layout.release, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', TG_MCP_HOME: layout.state },
@@ -106,11 +129,8 @@ async function main(): Promise<number> {
           if (result) throw new SetupError('invalid_state');
           if (message.kind === 'result') { result = message; continue; }
           if (message.kind === 'handoff' && channel) {
-            await sendPrivate(process.stdout, message);
-            const next = await nextPrivate(parentInput!, inputLife.signal); if (next.done) throw new SetupError('invalid_state');
-            const ack = coordinatorMessageSchema.parse(JSON.parse(next.value));
-            if (ack.kind !== 'client_ack' || ack.setup_id !== plan.setup_id) throw new SetupError('invalid_state');
-            await sendPrivate(child.stdin, ack); continue;
+            if(pendingHandoff||message.setup_id!==plan.setup_id||message.port!==receipt.plan.port||message.clients.join(',')!==plan.clients.join(',')) throw new SetupError('invalid_state');
+            pendingHandoff=message;continue;
           }
           if (message.kind !== 'prompt') throw new SetupError('invalid_state');
           if (message.sequence !== ++sequence) throw new SetupError('invalid_state');
@@ -128,8 +148,7 @@ async function main(): Promise<number> {
         const code = await exited;
         if (result?.kind !== 'result' || result.result.setup_id !== plan.setup_id || (code === 0) !== (result.result.phase !== 'failed')) throw new SetupError('invalid_state');
         activate = result.result.phase === 'needs_service_start';
-        if (channel) await sendPrivate(process.stdout, result); else terminalIo.out(JSON.stringify(result.result));
-        return code === 0 ? 0 : 1;
+        completed=result;exitCode=code===0?0:1;
       } finally {
         inputLife.abort();
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
@@ -137,6 +156,21 @@ async function main(): Promise<number> {
         await exited;
       }
     } finally { await stopped.restore(activate); }
+    if(activate) {
+      await attestManagedListener(layout,identity.uid,receipt.plan.port);
+      if(!channel||!pendingHandoff) throw new SetupError('invalid_state');
+      await sendPrivate(process.stdout,{...pendingHandoff,service_evidence:'listener_owned_by_service'});
+      const next=await withTimeout(parentInput!.next(),300000,'client configuration'); if(next.done) throw new SetupError('invalid_state');
+      const ack=coordinatorMessageSchema.parse(JSON.parse(next.value));
+      if(ack.kind!=='client_ack'||ack.setup_id!==plan.setup_id) throw new SetupError('invalid_state');
+      const child=spawn(layout.node,[entry,'ack-worker',sha!],{cwd:layout.release,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},stdio:['pipe','ignore','ignore'],timeout:30000,killSignal:'SIGKILL'});
+      const exited=once(child,'close').then(([code])=>code as number|null);
+      try {await sendPrivate(child.stdin,{kind:'plan',plan});await sendPrivate(child.stdin,ack);child.stdin.end();if(await exited!==0) throw new SetupError('invalid_state');}
+      finally {if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');await exited;}
+    }
+    if(!completed) throw new SetupError('invalid_state');
+    if(channel) await sendPrivate(process.stdout,completed);else terminalIo.out(JSON.stringify(completed.result));
+    return exitCode;
   } finally { await rootLease.release(); }
 }
 main().then(code => { process.exitCode = code; }).catch(() => {

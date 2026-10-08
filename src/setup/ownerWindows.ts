@@ -15,7 +15,7 @@ import { loadSessionSecret } from '../core/config.js';
 import { openStorage } from '../storage/sqlite.js';
 import { ApiCredentialFile } from './credentials.js';
 import { setupIdSchema, SetupError } from './contract.js';
-import { handoffOwnerClients } from './clientHandoff.js';
+import { prepareOwnerClients } from './clientHandoff.js';
 const run = promisify(execFile);
 const planSchema = z.strictObject({ format_version: z.literal(1), source_sha: z.string().regex(/^[0-9a-f]{40}$/), legacy_setup_id: setupIdSchema.nullable().default(null), plan: ownerPlanSchema });
 async function main(): Promise<void> {
@@ -27,7 +27,7 @@ async function main(): Promise<void> {
   const powershell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
   const helper = join(layout.application, 'dist/setup/owner-protection.ps1');
   const attest = async (path: string): Promise<void> => {
-    await run(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', helper, '-Path', path, '-RequireServiceIdentity'],
+    await run(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper, '-Path', path, '-RequireServiceIdentity'],
       { windowsHide: true, timeout: 15000, maxBuffer: 1024, env: { SystemRoot: 'C:\\Windows' } });
   };
   const mailbox = join(layout.prefix, 'owner-setup');
@@ -55,15 +55,6 @@ async function main(): Promise<void> {
     existingToken = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/) }).parse(JSON.parse(await read(join(mailbox, 'existing-credential.json')))).token;
     await unlink(join(mailbox, 'existing-credential.json'));
   } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
-  const waitRecord = async (name: string): Promise<unknown> => {
-    const until = Date.now() + 300000;
-    while (Date.now() < until) {
-      try { const value = JSON.parse(await read(join(mailbox, name))) as unknown; await unlink(join(mailbox, name)); return value; }
-      catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    throw new SetupError('invalid_state');
-  };
   const setup = await acquireFileLease(layout.state, 'setup.lock');
   try {
     const session = await acquireLock(layout.state);
@@ -92,8 +83,8 @@ async function main(): Promise<void> {
               }
               throw new SetupError('invalid_state');
             } } });
-        result = await handoffOwnerClients(plan.plan, result, storage, secret, config.port, existingToken,
-          message => write('request.json', message), () => waitRecord('client-ack.json'), plan.legacy_setup_id ?? undefined);
+        const prepared=prepareOwnerClients(plan.plan,result,storage,secret,config.port,existingToken,plan.legacy_setup_id??undefined);
+        result=prepared.result;if(prepared.message) await write('handoff.json',prepared.message);
         existingToken = null;
         await write('request.json', { kind: 'result', result });
         if (result.phase === 'failed') process.exitCode = 1;

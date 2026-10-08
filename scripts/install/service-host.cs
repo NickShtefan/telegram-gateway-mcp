@@ -51,6 +51,20 @@ public sealed class GatewayService : ServiceBase {
             if(!child.Start())throw new InvalidDataException();child.BeginOutputReadLine();child.BeginErrorReadLine();
         } catch { ExitCode=1;throw new InvalidOperationException("gateway_service_start_failed"); }
     }
+    protected override void OnCustomCommand(int command) {
+        if(command!=129||ownerSetup)return;
+        try {
+            string prefix=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"TelegramMCPGateway");
+            string ack=Path.Combine(prefix,"owner-setup","client-ack.json");if(!File.Exists(ack))return;
+            var config=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(prefix,"service.json")));
+            string node=Text(config,"node");string release=Path.GetDirectoryName(node);string sha=Path.GetFileName(release);
+            if(!Regex.IsMatch(sha,"^[0-9a-f]{40}$")||!String.Equals(release,Path.Combine(prefix,"releases",sha),StringComparison.OrdinalIgnoreCase)||!String.Equals(node,Path.Combine(release,"node.exe"),StringComparison.OrdinalIgnoreCase))throw new InvalidDataException();
+            var start=new ProcessStartInfo(node,Quoted(Path.Combine(release,"application","dist","setup","ackWindows.js")));
+            start.UseShellExecute=false;start.CreateNoWindow=true;start.RedirectStandardOutput=true;start.RedirectStandardError=true;start.EnvironmentVariables.Clear();
+            start.EnvironmentVariables["SystemRoot"]=Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            using(var receipt=Process.Start(start)){if(receipt==null)throw new InvalidDataException();receipt.OutputDataReceived+=(sender,e)=>{};receipt.ErrorDataReceived+=(sender,e)=>{};receipt.BeginOutputReadLine();receipt.BeginErrorReadLine();if(!receipt.WaitForExit(30000)){receipt.Kill();receipt.WaitForExit();}}
+        } catch { /* No public/private output and no daemon disruption on a failed receipt. */ }
+    }
     private static readonly object logLock=new object();
     private static void Append(string directory,string name,string line) { lock(logLock){try{File.AppendAllText(Path.Combine(directory,name),line+Environment.NewLine);}catch{}} }
     protected override void OnStop() { if(child!=null){try{if(!child.HasExited){try{child.Kill();}catch{if(!child.HasExited)throw;}}child.WaitForExit();}catch{throw new InvalidOperationException("gateway_worker_stop_failed");}child.Dispose();child=null;} }

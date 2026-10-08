@@ -20,6 +20,7 @@ export function originalOwnerProfile(clients: ClientKind[]): OwnerProfile {
   };
   const authorize = async (): Promise<void> => {
     if (process.platform !== 'win32' && (process.getuid?.() === 0 || process.getuid?.() !== owner.uid)) throw new SetupError('protection_unverified');
+    if(process.env.NODE_USE_ENV_PROXY||process.execArgv.some(arg=>arg.includes('env-proxy')))throw new SetupError('protection_unverified');
     // Custom/managed/project profiles require a separate explicit profile adapter.
     const overrides: Record<ClientKind, string[]> = { codex: ['CODEX_HOME'], claude: ['CLAUDE_CONFIG_DIR'],
       opencode: ['XDG_CONFIG_HOME', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT'], hermes: ['HERMES_HOME', 'HERMES_PROFILE'] };

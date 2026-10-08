@@ -663,6 +663,14 @@
     {
       "source": "scripts/checks/windows-owner-contract.ps1",
       "destination": "scripts/checks/windows-owner-contract.ps1"
+    },
+    {
+      "source": "src/setup/listener.ts",
+      "destination": "src/setup/listener.ts"
+    },
+    {
+      "source": "src/setup/ackWindows.ts",
+      "destination": "src/setup/ackWindows.ts"
     }
   ],
   "excludedTrackedFiles": [
