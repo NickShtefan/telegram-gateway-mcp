@@ -3,6 +3,20 @@
 param([Parameter(Mandatory=$true)][string]$Candidate,[Parameter(Mandatory=$true)][string]$SourceSha,[Parameter(Mandatory=$true)][string]$SignerSha256,[int]$Port=7777,[switch]$PlanOnly)
 $ErrorActionPreference='Stop'
 function Fail {throw 'provision_failed'}
+function RunClean([string]$Executable,[string[]]$Arguments) {
+  $start=New-Object Diagnostics.ProcessStartInfo
+  $start.FileName=$Executable;$start.UseShellExecute=$false
+  # Closed arguments use Windows CRT quoting, including terminal backslashes.
+  $quoted=foreach($argument in $Arguments){'"'+([regex]::Replace([regex]::Replace($argument,'(\\*)"','$1$1\"'),'(\\+)$','$1$1'))+'"'}
+  $start.Arguments=$quoted -join ' '
+  $start.EnvironmentVariables.Clear()
+  $system=[Environment]::GetFolderPath('System');$windows=[Environment]::GetFolderPath('Windows')
+  $start.EnvironmentVariables['SystemRoot']=$windows
+  $start.EnvironmentVariables['WINDIR']=$windows
+  $start.EnvironmentVariables['PATH']=$system
+  $process=[Diagnostics.Process]::Start($start)
+  try{$process.WaitForExit();if($process.ExitCode -ne 0){Fail}}finally{$process.Dispose()}
+}
 function NoReparse([string]$Path) {
   $item=Get-Item -LiteralPath $Path -Force
   if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){Fail}
@@ -70,8 +84,7 @@ try {
   AssertTree $source
   # Reverify inside protected staging with its approved Node, not a caller's runtime.
   $node=Join-Path $Candidate 'node.exe';$null=NoReparse $node
-  & $node (Join-Path $Candidate 'installer.mjs') --version 0.2.0 --source-sha $SourceSha --signer-sha256 $SignerSha256 --verify-extracted
-  if($LASTEXITCODE -ne 0){Fail}
+  RunClean $node @((Join-Path $Candidate 'installer.mjs'),'--version','0.2.0','--source-sha',$SourceSha,'--signer-sha256',$SignerSha256,'--verify-extracted')
   $application=NoReparse (Join-Path $Candidate 'application');if(-not $application.PSIsContainer){Fail}
   $metadata=Get-Content -LiteralPath (Join-Path $application.FullName 'package.json') -Raw|ConvertFrom-Json
   if($metadata.version -cne '0.2.0'){Fail}

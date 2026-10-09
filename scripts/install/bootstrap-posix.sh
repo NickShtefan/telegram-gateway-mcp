@@ -39,23 +39,67 @@ linux_prerequisites() {
   [ -n "$missing" ] || return 0
   printf 'Missing official OS prerequisites:%s\n' "$missing" >&2
   [ "$operation" = install ] && [ "$(/usr/bin/id -u)" -eq 0 ] && [ -t 0 ] && [ -t 2 ] || fail
-  # Names come only from the fixed mapping above, never caller input. Show the
-  # package-manager transaction before consent; no refresh/full OS upgrade.
+  # Isolate package resolution from all configured third-party repositories,
+  # apt hooks/options and pacman Include directives. No global index refresh.
+  package_stage=$(/usr/bin/mktemp -d /tmp/tg-mcp-prerequisites.XXXXXX) || fail
+  trap '/bin/rm -rf "$package_stage"' EXIT HUP INT TERM
+  /bin/chmod 700 "$package_stage"
   if [ "$manager" = ubuntu ]; then
-    [ -x /usr/bin/apt-get ] || fail
-    /usr/bin/apt-get --simulate --no-upgrade --no-install-recommends install $missing >&2 || fail
+    [ -x /usr/bin/apt-get ] && [ -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ] || fail
+    /bin/mkdir "$package_stage/lists" "$package_stage/lists/partial" "$package_stage/archives" "$package_stage/archives/partial"
+    if [ "$arch" = arm64 ]; then mirror=https://ports.ubuntu.com/ubuntu-ports; security=$mirror
+    else mirror=https://archive.ubuntu.com/ubuntu; security=https://security.ubuntu.com/ubuntu; fi
+    /bin/cat >"$package_stage/sources.list" <<EOF
+deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] $mirror noble main universe
+deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] $mirror noble-updates main universe
+deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] $security noble-security main universe
+EOF
+    /bin/cat >"$package_stage/apt.conf" <<EOF
+Dir::Etc::main "/dev/null";
+Dir::Etc::parts "$package_stage/absent";
+Dir::Etc::sourcelist "$package_stage/sources.list";
+Dir::Etc::sourceparts "$package_stage/absent";
+Dir::State::lists "$package_stage/lists";
+Dir::Cache::archives "$package_stage/archives";
+Dir::Cache::pkgcache "";
+Dir::Cache::srcpkgcache "";
+Dir::Etc::preferences "/dev/null";
+Dir::Etc::preferencesparts "$package_stage/absent";
+APT::Sandbox::User "root";
+Acquire::AllowInsecureRepositories "false";
+APT::Get::AllowUnauthenticated "false";
+EOF
+    apt_official() { /usr/bin/env -i PATH=/usr/bin:/bin APT_CONFIG="$package_stage/apt.conf" /usr/bin/apt-get "$@"; }
+    # Refresh only this disposable official-source index, never host sources.
+    apt_official update >&2 || fail
+    apt_official --simulate --no-upgrade --no-install-recommends install $missing >&2 || fail
   else
     [ -x /usr/bin/pacman ] || fail
-    /usr/bin/pacman -Sp --needed --print-format '%n %v %r' $missing >&2 || fail
+    /bin/mkdir "$package_stage/cache"
+    /bin/cat >"$package_stage/pacman.conf" <<EOF
+[options]
+Architecture = x86_64
+CacheDir = $package_stage/cache
+DownloadUser = root
+SigLevel = Required DatabaseOptional
+LocalFileSigLevel = Required
+[core]
+Server = https://geo.mirror.pkgbuild.com/core/os/x86_64
+[extra]
+Server = https://geo.mirror.pkgbuild.com/extra/os/x86_64
+EOF
+    /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/pacman --config "$package_stage/pacman.conf" -Sp --needed --print-format '%n %v %r %l' $missing >&2 || fail
   fi
-  printf 'Type INSTALL to approve only this prerequisite transaction, or cancel: ' >/dev/tty
+  printf 'Type INSTALL to approve only this official-source prerequisite transaction, or cancel: ' >/dev/tty
   IFS= read -r consent </dev/tty || fail
   [ "$consent" = INSTALL ] || fail
   if [ "$manager" = ubuntu ]; then
-    /usr/bin/apt-get --no-upgrade --no-install-recommends install $missing >&2 || fail
+    apt_official --no-upgrade --no-install-recommends install $missing >&2 || fail
   else
-    /usr/bin/pacman -S --needed $missing >&2 || fail
+    /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/pacman --config "$package_stage/pacman.conf" -S --needed $missing >&2 || fail
   fi
+  /bin/rm -rf "$package_stage"
+  trap - EXIT HUP INT TERM
   [ -x /usr/bin/openssl ] && [ -x /usr/bin/perl ] && [ -x /usr/bin/getfacl ] && [ -x /usr/bin/flock ] && [ -x /usr/bin/systemctl ] && [ -x /usr/sbin/useradd ] || fail
 }
 if [ "$target" = linux ]; then linux_prerequisites; fi

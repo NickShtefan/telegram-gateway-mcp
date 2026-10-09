@@ -99,11 +99,13 @@ export function decodeApplicationArchive(compressed: Buffer): ApplicationFile[] 
 }
 
 /** Target must already be an attested empty protected directory; no adoption/overwrite. */
-export async function extractApplicationArchive(compressed: Buffer, target: string, windowsAttest?: (path: string) => Promise<void>): Promise<number> {
+export async function extractApplicationArchive(compressed: Buffer, target: string, windowsAttest?: (paths: readonly string[]) => Promise<void>): Promise<number> {
   const files = decodeApplicationArchive(compressed);
-  if (process.platform === 'win32') { if (!windowsAttest) bad(); await windowsAttest(target); }
+  if (process.platform === 'win32') { if (!windowsAttest) bad(); await windowsAttest([target]); }
   const root = await lstat(target);
   if (!root.isDirectory() || root.isSymbolicLink() || (process.getuid && root.uid !== process.getuid()) || (process.platform !== 'win32' && (root.mode & 0o022) !== 0) || (await readdir(target)).length !== 0) bad();
+  const windows = process.platform === 'win32';
+  const attestationPaths = new Set<string>();
   for (const entry of files) {
     const path = join(target, entry.path);
     const parts = dirname(entry.path).split('/').filter(p => p !== '.'); let directory = target;
@@ -112,10 +114,26 @@ export async function extractApplicationArchive(compressed: Buffer, target: stri
       try { await mkdir(directory, { mode: 0o700 }); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err; }
       const st = await lstat(directory);
       if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid()) || (process.platform !== 'win32' && (st.mode & 0o022) !== 0)) bad();
-      if (process.platform === 'win32') await windowsAttest!(directory);
+      if (windows) attestationPaths.add(directory);
     }
     const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, entry.executable ? 0o700 : 0o600);
-    try { if (process.platform === 'win32') await windowsAttest!(path); await file.writeFile(entry.data); await file.sync(); } finally { await file.close(); }
+    try {
+      if (windows) attestationPaths.add(path);
+      else { await file.writeFile(entry.data); await file.sync(); }
+    } finally { await file.close(); }
+  }
+  if (windows) {
+    // Empty children inherit the already attested private root ACL. Inspect all
+    // unique paths in one bounded process before writing any executable payload.
+    await windowsAttest!([...attestationPaths]);
+    for (const entry of files) {
+      const file = await open(join(target, entry.path), constants.O_WRONLY | constants.O_NOFOLLOW);
+      try {
+        const st = await file.stat();
+        if (!st.isFile() || st.nlink !== 1 || st.size !== 0) bad();
+        await file.writeFile(entry.data); await file.sync();
+      } finally { await file.close(); }
+    }
   }
   return files.length;
 }

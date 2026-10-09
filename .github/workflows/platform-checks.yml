@@ -22,13 +22,19 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - name: Common contracts and native pipe ownership
-        run: npx --no-install vitest run src/install/__tests__/provision.test.ts src/core/__tests__/windowsLease.test.ts src/setup/__tests__/promptChannel.test.ts src/cli/__tests__/io.test.ts src/core/__tests__/pool.test.ts src/core/__tests__/limiter.test.ts src/setup/__tests__/clientConfig.test.ts src/setup/__tests__/clientFile.test.ts src/setup/__tests__/clientHandoff.test.ts src/setup/__tests__/clientProbe.test.ts src/setup/__tests__/owner.test.ts
+        run: npx --no-install vitest run src/install/__tests__/provision.test.ts src/install/__tests__/prerequisites.test.ts src/core/__tests__/windowsLease.test.ts src/setup/__tests__/promptChannel.test.ts src/cli/__tests__/io.test.ts src/core/__tests__/pool.test.ts src/core/__tests__/limiter.test.ts src/setup/__tests__/clientConfig.test.ts src/setup/__tests__/clientFile.test.ts src/setup/__tests__/clientHandoff.test.ts src/setup/__tests__/clientProbe.test.ts src/setup/__tests__/owner.test.ts
+      - name: Production-sized Windows archive ACL batches
+        if: runner.os == 'Windows'
+        run: node scripts/checks/windows-archive.mjs
   windows-sources:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.21.0'
       - name: Parse PowerShell entries without execution or elevation
         shell: powershell
         run: |
@@ -60,3 +66,7 @@ jobs:
       - name: Bounded native bootstrap file-handle regression
         shell: powershell
         run: ./scripts/checks/windows-bootstrap-reader.ps1
+
+      - name: Clean child environment and staging ancestor regressions
+        shell: powershell
+        run: ./scripts/checks/windows-bootstrap-execution.ps1

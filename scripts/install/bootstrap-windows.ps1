@@ -1,11 +1,40 @@
-# Independently reviewed verification entry. No service/UAC activation here.
+# Independently authenticated verification entry. Install requires an elevated owner terminal.
 param([Parameter(Mandatory=$true)][string]$Bundle,[Parameter(Mandatory=$true)][string]$SignerSha256,[Parameter(Mandatory=$true)][string]$SourceSha,[switch]$Prepare,[switch]$Install)
 $ErrorActionPreference='Stop'
 function Fail { throw 'bootstrap_verification_failed' }
+function RunClean([string]$Executable,[string[]]$Arguments) {
+  $start=New-Object Diagnostics.ProcessStartInfo
+  $start.FileName=$Executable;$start.UseShellExecute=$false
+  # Closed arguments use Windows CRT quoting, including terminal backslashes.
+  $quoted=foreach($argument in $Arguments){'"'+([regex]::Replace([regex]::Replace($argument,'(\\*)"','$1$1\"'),'(\\+)$','$1$1'))+'"'}
+  $start.Arguments=$quoted -join ' '
+  $start.EnvironmentVariables.Clear()
+  $system=[Environment]::GetFolderPath('System');$windows=[Environment]::GetFolderPath('Windows')
+  $start.EnvironmentVariables['SystemRoot']=$windows
+  $start.EnvironmentVariables['WINDIR']=$windows
+  $start.EnvironmentVariables['PATH']=$system
+  $process=[Diagnostics.Process]::Start($start)
+  try{$process.WaitForExit();if($process.ExitCode -ne 0){Fail}}finally{$process.Dispose()}
+}
 function Regular([string]$Path,[long]$Maximum) {
   $item=Get-Item -LiteralPath $Path -Force
   if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -gt $Maximum) { Fail }
   return $item
+}
+function AssertStagingAncestors([string]$Path) {
+  $current=Get-Item -LiteralPath $Path -Force
+  for(;$current;$current=$current.Parent){
+    if($current.Attributes -band [IO.FileAttributes]::ReparsePoint){Fail}
+    $acl=Get-Acl -LiteralPath $current.FullName
+    $owner=if($acl.Owner -match '^S-1-'){$acl.Owner}else{(New-Object Security.Principal.NTAccount($acl.Owner)).Translate([Security.Principal.SecurityIdentifier]).Value}
+    if($owner -notin @('S-1-5-32-544','S-1-5-18')){Fail}
+    $mutation=[Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles
+    if($current.FullName -in @('C:\','C:\ProgramData')){$mutation=$mutation -band (-bnot ([Security.AccessControl.FileSystemRights]::CreateFiles -bor [Security.AccessControl.FileSystemRights]::CreateDirectories))}
+    foreach($rule in $acl.Access){
+      if($rule.AccessControlType -ne 'Allow' -or ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly)){continue}
+      if($rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-32-544','S-1-5-18') -and ($rule.FileSystemRights -band $mutation)){Fail}
+    }
+  }
 }
 function NativeReader {
   if('TgBootstrapNative' -as [type]){return}
@@ -98,16 +127,18 @@ try {
       foreach($sid in @($admin,(New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))){$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))}
       $null=[IO.Directory]::CreateDirectory($Path,$acl);PrivateDirectory $Path
     }
+    AssertStagingAncestors 'C:\ProgramData'
     if(Test-Path -LiteralPath $parent){PrivateDirectory $parent}else{CreatePrivateDirectory $parent}
+    AssertStagingAncestors $parent
     $stage=Join-Path $parent ([guid]::NewGuid().ToString());CreatePrivateDirectory $stage
     foreach($name in $names){[IO.File]::WriteAllBytes((Join-Path $stage $name),$payloads[$name])}
     [IO.File]::WriteAllBytes((Join-Path $stage 'manifest.tsv'),$manifest);[IO.File]::WriteAllBytes((Join-Path $stage 'manifest.sig'),$signature);[IO.File]::WriteAllBytes((Join-Path $stage 'signer.der'),$certificateBytes)
     $node=Join-Path $stage 'node.exe'
-    & $node (Join-Path $stage 'installer.mjs') --version 0.2.0 --source-sha $SourceSha --signer-sha256 $SignerSha256 --extract
-    if($LASTEXITCODE -ne 0){Fail}
+    AssertStagingAncestors $parent
+    RunClean $node @((Join-Path $stage 'installer.mjs'),'--version','0.2.0','--source-sha',$SourceSha,'--signer-sha256',$SignerSha256,'--extract')
     if($Install){
-      & (Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe') -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $stage 'application\dist\setup\provision-windows.ps1') -Candidate $stage -SourceSha $SourceSha -SignerSha256 $SignerSha256
-      if($LASTEXITCODE -ne 0){Fail}
+      AssertStagingAncestors $parent
+      RunClean (Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe') @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $stage 'application\dist\setup\provision-windows.ps1'),'-Candidate',$stage,'-SourceSha',$SourceSha,'-SignerSha256',$SignerSha256)
     }
     @{format_version=1;phase='candidate_staged';candidate=$stage;installed=$false}|ConvertTo-Json -Compress
     return

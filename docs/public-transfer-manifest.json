@@ -735,6 +735,18 @@
     {
       "source": "scripts/release/prepare-application.mjs",
       "destination": "scripts/release/prepare-application.mjs"
+    },
+    {
+      "source": "scripts/checks/windows-bootstrap-execution.ps1",
+      "destination": "scripts/checks/windows-bootstrap-execution.ps1"
+    },
+    {
+      "source": "scripts/checks/windows-archive.mjs",
+      "destination": "scripts/checks/windows-archive.mjs"
+    },
+    {
+      "source": "src/install/__tests__/prerequisites.test.ts",
+      "destination": "src/install/__tests__/prerequisites.test.ts"
     }
   ],
   "excludedTrackedFiles": [
