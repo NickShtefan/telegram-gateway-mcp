@@ -1,6 +1,6 @@
 {
-  "name": "telegram-gateway-mcp",
-  "version": "0.1.0",
+  "name": "telegram-mcp-gateway",
+  "version": "0.2.0",
   "private": true,
   "description": "Telegram MCP gateway: one daemon owns the MTProto sessions and serves agents over MCP",
   "type": "module",
@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "notices": "node scripts/release/dependency-notices.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
@@ -38,6 +39,17 @@
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
-    "dist/native/*"
-  ]
+    "dist/native/*",
+    "dist/setup/*.ps1"
+  ],
+  "license": "MIT",
+  "author": "NickShtefan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NickShtefan/telegram-mcp-gateway.git"
+  },
+  "homepage": "https://github.com/NickShtefan/telegram-mcp-gateway#readme",
+  "bugs": {
+    "url": "https://github.com/NickShtefan/telegram-mcp-gateway/issues"
+  }
 }

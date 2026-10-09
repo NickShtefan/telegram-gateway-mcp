@@ -3,15 +3,22 @@
 import { constants, openSync, closeSync, fstatSync, readSync, mkdirSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from 'node:util';
+import { parseArgs, promisify } from 'node:util';
+import { execFile } from 'node:child_process';
 import { verifyManifest, verifyArtifact, ArtifactError } from './manifest.mjs';
 import { decodeApplicationArchive, extractApplicationArchive, ArchiveError } from './archive.mjs';
 const root = dirname(fileURLToPath(import.meta.url));
+const run=promisify(execFile);
+async function windowsAttest(path) {
+  const script=`$ErrorActionPreference='Stop';$p=$env:TG_MCP_ATTEST_PATH;$item=Get-Item -LiteralPath $p -Force;if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){exit 1};$acl=Get-Acl -LiteralPath $p;$owner=if($acl.Owner -match '^S-1-'){$acl.Owner}else{(New-Object Security.Principal.NTAccount($acl.Owner)).Translate([Security.Principal.SecurityIdentifier]).Value};if($owner -notin @('S-1-5-32-544','S-1-5-18')){exit 1};foreach($r in $acl.Access){if($r.AccessControlType -eq 'Allow' -and $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -notin @('S-1-5-32-544','S-1-5-18')){exit 1}}`;
+  await run('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:15000,maxBuffer:1024,env:{SystemRoot:'C:\\Windows',TG_MCP_ATTEST_PATH:path}});
+}
+
 function read(name, max) {
   const fd = openSync(join(root, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const st = fstatSync(fd);
-    if (!st.isFile() || st.nlink !== 1 || st.size > max || (st.mode & 0o022) !== 0) throw new Error('invalid_file');
+    if (!st.isFile() || st.nlink !== 1 || st.size > max || (process.platform!=='win32'&&(st.mode & 0o022) !== 0)) throw new Error('invalid_file');
     const buffer = Buffer.alloc(st.size + 1);
     const count = readSync(fd, buffer, 0, buffer.length, 0);
     if (count !== st.size) throw new Error('invalid_file');
@@ -26,6 +33,7 @@ try {
   const policy = { version: values.version, sourceSha: values['source-sha'], signerSha256: values['signer-sha256'], platform: process.platform, architecture: process.arch };
   const manifest = verifyManifest(read('manifest.tsv', 8192), read('manifest.sig', 384), read('signer.der', 16384), policy);
   if (process.versions.node !== manifest.nodeVersion) throw new Error('runtime_mismatch');
+  if(process.platform==='win32')await windowsAttest(root);
   let application;
   for (const artifact of manifest.artifacts) {
     const bytes = read(artifact.name, artifact.size); verifyArtifact(artifact, bytes);
@@ -47,7 +55,7 @@ try {
   }
   if (values.extract) {
     const target = join(root, 'application'); mkdirSync(target, { mode: 0o700 });
-    await extractApplicationArchive(application, target);
+    await extractApplicationArchive(application, target,process.platform==='win32'?windowsAttest:undefined);
   }
   process.stdout.write(JSON.stringify({ format_version: 1, phase: values.extract ? 'candidate_prepared' : 'candidate_verified',
     version: manifest.version, source_sha: manifest.sourceSha, platform: manifest.platform, architecture: manifest.architecture,

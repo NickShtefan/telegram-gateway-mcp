@@ -17,10 +17,10 @@ try {
     output: { type: 'string' }, application: { type: 'string' }, node: { type: 'string' }, 'node-version': { type: 'string' },
     'node-license': { type: 'string' }, 'signing-key': { type: 'string' }, certificate: { type: 'string' },
     'source-sha': { type: 'string' }, platform: { type: 'string' }, architecture: { type: 'string' },
-    'runtime-record': { type: 'string' }, 'fixture-runtime': { type: 'boolean', default: false },
+    unsigned: { type: 'boolean', default: false }, 'runtime-record': { type: 'string' }, 'fixture-runtime': { type: 'boolean', default: false },
   } });
-  for (const key of Object.keys(values)) if (key!=='fixture-runtime' && typeof values[key] !== 'string') throw new Error();
-  for (const key of ['output','application','node','node-version','node-license','signing-key','certificate','source-sha','platform','architecture']) if (!values[key]) throw new Error();
+  for (const key of Object.keys(values)) if (key!=='fixture-runtime'&&key!=='unsigned' && typeof values[key] !== 'string') throw new Error();
+  for (const key of ['output','application','node','node-version','node-license','source-sha','platform','architecture',...(values.unsigned?[]:['signing-key','certificate'])]) if (!values[key]) throw new Error();
   const files = [];
   const app = resolve(values.application);
   const allowedRoots=new Set(['package.json','README.md','LICENSE','NOTICE','THIRD_PARTY_NOTICES.md','dist','node_modules']);
@@ -35,12 +35,15 @@ try {
     }
   }
   walk(app);
+  let key,certificate;
+  if(!values.unsigned){
   const keyPath=resolve(values['signing-key']); const keyStat=lstatSync(keyPath);
   if ((keyStat.mode&0o077)!==0 || (process.getuid && keyStat.uid!==process.getuid())) throw new Error();
-  const key=createPrivateKey(readRegular(keyPath,16384));
+  key=createPrivateKey(readRegular(keyPath,16384));
   if(key.asymmetricKeyType!=='rsa'||key.asymmetricKeyDetails?.modulusLength!==3072)throw new Error();
-  const certificate=new X509Certificate(readRegular(resolve(values.certificate),16384));
+  certificate=new X509Certificate(readRegular(resolve(values.certificate),16384));
   if(!certificate.checkPrivateKey(key))throw new Error();
+  }
   const platform=values.platform;
   const payload = {
     node: { name: platform==='win32'?'node.exe':'node', data:readRegular(resolve(values.node),134217728) },
@@ -77,9 +80,9 @@ try {
   // New empty output only. Do not copy a private key into the bundle.
   const output=resolve(values.output); mkdirSync(output,{mode:0o700});
   for(const role of ARTIFACT_ROLES)writeFileSync(join(output,payload[role].name),payload[role].data,{flag:'wx',mode:0o600});
-  writeFileSync(join(output,'signer.der'),certificate.raw,{flag:'wx',mode:0o600});
+  if(!values.unsigned)writeFileSync(join(output,'signer.der'),certificate.raw,{flag:'wx',mode:0o600});
   writeFileSync(join(output,'manifest.tsv'),manifest,{flag:'wx',mode:0o600});
-  writeFileSync(join(output,'manifest.sig'),sign('sha256',manifest,{key,padding:constants.RSA_PKCS1_PADDING}),{flag:'wx',mode:0o600});
-  process.stdout.write(JSON.stringify({format_version:1,phase:values['fixture-runtime']?'fixture_bundle_created':'bundle_created',version:'0.2.0',source_sha:values['source-sha'],
-    signer_sha256:createHash('sha256').update(certificate.raw).digest('hex'),manifest_sha256:createHash('sha256').update(manifest).digest('hex'),files:files.length})+'\n');
+  if(!values.unsigned)writeFileSync(join(output,'manifest.sig'),sign('sha256',manifest,{key,padding:constants.RSA_PKCS1_PADDING}),{flag:'wx',mode:0o600});
+  process.stdout.write(JSON.stringify({format_version:1,phase:values['fixture-runtime']?'fixture_bundle_created':values.unsigned?'unsigned_candidate_created':'bundle_created',version:'0.2.0',source_sha:values['source-sha'],
+    signer_sha256:certificate?createHash('sha256').update(certificate.raw).digest('hex'):null,manifest_sha256:createHash('sha256').update(manifest).digest('hex'),files:files.length})+'\n');
 } catch { process.stderr.write('{"format_version":1,"error_code":"bundle_build_failed"}\n');process.exitCode=1; }

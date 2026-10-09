@@ -99,10 +99,11 @@ export function decodeApplicationArchive(compressed: Buffer): ApplicationFile[] 
 }
 
 /** Target must already be an attested empty protected directory; no adoption/overwrite. */
-export async function extractApplicationArchive(compressed: Buffer, target: string): Promise<number> {
+export async function extractApplicationArchive(compressed: Buffer, target: string, windowsAttest?: (path: string) => Promise<void>): Promise<number> {
   const files = decodeApplicationArchive(compressed);
+  if (process.platform === 'win32') { if (!windowsAttest) bad(); await windowsAttest(target); }
   const root = await lstat(target);
-  if (!root.isDirectory() || root.isSymbolicLink() || (process.getuid && root.uid !== process.getuid()) || (root.mode & 0o022) !== 0 || (await readdir(target)).length !== 0) bad();
+  if (!root.isDirectory() || root.isSymbolicLink() || (process.getuid && root.uid !== process.getuid()) || (process.platform !== 'win32' && (root.mode & 0o022) !== 0) || (await readdir(target)).length !== 0) bad();
   for (const entry of files) {
     const path = join(target, entry.path);
     const parts = dirname(entry.path).split('/').filter(p => p !== '.'); let directory = target;
@@ -110,10 +111,11 @@ export async function extractApplicationArchive(compressed: Buffer, target: stri
       directory = join(directory, part);
       try { await mkdir(directory, { mode: 0o700 }); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err; }
       const st = await lstat(directory);
-      if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid()) || (st.mode & 0o022) !== 0) bad();
+      if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid()) || (process.platform !== 'win32' && (st.mode & 0o022) !== 0)) bad();
+      if (process.platform === 'win32') await windowsAttest!(directory);
     }
     const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, entry.executable ? 0o700 : 0o600);
-    try { await file.writeFile(entry.data); await file.sync(); } finally { await file.close(); }
+    try { if (process.platform === 'win32') await windowsAttest!(path); await file.writeFile(entry.data); await file.sync(); } finally { await file.close(); }
   }
   return files.length;
 }

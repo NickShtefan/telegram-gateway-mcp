@@ -675,6 +675,62 @@
     {
       "source": "scripts/checks/windows-owner-input.ps1",
       "destination": "scripts/checks/windows-owner-input.ps1"
+    },
+    {
+      "source": "LICENSE",
+      "destination": "LICENSE"
+    },
+    {
+      "source": "NOTICE",
+      "destination": "NOTICE"
+    },
+    {
+      "source": "THIRD_PARTY_NOTICES.md",
+      "destination": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "source": "CONTRIBUTING.md",
+      "destination": "CONTRIBUTING.md"
+    },
+    {
+      "source": "SECURITY.md",
+      "destination": "SECURITY.md"
+    },
+    {
+      "source": "CODE_OF_CONDUCT.md",
+      "destination": "CODE_OF_CONDUCT.md"
+    },
+    {
+      "source": ".github/pull_request_template.md",
+      "destination": ".github/pull_request_template.md"
+    },
+    {
+      "source": "docs/dependency-provenance.json",
+      "destination": "docs/dependency-provenance.json"
+    },
+    {
+      "source": "docs/install-owner.md",
+      "destination": "docs/install-owner.md"
+    },
+    {
+      "source": "docs/install-agent.md",
+      "destination": "docs/install-agent.md"
+    },
+    {
+      "source": "scripts/release/dependency-notices.mjs",
+      "destination": "scripts/release/dependency-notices.mjs"
+    },
+    {
+      "source": "scripts/release/sign-candidate.mjs",
+      "destination": "scripts/release/sign-candidate.mjs"
+    },
+    {
+      "source": "src/install/provisionCli.ts",
+      "destination": "src/install/provisionCli.ts"
+    },
+    {
+      "source": "scripts/checks/windows-bootstrap-reader.ps1",
+      "destination": "scripts/checks/windows-bootstrap-reader.ps1"
     }
   ],
   "excludedTrackedFiles": [

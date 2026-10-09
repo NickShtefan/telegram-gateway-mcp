@@ -56,3 +56,7 @@ jobs:
       - name: Silent open stdin does not block owner deadlines
         shell: powershell
         run: ./scripts/checks/windows-owner-input.ps1
+
+      - name: Bounded native bootstrap file-handle regression
+        shell: powershell
+        run: ./scripts/checks/windows-bootstrap-reader.ps1

@@ -575,3 +575,55 @@ The implementation agent automatically starts a separate read-only review agent 
 There is exactly one independent review round per stage. Post-fix self-verification and tests are required, but do not start an automatic second review round. Do not mark a stage complete while a confirmed medium-or-higher finding remains unresolved. The next stage starts only after the reviewed stage's required corrections/checks are complete. Record the reviewed SHA and corrected SHA separately.
 
 Reason: owner's staged release instruction and answer 12A.
+
+## 61. Ubuntu selected as the Linux qualification baseline (accepted 2026-10-09)
+
+The owner accepted the proposed Ubuntu baseline for 0.2.0: Ubuntu 24.04 LTS. This selects an OS qualification target, not Debian package distribution. The signed bundle, installer-managed Node runtime and systemd service remain the installation approach. Decision 62 subsequently adds Arch Linux x64; its actual updated test snapshot is recorded during qualification.
+
+Reason: the owner said Ubuntu is acceptable and asked about popular distributions and possible Arch coverage. Do not infer that every Ubuntu release or Arch-derived distribution is supported.
+
+## 62. Arch Linux x64 included in first-release qualification (accepted 2026-10-09)
+
+Include Arch Linux x64 alongside Ubuntu 24.04 LTS in the required 0.2.0 Linux qualification matrix. Arch qualification uses a fully updated system with its update date and relevant package versions recorded, because it is a rolling release. Do not infer Arch Linux ARM or derivative-distribution support.
+
+Both targets use the common signed artifact bundle, installer-managed Node and systemd profile. This decision does not add a Debian package, AUR publication or separate package-manager distribution. The owner will test both target systems; code/source checks remain distinct from actual installation and Telegram/client evidence.
+
+Reason: the owner accepted adding Arch to the mandatory first-release checks on October 9.
+
+## 63. Confirmed installation of missing OS prerequisites (accepted 2026-10-09)
+
+Inspect required operating-system utilities read-only and present an exact allowlisted missing-package plan. Install missing prerequisites from the official OS repositories only after the owner confirms that concrete plan. Node.js remains installer-managed and does not require a separate user-installed Node/npm environment.
+
+On the selected Ubuntu/Arch targets, use the distribution's package manager with fixed package names and no caller-provided commands. This does not authorize a full OS upgrade, third-party repositories, AUR packages, unrelated packages or unattended system changes. If the owner declines or the package operation fails, preserve completed gateway state and return a resumable next action.
+
+Reason: the owner selected prerequisite installation after confirmation on October 9.
+
+## 64. Owner Windows qualification machine is Windows 11 x64 (accepted 2026-10-09)
+
+The owner provides a Windows 11 machine with an Intel processor for native Windows qualification. Use Windows 11 x64 as the concrete owner test target for 0.2.0. This resource selection does not establish verified support for Windows 10, Windows ARM64 or WSL, and does not replace actual installation, service isolation, login and selected-client checks.
+
+Reason: the owner identified Windows 11 on Intel as the available test machine.
+
+## 65. Owner-only local release signing (accepted 2026-10-09)
+
+CI prepares release candidates; the owner signs the verified bundles locally. The production private signing key remains exclusively under the owner's control, outside source control, installer bundles, agent access and CI secrets/environments. Do not request the private key or its passphrase through chat, arguments, environment variables or logs.
+
+Prepare a local owner-operated signing procedure that validates the exact qualified source SHA, artifact bytes and public certificate before producing detached manifest signatures. Public certificates, fingerprints, signatures and artifact digests may be used by the installer and publication pipeline. Local signing does not replace the separate exact-candidate release approval under decision 48, and project signatures do not imply Apple notarization or Windows Authenticode.
+
+Reason: the owner selected local signing and explicitly retained exclusive private-key ownership.
+
+## 66. Both macOS architectures available for owner qualification (accepted 2026-10-09)
+
+The owner has macOS machines on both ARM and Intel. The current development/chat machine is ARM; the existing lab gateway operates on Intel. Qualify macOS arm64 and x64 separately, recording exact OS/runtime/client versions. The existing Intel lab installation remains unchanged unless the owner authorizes a concrete test/deployment action. Create any qualification session through this gateway's own login separately on each machine; never copy a session.
+
+Availability of both architectures does not prove the selected macOS 13 minimum: establish the actual OS versions and record any untested version boundary before declaring release support.
+
+Reason: the owner identified both machines and their current roles on October 9.
+
+## 67. Qualify available macOS hosts without a separate minimum-version environment (accepted 2026-10-09)
+
+Use the owner's available macOS arm64 and Intel machines for 0.2.0 qualification. Do not make procuring or preparing a separate macOS 13 environment a release blocker. At inventory time these hosts run macOS 26.6.2 arm64 and 15.7.9 x64.
+
+Retain the designed compatibility floor separately from verified support. Release documentation must list the actual tested OS/architecture combinations and explicitly identify macOS 13 as unqualified if no test is performed. Do not label untested version coverage as verified or silently change the minimum to 15. This owner-selected qualification boundary refines decisions 54/66; actual installation, isolation, login and client checks on the available hosts remain required.
+
+Reason: the owner declined extra minimum-version qualification work after the available macOS versions were identified.

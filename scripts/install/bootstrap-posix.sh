@@ -13,7 +13,8 @@ bundle=$1
 pin=$2
 source_sha=$3
 operation=$4
-[ "$operation" = verify ] || [ "$operation" = prepare ] || fail
+[ "$operation" = verify ] || [ "$operation" = prepare ] || [ "$operation" = install ] || fail
+if [ "$operation" = install ]; then [ "$(/usr/bin/id -u)" -eq 0 ] || fail; fi
 [ "${#pin}" -eq 64 ] && [ "${#source_sha}" -eq 40 ] || fail
 case "$pin$source_sha" in *[!0-9a-f]*) fail ;; esac
 case "$(/usr/bin/uname -s)" in
@@ -22,6 +23,42 @@ case "$(/usr/bin/uname -s)" in
   *) fail ;;
 esac
 case "$(/usr/bin/uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64) arch=x64 ;; *) fail ;; esac
+linux_prerequisites() {
+  os_id=$(/usr/bin/awk -F= '$1=="ID" {gsub(/"/,"",$2);print $2}' /etc/os-release)
+  os_version=$(/usr/bin/awk -F= '$1=="VERSION_ID" {gsub(/"/,"",$2);print $2}' /etc/os-release)
+  case "$os_id:$os_version:$arch" in ubuntu:24.04:arm64|ubuntu:24.04:x64) manager=ubuntu ;; arch:*:x64) manager=arch ;; *) fail ;; esac
+  missing=
+  [ -x /usr/bin/openssl ] || missing="$missing openssl"
+  [ -x /usr/bin/perl ] || missing="$missing perl"
+  [ -x /usr/bin/getfacl ] || missing="$missing acl"
+  [ -x /usr/bin/flock ] || missing="$missing util-linux"
+  [ -x /usr/bin/systemctl ] || missing="$missing systemd"
+  if [ ! -x /usr/sbin/useradd ]; then
+    if [ "$manager" = ubuntu ]; then missing="$missing passwd"; else missing="$missing shadow"; fi
+  fi
+  [ -n "$missing" ] || return 0
+  printf 'Missing official OS prerequisites:%s\n' "$missing" >&2
+  [ "$operation" = install ] && [ "$(/usr/bin/id -u)" -eq 0 ] && [ -t 0 ] && [ -t 2 ] || fail
+  # Names come only from the fixed mapping above, never caller input. Show the
+  # package-manager transaction before consent; no refresh/full OS upgrade.
+  if [ "$manager" = ubuntu ]; then
+    [ -x /usr/bin/apt-get ] || fail
+    /usr/bin/apt-get --simulate --no-upgrade --no-install-recommends install $missing >&2 || fail
+  else
+    [ -x /usr/bin/pacman ] || fail
+    /usr/bin/pacman -Sp --needed --print-format '%n %v %r' $missing >&2 || fail
+  fi
+  printf 'Type INSTALL to approve only this prerequisite transaction, or cancel: ' >/dev/tty
+  IFS= read -r consent </dev/tty || fail
+  [ "$consent" = INSTALL ] || fail
+  if [ "$manager" = ubuntu ]; then
+    /usr/bin/apt-get --no-upgrade --no-install-recommends install $missing >&2 || fail
+  else
+    /usr/bin/pacman -S --needed $missing >&2 || fail
+  fi
+  [ -x /usr/bin/openssl ] && [ -x /usr/bin/perl ] && [ -x /usr/bin/getfacl ] && [ -x /usr/bin/flock ] && [ -x /usr/bin/systemctl ] && [ -x /usr/sbin/useradd ] || fail
+}
+if [ "$target" = linux ]; then linux_prerequisites; fi
 [ -x /usr/bin/openssl ] && [ -x /usr/bin/perl ] || fail
 regular() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat_links "$1")" -eq 1 ]; }
 for name in manifest.tsv manifest.sig signer.der; do regular "$bundle/$name" || fail; done
@@ -91,6 +128,14 @@ if [ "$operation" = verify ]; then
   /usr/bin/env -i PATH=/usr/bin:/bin "$stage/node" "$stage/installer.mjs" --version 0.2.0 --source-sha "$source_sha" --signer-sha256 "$pin" || fail
 else
   /usr/bin/env -i PATH=/usr/bin:/bin "$stage/node" "$stage/installer.mjs" --version 0.2.0 --source-sha "$source_sha" --signer-sha256 "$pin" --extract || fail
-  keep=1
-  printf '{"format_version":1,"phase":"candidate_staged","candidate":"%s","installed":false}\n' "$stage"
+  if [ "$operation" = install ]; then
+    # This script must already be independently trusted before sudo. The staging
+    # directory is now administrator-owned; unprivileged agents cannot alter it.
+    /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin "$stage/node" "$stage/application/dist/install/provisionCli.js" --source-sha "$source_sha" --signer-sha256 "$pin" || fail
+  else
+    keep=1
+  fi
+  if [ "$operation" = prepare ]; then
+    printf '{"format_version":1,"phase":"candidate_staged","candidate":"%s","installed":false}\n' "$stage"
+  fi
 fi

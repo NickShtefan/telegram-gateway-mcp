@@ -17,6 +17,8 @@ Decisions 20, 22, and 24 were proposed by an agent during implementation. They a
 
 Owner answers on October 8 are recorded in decisions 54-60: public 0.2.0, macOS 13+ arm64/Intel plus Linux/native Windows, a terminal installer without paid Apple dependency, manual same-user owner entry with explicit capture/control limits, four automatic client adapters, owner-created repository/npm onboarding later, controlled Telegram test resources and one independent review round per stage. The [current trust design](installer-trust-design.md) replaces the unaccepted signed `.pkg`/separate-owner-login proposal. The [stage journal](release-progress.md) defines implementation and review gates.
 
+Decisions 61-66 additionally select Ubuntu 24.04 LTS plus Arch Linux x64, confirmed installation of missing official OS prerequisites, Windows 11 Intel x64 qualification, owner-only local signing, and available macOS ARM/Intel test machines. The production private signing key stays outside agent and CI access.
+
 Remaining owner actions are operational prerequisites, not a new architecture questionnaire: independently establish the production signing-key fingerprint, create the clean private repository, prepare npm access, provide the approved test environments/resources, enter real secrets and approve exact merge/release candidates. No secret values belong in documentation or chat.
 
 ## Open-source owner review completed

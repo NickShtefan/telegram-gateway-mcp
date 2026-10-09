@@ -24,11 +24,11 @@ Write tools return a preview and `approval_id`. The agent must show it to the ow
 
 The current repository and package remain private and unpublished. The selected public repository and npm name is `telegram-mcp-gateway`; the command stays `tg-mcp`. Do not run `npx tg-mcp`: that package belongs to a different project.
 
-MIT is the selected license; the license file, provenance review and any required notices are still release gates. Public installation will use a separate service identity with convenient owner management. That workflow is not implemented yet. The selected first public version is 0.2.0. Release targets are macOS 13+ (arm64/Intel), Linux and native Windows; qualification is pending. The terminal installer has no paid Apple Developer dependency. No production installation recommendation is implied by the development commands below.
+The candidate now carries MIT, contribution/security policies and production dependency notices. Managed provisioning and owner/client components are implemented; artifact, platform and live qualification remain release gates. The selected first public version is 0.2.0. Release targets are macOS 13+ (arm64/Intel), Linux and native Windows; qualification is pending. The terminal installer has no paid Apple Developer dependency. No production installation recommendation is implied by the development commands below.
 
 ## Development
 
-Requires Node.js 22.13 or later and npm. macOS source builds also need the Xcode Command Line Tools to build the small universal kernel-lease helper; the release installer will bundle it, so target users need no compiler. The release policy is to recommend a tested LTS branch and verify the minimum Node version separately. Cleanup checks currently run on macOS with Node 24.10.0.
+Requires Node.js 22.13 or later and npm. macOS source builds also need the Xcode Command Line Tools to build the small universal kernel-lease helper; the release installer will bundle it, so target users need no compiler. The release policy is to recommend a tested LTS branch and verify the minimum Node version separately. Local and hosted source checks cover macOS, Linux and Windows; tested Node versions and live support evidence are recorded separately before release.
 
 ```bash
 npm ci --ignore-scripts
@@ -56,6 +56,8 @@ State defaults to `~/.tg-mcp`, or `TG_MCP_HOME`. Use only sessions created by th
 
 The source checkout contains the detailed documents; they are not part of the runtime npm archive. Contributor agent instructions live in `AGENTS.md`.
 
-Read-only `tg-mcp setup preflight` and cached `setup status` plus a shared setup engine are implemented; see the [setup foundation](docs/setup.md). The no-Node terminal installer and owner/service/client adapters remain unfinished, so this is not a complete installation workflow.
+Read-only `tg-mcp setup preflight` and cached `setup status` plus a shared setup engine are implemented; see the [setup foundation](docs/setup.md). The terminal bootstrap, protected service and owner/four-client components are under staged release preparation. Source/synthetic checks do not prove a complete no-Node installation on an owner machine.
 
-The [artifact foundation](docs/install-artifacts.md) verifies signed version/platform-bound candidates and provides no-Node verification entries. It prepares development candidates only until the owner trust and protected platform installation gates are qualified.
+The [artifact foundation](docs/install-artifacts.md) verifies signed version/platform-bound candidates and provides no-Node verification entries. Protected apply paths are implemented as release candidates. Independent verifier/signer trust and live platform qualification remain required.
+
+Candidate guides: [independent owner installation](docs/install-owner.md), [agent-assisted installation](docs/install-agent.md), and [client adapters](docs/client-adapters.md). The package stays private until its exact release commit is qualified and separately approved.
