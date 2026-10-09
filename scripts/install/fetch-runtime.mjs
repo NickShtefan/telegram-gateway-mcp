@@ -46,4 +46,4 @@ try {
     license_sha256:createHash('sha256').update(license).digest('hex'),captured_at:new Date().toISOString(),upstream_catalog_keyring:catalog.keyring_commit};
   writeFileSync(join(output,'runtime-record.json'),JSON.stringify(receipt)+'\n',{flag:'wx',mode:0o600});
   process.stdout.write(JSON.stringify({format_version:1,phase:'runtime_acquired',version:record.version,platform:record.platform,architecture:record.architecture,upstream_sha256:record.sha256})+'\n');
-} catch {process.stderr.write(JSON.stringify({format_version:1,error_code:'runtime_acquisition_failed',stage})+'\n');process.exitCode=1;}
+} catch (error) {const cause=['ETIMEDOUT','ENOBUFS','ENOENT'].includes(error?.code)?error.code:'verification_or_reader_failed';process.stderr.write(JSON.stringify({format_version:1,error_code:'runtime_acquisition_failed',stage,cause})+'\n');process.exitCode=1;}
