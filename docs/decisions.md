@@ -627,3 +627,12 @@ Use the owner's available macOS arm64 and Intel machines for 0.2.0 qualification
 Retain the designed compatibility floor separately from verified support. Release documentation must list the actual tested OS/architecture combinations and explicitly identify macOS 13 as unqualified if no test is performed. Do not label untested version coverage as verified or silently change the minimum to 15. This owner-selected qualification boundary refines decisions 54/66; actual installation, isolation, login and client checks on the available hosts remain required.
 
 Reason: the owner declined extra minimum-version qualification work after the available macOS versions were identified.
+
+
+## 68. Test the existing private candidate before open-source onboarding (accepted 2026-10-09)
+
+Move PR #21 out of draft for owner review and installation testing in the current private repository. Creating the new private repository, clean import, npm onboarding and open-source publication remain deferred until the owner chooses to proceed. None of those activities is a prerequisite for testing the current installer candidate. Ready-for-review status does not authorize merging or publication.
+
+Freeze the exact private candidate SHA during installation, cancellation/resume and platform/client qualification. Later clean-import/public release artifacts bind to their actual source SHA and require separate release verification and approval. Retain the one-review-round protocol and owner-only local signing/secret input.
+
+Reason: after stage 7 the owner explicitly prioritized testing all installation paths and requested that the current PR leave draft, while deferring the new repository and open-source work.

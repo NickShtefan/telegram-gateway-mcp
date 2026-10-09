@@ -2,6 +2,12 @@
 
 Source tests and candidate construction are complete independently of this checklist. A passing hosted runner is not a fresh installation or a real Telegram/client qualification. Keep the existing Intel lab gateway untouched until a specific installation/migration action is approved. Never copy sessions between machines.
 
+## Test first in the existing private repository
+
+Decision 68 prioritizes owner installation and client testing before new-repository or open-source work. Use an unsigned CI candidate from the current private PR, freeze its exact source SHA, then sign it locally before installation. New repository creation, clean import and npm access do not block this test phase. PR #21 is ready for review/testing; merging remains a separate owner decision. Keep the same candidate identity across cancellation/resume checks.
+
+When the owner later resumes publication, rebuild and verify the actual clean-import/release SHA. Results from the private candidate remain evidence for that candidate rather than automatic qualification of a different signed artifact.
+
 ## Evidence matrix
 
 Record one evidence row per actual candidate and environment. Do not include passwords, Telegram application hashes, codes, bearer tokens, session contents, profile contents or private keys.
