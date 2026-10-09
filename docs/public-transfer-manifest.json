@@ -759,6 +759,10 @@
     {
       "source": "scripts/release/ci-candidate.mjs",
       "destination": "scripts/release/ci-candidate.mjs"
+    },
+    {
+      "source": "scripts/checks/windows-runtime.mjs",
+      "destination": "scripts/checks/windows-runtime.mjs"
     }
   ],
   "excludedTrackedFiles": [

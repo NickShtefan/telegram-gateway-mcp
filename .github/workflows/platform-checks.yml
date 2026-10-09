@@ -73,6 +73,9 @@ jobs:
         shell: powershell
         run: ./scripts/checks/windows-bootstrap-execution.ps1
 
+      - name: Native runtime ZIP reader preserves binary bytes and budgets
+        run: node scripts/checks/windows-runtime.mjs
+
   unsigned-candidates:
     strategy:
       fail-fast: false
