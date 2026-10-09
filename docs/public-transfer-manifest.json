@@ -731,6 +731,10 @@
     {
       "source": "scripts/checks/windows-bootstrap-reader.ps1",
       "destination": "scripts/checks/windows-bootstrap-reader.ps1"
+    },
+    {
+      "source": "scripts/release/prepare-application.mjs",
+      "destination": "scripts/release/prepare-application.mjs"
     }
   ],
   "excludedTrackedFiles": [
