@@ -23,7 +23,7 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - name: Common contracts and native pipe ownership
-        run: npx --no-install vitest run src/install/__tests__/provision.test.ts src/install/__tests__/prerequisites.test.ts src/core/__tests__/windowsLease.test.ts src/setup/__tests__/promptChannel.test.ts src/cli/__tests__/io.test.ts src/core/__tests__/pool.test.ts src/core/__tests__/limiter.test.ts src/setup/__tests__/clientConfig.test.ts src/setup/__tests__/clientFile.test.ts src/setup/__tests__/clientHandoff.test.ts src/setup/__tests__/clientProbe.test.ts src/setup/__tests__/owner.test.ts
+        run: npx --no-install vitest run src/install/__tests__/provision.test.ts src/install/__tests__/prerequisites.test.ts src/install/__tests__/runtimeEntry.test.ts src/core/__tests__/windowsLease.test.ts src/setup/__tests__/promptChannel.test.ts src/cli/__tests__/io.test.ts src/core/__tests__/pool.test.ts src/core/__tests__/limiter.test.ts src/setup/__tests__/clientConfig.test.ts src/setup/__tests__/clientFile.test.ts src/setup/__tests__/clientHandoff.test.ts src/setup/__tests__/clientProbe.test.ts src/setup/__tests__/owner.test.ts
       - name: Production-sized Windows archive ACL batches
         if: runner.os == 'Windows'
         run: node scripts/checks/windows-archive.mjs
@@ -72,9 +72,6 @@ jobs:
       - name: Clean child environment and staging ancestor regressions
         shell: powershell
         run: ./scripts/checks/windows-bootstrap-execution.ps1
-
-      - name: Native runtime ZIP reader preserves binary bytes and budgets
-        run: node scripts/checks/windows-runtime.mjs
 
   unsigned-candidates:
     strategy:

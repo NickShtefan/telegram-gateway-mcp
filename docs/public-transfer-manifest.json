@@ -763,6 +763,10 @@
     {
       "source": "scripts/checks/windows-runtime.mjs",
       "destination": "scripts/checks/windows-runtime.mjs"
+    },
+    {
+      "source": "src/install/__tests__/runtimeEntry.test.ts",
+      "destination": "src/install/__tests__/runtimeEntry.test.ts"
     }
   ],
   "excludedTrackedFiles": [

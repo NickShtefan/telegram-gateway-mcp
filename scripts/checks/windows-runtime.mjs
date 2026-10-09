@@ -1,16 +1,15 @@
-// Synthetic native ZIP-reader proof, no network, runtime execution or privileged operation.
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+// Read the checksum-authenticated official Windows archive with the production reader.
+// No Windows executable, service, signing key or privileged operation is used.
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { runtimeEntry } from '../install/runtime-entry.mjs';
-const root=mkdtempSync(join(tmpdir(),'tg-runtime-fixture-'));
-try {
-  const archive=join(root,'fixture.zip');
-  execFileSync('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command',`Add-Type -AssemblyName System.IO.Compression.FileSystem;$file=[IO.File]::Open($env:TG_TEST_ARCHIVE,[IO.FileMode]::CreateNew);$zip=New-Object IO.Compression.ZipArchive($file,[IO.Compression.ZipArchiveMode]::Create);try{$entry=$zip.CreateEntry('payload');$stream=$entry.Open();try{$bytes=New-Object byte[] 4194304;$bytes[4194303]=123;$stream.Write($bytes,0,$bytes.Length)}finally{$stream.Dispose()}}finally{$zip.Dispose();$file.Dispose()}`],{stdio:['ignore','pipe','pipe'],timeout:30000,env:{SystemRoot:'C:\\Windows',TG_TEST_ARCHIVE:archive}});
-  const bytes=runtimeEntry(archive,'payload',4194304,true);
-  if(bytes.length!==4194304||bytes[4194303]!==123)throw new Error('binary reader mismatch');
-  let rejected=false;try{runtimeEntry(archive,'payload',4194303,true)}catch{rejected=true};if(!rejected)throw new Error('budget not enforced');
-  rejected=false;try{runtimeEntry(archive,'missing',4194304,true)}catch{rejected=true};if(!rejected)throw new Error('missing entry accepted');
-  console.log(JSON.stringify({bytes:bytes.length,budget_rejection:true,missing_rejection:true}));
-} finally {rmSync(root,{recursive:true,force:true})}
+const catalog=JSON.parse(readFileSync(new URL('../install/runtime-catalog.json',import.meta.url),'utf8'));
+const record=catalog.runtimes.find(r=>r.version==='24.21.0'&&r.platform==='win32'&&r.architecture==='x64');
+const archive=process.argv[2];if(!archive)throw new Error('archive argument missing');
+if(createHash('sha256').update(readFileSync(archive)).digest('hex')!==record.sha256)throw new Error('official digest mismatch');
+const bytes=runtimeEntry(archive,'node-v24.21.0-win-x64/node.exe',134217728,true);
+const license=runtimeEntry(archive,'node-v24.21.0-win-x64/LICENSE',1048576,true);
+if(bytes.readUInt16LE(0)!==0x5a4d||license.length===0)throw new Error('payload mismatch');
+let rejected=false;try{runtimeEntry(archive,'node-v24.21.0-win-x64/node.exe',bytes.length-1,true)}catch{rejected=true};if(!rejected)throw new Error('budget not enforced');
+rejected=false;try{runtimeEntry(archive,'missing',134217728,true)}catch{rejected=true};if(!rejected)throw new Error('missing entry accepted');
+console.log(JSON.stringify({bytes:bytes.length,budget_rejection:true,missing_rejection:true}));
