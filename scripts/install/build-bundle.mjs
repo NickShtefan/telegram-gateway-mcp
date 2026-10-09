@@ -5,6 +5,7 @@ import { createHash, sign, createPrivateKey, X509Certificate } from 'node:crypto
 import { resolve, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { execFileSync } from 'node:child_process';
+import { runtimeEntry } from './runtime-entry.mjs';
 import { encodeManifest, ARTIFACT_ROLES } from '../../dist/install/manifest.js';
 import { encodeApplicationArchive } from '../../dist/install/archive.js';
 function readRegular(path, max) {
@@ -67,12 +68,8 @@ try {
     const upstreamPath=resolve(values['runtime-record'],'..',platform==='win32'?'upstream.zip':'upstream.tar.gz');
     if(createHash('sha256').update(readRegular(upstreamPath,134217728)).digest('hex')!==upstream.sha256)throw new Error();
     const prefix=`node-v${upstream.version}-${platform==='win32'?'win':platform}-${upstream.architecture}`;
-    const binary=platform==='win32'
-      ? execFileSync('/usr/bin/unzip',['-p',upstreamPath,`${prefix}/node.exe`],{maxBuffer:134217728,timeout:30000})
-      : execFileSync('/usr/bin/tar',['-xOf',upstreamPath,`${prefix}/bin/node`],{maxBuffer:134217728,timeout:30000});
-    const license=platform==='win32'
-      ? execFileSync('/usr/bin/unzip',['-p',upstreamPath,`${prefix}/LICENSE`],{maxBuffer:1048576,timeout:30000})
-      : execFileSync('/usr/bin/tar',['-xOf',upstreamPath,`${prefix}/LICENSE`],{maxBuffer:1048576,timeout:30000});
+    const binary=runtimeEntry(upstreamPath,`${prefix}/${platform==='win32'?'node.exe':'bin/node'}`,134217728,platform==='win32');
+    const license=runtimeEntry(upstreamPath,`${prefix}/LICENSE`,1048576,platform==='win32');
     if(!binary.equals(payload.node.data)||!license.equals(payload.node_license.data))throw new Error();
   }
   const manifest=encodeManifest({ version:'0.2.0',sourceSha:values['source-sha'],platform,architecture:values.architecture,nodeVersion:values['node-version'],

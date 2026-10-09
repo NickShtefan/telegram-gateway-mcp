@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { execFileSync } from 'node:child_process';
+import { runtimeEntry } from './runtime-entry.mjs';
 const catalog=JSON.parse(readFileSync(new URL('./runtime-catalog.json',import.meta.url),'utf8'));
 try {
   const {values}=parseArgs({options:{output:{type:'string'},version:{type:'string'},platform:{type:'string'},architecture:{type:'string'}}});
@@ -21,18 +22,18 @@ try {
   let node,license;
   if(record.platform==='win32'){
     const prefix=`node-v${record.version}-win-${record.architecture}`;
-    node=execFileSync('/usr/bin/unzip',['-p',download,`${prefix}/node.exe`],{maxBuffer:134217728,timeout:30000});
-    license=execFileSync('/usr/bin/unzip',['-p',download,`${prefix}/LICENSE`],{maxBuffer:1048576,timeout:30000});
+    node=runtimeEntry(download,`${prefix}/node.exe`,134217728,true);
+    license=runtimeEntry(download,`${prefix}/LICENSE`,1048576,true);
   } else {
     // The complete official archive digest has passed before the system reader sees it.
     const prefix=`node-v${record.version}-${record.platform}-${record.architecture}`;
-    node=execFileSync('/usr/bin/tar',['-xOf',download,`${prefix}/bin/node`],{maxBuffer:134217728,timeout:30000});
-    license=execFileSync('/usr/bin/tar',['-xOf',download,`${prefix}/LICENSE`],{maxBuffer:1048576,timeout:30000});
+    node=runtimeEntry(download,`${prefix}/bin/node`,134217728,false);
+    license=runtimeEntry(download,`${prefix}/LICENSE`,1048576,false);
   }
   const name=record.platform==='win32'?'node.exe':'node';writeFileSync(join(output,name),node,{flag:'wx',mode:0o600});
   if(record.platform===process.platform&&record.architecture===process.arch){
     chmodSync(join(output,name),0o700);
-    const observed=execFileSync(join(output,name),['--version'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:10000}).trim();
+    const observed=execFileSync(join(output,name),['--version'],{env:process.platform==='win32'?{SystemRoot:'C:\\Windows'}:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:10000}).trim();
     if(observed!==`v${record.version}`)throw new Error();
   }
   writeFileSync(join(output,'NODE_LICENSE'),license,{flag:'wx',mode:0o600});
