@@ -11,14 +11,17 @@ fail() { printf '%s\n' '{"format_version":1,"error_code":"bootstrap_verification
 trusted_signer_sha256='f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682'
 readonly trusted_signer_sha256
 pin=$trusted_signer_sha256
+archive_input=0
 case "$#" in
+  2) bundle=$1; source_sha=; operation=$2; archive_input=1 ;;
   3) bundle=$1; source_sha=$2; operation=$3 ;;
   4) bundle=$1; [ "$2" = "$trusted_signer_sha256" ] || fail; source_sha=$3; operation=$4 ;;
   *) fail ;;
 esac
 [ "$operation" = verify ] || [ "$operation" = prepare ] || [ "$operation" = install ] || fail
 if [ "$operation" = install ]; then [ "$(/usr/bin/id -u)" -eq 0 ] || fail; fi
-[ "${#pin}" -eq 64 ] && [ "${#source_sha}" -eq 40 ] || fail
+[ "${#pin}" -eq 64 ] || fail
+[ "$archive_input" -eq 1 ] || [ "${#source_sha}" -eq 40 ] || fail
 case "$pin$source_sha" in *[!0-9a-f]*) fail ;; esac
 case "$(/usr/bin/uname -s)" in
   Darwin) target=darwin; base=/private/tmp; stat_size() { /usr/bin/stat -f %z "$1"; }; stat_links() { /usr/bin/stat -f %l "$1"; } ;;
@@ -33,6 +36,7 @@ linux_prerequisites() {
   missing=
   [ -x /usr/bin/openssl ] || missing="$missing openssl"
   [ -x /usr/bin/perl ] || missing="$missing perl"
+  [ -x /usr/bin/gzip ] || missing="$missing gzip"
   [ -x /usr/bin/getfacl ] || missing="$missing acl"
   [ -x /usr/bin/flock ] || missing="$missing util-linux"
   [ -x /usr/bin/systemctl ] || missing="$missing systemd"
@@ -108,8 +112,6 @@ EOF
 if [ "$target" = linux ]; then linux_prerequisites; fi
 [ -x /usr/bin/openssl ] && [ -x /usr/bin/perl ] || fail
 regular() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat_links "$1")" -eq 1 ]; }
-for name in manifest.tsv manifest.sig signer.der; do regular "$bundle/$name" || fail; done
-[ "$(stat_size "$bundle/manifest.tsv")" -le 8192 ] && [ "$(stat_size "$bundle/manifest.sig")" -eq 384 ] && [ "$(stat_size "$bundle/signer.der")" -le 16384 ] || fail
 openssl_clean() { /usr/bin/env -i PATH=/usr/bin:/bin OPENSSL_CONF=/dev/null /usr/bin/openssl "$@"; }
 stage=$(/usr/bin/mktemp -d "$base/tg-mcp-candidate.XXXXXX") || fail
 keep=0
@@ -129,6 +131,28 @@ snapshot() {
   ' "$1" "$2" "$3" 2>/dev/null || fail
 }
 trap '[ "$keep" -eq 1 ] || /bin/rm -rf "$stage"' EXIT HUP INT TERM
+if [ "$archive_input" -eq 1 ]; then
+  [ -x /usr/bin/gzip ] || fail
+  snapshot "$bundle" "$stage/download.tar.gz" 134217728
+  /bin/mkdir -m 700 "$stage/transport"
+  /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/perl -e '
+    use strict; use Fcntl qw(:DEFAULT);
+    $SIG{ALRM}=sub{die}; alarm 120;
+    my($archive,$target)=@ARGV;open(my $in,"-|","/usr/bin/gzip","-dc",$archive) or die;
+    my %limits=("manifest.tsv"=>8192,"manifest.sig"=>384,"signer.der"=>16384,"node"=>134217728,"installer.mjs"=>1048576,"manifest.mjs"=>1048576,"archive.mjs"=>1048576,"application.tar.gz"=>134217728,"NODE_LICENSE"=>1048576);my %seen;my $total=0;
+    sub exact {my($fh,$n)=@_;my $out="";while(length($out)<$n){my $got=read($fh,my $piece,$n-length($out));die unless defined($got)&&$got>0;$out.=$piece;}return $out;}
+    sub octal {my($h,$at,$n)=@_;my $v=substr($h,$at,$n);$v=~s/\0.*$//s;die unless $v=~/^[0-7]+$/;return oct($v);}
+    while(1){my $h=exact($in,512);if($h eq "\0"x512){die unless exact($in,512) eq "\0"x512;my $tail;while(read($in,$tail,65536)){die if $tail=~/[^\0]/;$total+=length($tail);die if $total>300000000;}last;}
+      my $name=substr($h,0,100);$name=~s/\0.*$//s;die unless exists($limits{$name})&&!$seen{$name}++;my $size=octal($h,124,12);die unless $size>0&&$size<=$limits{$name};$total+=512+$size;die if $total>300000000;
+      my $sum=0;for my $i(0..511){$sum+=($i>=148&&$i<156)?32:ord(substr($h,$i,1));}die unless $sum==octal($h,148,8)&&substr($h,156,1) eq "0"&&substr($h,157,100) eq "\0"x100&&substr($h,257,6) eq "ustar\0"&&substr($h,263,2) eq "00"&&substr($h,345,167) eq "\0"x167;
+      sysopen(my $file,"$target/$name",O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600) or die;my $left=$size;while($left){my $n=$left>65536?65536:$left;my $data=exact($in,$n);my $at=0;while($at<$n){my $w=syswrite($file,$data,$n-$at,$at);die unless defined($w)&&$w>0;$at+=$w;}$left-=$n;}close($file) or die;my $padding=(512-$size%512)%512;die if $padding&&exact($in,$padding) ne "\0"x$padding;
+    }
+    die unless keys(%seen)==9;close($in) or die;alarm 0;
+  ' "$stage/download.tar.gz" "$stage/transport" 2>/dev/null || fail
+  bundle=$stage/transport
+fi
+for name in manifest.tsv manifest.sig signer.der; do regular "$bundle/$name" || fail; done
+[ "$(stat_size "$bundle/manifest.tsv")" -le 8192 ] && [ "$(stat_size "$bundle/manifest.sig")" -eq 384 ] && [ "$(stat_size "$bundle/signer.der")" -le 16384 ] || fail
 # Work on private snapshots; source substitution is rechecked on copied bytes.
 snapshot "$bundle/manifest.tsv" "$stage/manifest.tsv" 8192
 snapshot "$bundle/manifest.sig" "$stage/manifest.sig" 384
@@ -138,6 +162,11 @@ snapshot "$bundle/signer.der" "$stage/signer.der" 16384
 openssl_clean x509 -inform DER -in "$stage/signer.der" -pubkey -noout > "$stage/public.pem" 2>/dev/null || fail
 case "$(openssl_clean rsa -pubin -in "$stage/public.pem" -text -noout 2>/dev/null)" in *'(3072 bit)'*) ;; *) fail ;; esac
 openssl_clean dgst -sha256 -verify "$stage/public.pem" -signature "$stage/manifest.sig" "$stage/manifest.tsv" >/dev/null 2>&1 || fail
+if [ "$archive_input" -eq 1 ]; then
+  source_sha=$(/usr/bin/awk -F '\t' 'NR==3&&$1=="source_sha" {print $2}' "$stage/manifest.tsv")
+  [ "${#source_sha}" -eq 40 ] || fail
+  case "$source_sha" in *[!0-9a-f]*) fail ;; esac
+fi
 # Closed wire grammar and fixed role filenames; no manifest field is executed.
 /usr/bin/awk -F '\t' -v source="$source_sha" -v target="$target" -v arch="$arch" '
 function bad() { exit 1 }
@@ -179,6 +208,8 @@ else
     # This script must already be independently trusted before sudo. The staging
     # directory is now administrator-owned; unprivileged agents cannot alter it.
     /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin "$stage/node" "$stage/application/dist/install/provisionCli.js" --source-sha "$source_sha" --signer-sha256 "$pin" || fail
+    if [ "$target" = darwin ]; then owner_command="/Library/Application Support/TelegramMCPGateway/bin/tg-mcp-owner"; else owner_command=/opt/telegram-mcp-gateway/bin/tg-mcp-owner; fi
+    printf 'Installation prepared. In your ordinary terminal run: "%s" setup\n' "$owner_command" >&2
   else
     keep=1
   fi

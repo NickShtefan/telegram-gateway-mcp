@@ -1,5 +1,5 @@
 # Independently authenticated verification entry. Install requires an elevated owner terminal.
-param([Parameter(Mandatory=$true)][string]$Bundle,[string]$SignerSha256='f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682',[Parameter(Mandatory=$true)][string]$SourceSha,[switch]$Prepare,[switch]$Install)
+param([string]$Bundle,[string]$Archive,[string]$SignerSha256='f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682',[string]$SourceSha,[switch]$Prepare,[switch]$Install)
 $ErrorActionPreference='Stop'
 function Fail { throw 'bootstrap_verification_failed' }
 function AssertSignerPin([string]$Value) { if($Value -cne 'f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682'){Fail} }
@@ -77,17 +77,41 @@ function BoundedBytes([string]$Path,[long]$Maximum) {
     }finally{$stream.Dispose()}
   }finally{[Runtime.InteropServices.Marshal]::FreeHGlobal($information);$safe.Dispose()}
 }
+function ReadReleaseArchive([string]$Path) {
+  [byte[]]$bytes=BoundedBytes $Path 134217728
+  $framework=Join-Path ([Environment]::GetFolderPath('Windows')) 'Microsoft.NET\Framework64\v4.0.30319'
+  $null=[Reflection.Assembly]::LoadFrom((Join-Path $framework 'System.IO.Compression.dll'))
+  $memory=[IO.MemoryStream]::new($bytes,$false)
+  $zip=[IO.Compression.ZipArchive]::new($memory,[IO.Compression.ZipArchiveMode]::Read,$false)
+  $limits=@{'manifest.tsv'=8192;'manifest.sig'=384;'signer.der'=16384;'node.exe'=134217728;'installer.mjs'=1048576;'manifest.mjs'=1048576;'archive.mjs'=1048576;'application.tar.gz'=134217728;'NODE_LICENSE'=1048576}
+  $result=@{};$total=0
+  try {
+    if($zip.Entries.Count -ne 9){Fail}
+    foreach($entry in $zip.Entries){
+      if($entry.FullName -cnotin @($limits.Keys) -or $result.ContainsKey($entry.FullName) -or $entry.Length -lt 1 -or $entry.Length -gt $limits[$entry.FullName] -or (($entry.ExternalAttributes -shr 16) -band 61440) -notin @(0,32768)){Fail}
+      $total+=$entry.Length;if($total -gt 300000000){Fail}
+      $input=$entry.Open();$output=New-Object IO.MemoryStream
+      try {$buffer=New-Object byte[] 65536;while(($count=$input.Read($buffer,0,$buffer.Length)) -gt 0){if($output.Length+$count -gt $limits[$entry.FullName]){Fail};$output.Write($buffer,0,$count)}
+        if($output.Length -ne $entry.Length){Fail};$result[$entry.FullName]=$output.ToArray()
+      }finally{$input.Dispose();$output.Dispose()}
+    }
+    return $result
+  }finally{$zip.Dispose();$memory.Dispose()}
+}
 function HashBytes([byte[]]$Bytes) {
   $sha=[Security.Cryptography.SHA256]::Create()
   try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
 }
 try {
   AssertSignerPin $SignerSha256
-  if($SignerSha256 -cnotmatch '^[0-9a-f]{64}$' -or $SourceSha -cnotmatch '^[0-9a-f]{40}$') { Fail }
-  $manifestPath=Join-Path $Bundle 'manifest.tsv';$signaturePath=Join-Path $Bundle 'manifest.sig';$certificatePath=Join-Path $Bundle 'signer.der'
-  $null=Regular $manifestPath 8192;$signatureItem=Regular $signaturePath 384;$null=Regular $certificatePath 16384
-  if($signatureItem.Length -ne 384){Fail}
-  [byte[]]$manifest=(BoundedBytes $manifestPath 8192);[byte[]]$signature=(BoundedBytes $signaturePath 384);[byte[]]$certificateBytes=(BoundedBytes $certificatePath 16384)
+  if($SignerSha256 -cnotmatch '^[0-9a-f]{64}$' -or ($SourceSha -and $SourceSha -cnotmatch '^[0-9a-f]{40}$') -or ([bool]$Bundle -eq [bool]$Archive)){Fail}
+  $transport=if($Archive){ReadReleaseArchive $Archive}else{$null}
+  if($transport){[byte[]]$manifest=$transport['manifest.tsv'];[byte[]]$signature=$transport['manifest.sig'];[byte[]]$certificateBytes=$transport['signer.der']}
+  else{
+    $manifestPath=Join-Path $Bundle 'manifest.tsv';$signaturePath=Join-Path $Bundle 'manifest.sig';$certificatePath=Join-Path $Bundle 'signer.der'
+    [byte[]]$manifest=(BoundedBytes $manifestPath 8192);[byte[]]$signature=(BoundedBytes $signaturePath 384);[byte[]]$certificateBytes=(BoundedBytes $certificatePath 16384)
+  }
+  if($signature.Length -ne 384){Fail}
   if((HashBytes $certificateBytes) -cne $SignerSha256){Fail}
   $certificate=New-Object Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certificateBytes)
   $rsa=[Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($certificate)
@@ -96,6 +120,7 @@ try {
   } finally { $rsa.Dispose();$certificate.Dispose() }
   foreach($byte in $manifest){if($byte -gt 127 -or ($byte -lt 32 -and $byte -ne 9 -and $byte -ne 10)){Fail}}
   $lines=([Text.Encoding]::ASCII.GetString($manifest)).Split([char]10)
+  if(-not $SourceSha){if($lines.Length -ne 13 -or $lines[2] -cnotmatch '^source_sha\t([0-9a-f]{40})$'){Fail};$SourceSha=$lines[2].Split([char]9)[1]}
   if($lines.Length -ne 13 -or $lines[12] -cne '' -or $lines[0] -cne 'TG_MCP_RELEASE_V1' -or $lines[1] -cne "version`t0.2.0" -or $lines[2] -cne "source_sha`t$SourceSha" -or $lines[3] -cne "platform`twin32"){Fail}
   $arch=if([Environment]::Is64BitOperatingSystem){'x64'}else{Fail}
   if($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64'){$arch='arm64'}
@@ -107,9 +132,7 @@ try {
   for($i=0;$i -lt 6;$i++) {
     $fields=$lines[$i+6].Split([char]9);$max=if($i -eq 0 -or $i -eq 4){134217728}else{1048576}
     if($fields.Length -ne 5 -or $fields[0] -cne 'file' -or $fields[1] -cne $roles[$i] -or $fields[2] -cne $names[$i] -or $fields[3] -cnotmatch '^[1-9][0-9]{0,8}$' -or [long]$fields[3] -gt $max -or $fields[4] -cnotmatch '^[0-9a-f]{64}$'){Fail}
-    $path=Join-Path $Bundle $names[$i];$item=Regular $path $max
-    if($item.Length -ne [long]$fields[3]){Fail}
-    [byte[]]$bytes=(BoundedBytes $path $max)
+    [byte[]]$bytes=if($transport){$transport[$names[$i]]}else{BoundedBytes (Join-Path $Bundle $names[$i]) $max}
     if($bytes.Length -ne [long]$fields[3] -or (HashBytes $bytes) -cne $fields[4]){Fail}
     $payloads[$names[$i]]=$bytes
   }
@@ -142,7 +165,8 @@ try {
       AssertStagingAncestors $parent
       RunClean (Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe') @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $stage 'application\dist\setup\provision-windows.ps1'),'-Candidate',$stage,'-SourceSha',$SourceSha,'-SignerSha256',$SignerSha256)
     }
-    @{format_version=1;phase='candidate_staged';candidate=$stage;installed=$false}|ConvertTo-Json -Compress
+    if($Install){[Console]::Error.WriteLine('Installation prepared. In an ordinary terminal run C:\ProgramData\TelegramMCPGateway\bin\tg-mcp-owner.cmd setup.');@{format_version=1;phase='needs_api_credentials';installed=$true;service_started=$false}|ConvertTo-Json -Compress}
+    else{@{format_version=1;phase='candidate_staged';candidate=$stage;installed=$false}|ConvertTo-Json -Compress}
     return
   }
   # Verification does not execute agent-writable Node/helpers or grant administration.

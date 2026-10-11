@@ -3,7 +3,7 @@ $ErrorActionPreference='Stop'
 $source=(Resolve-Path -LiteralPath 'scripts/install/bootstrap-windows.ps1').Path
 $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'parse failed'}
-foreach($name in @('Fail','AssertSignerPin','NativeReader','BoundedBytes')){
+foreach($name in @('Fail','AssertSignerPin','NativeReader','BoundedBytes','ReadReleaseArchive')){
   $function=$ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name},$true)
   if(@($function).Count -ne 1){throw 'missing helper'};. ([scriptblock]::Create($function[0].Extent.Text))
 }
@@ -18,4 +18,9 @@ try {
   $link=Join-Path $directory 'hardlink';$null=New-Item -ItemType HardLink -Path $link -Target $file
   $failed=$false;try{$null=BoundedBytes $link 3}catch{$failed=$true};if(-not $failed){throw 'hardlink accepted'}
   $failed=$false;try{$null=BoundedBytes $directory 3}catch{$failed=$true};if(-not $failed){throw 'directory accepted'}
+  $framework=Join-Path ([Environment]::GetFolderPath('Windows')) 'Microsoft.NET\Framework64\v4.0.30319'
+  $null=[Reflection.Assembly]::LoadFrom((Join-Path $framework 'System.IO.Compression.dll'))
+  $archive=Join-Path $directory 'release.zip';$stream=[IO.File]::Open($archive,[IO.FileMode]::CreateNew);$zip=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create,$false)
+  try{foreach($name in @('manifest.tsv','manifest.sig','signer.der','node.exe','installer.mjs','manifest.mjs','archive.mjs','application.tar.gz','NODE_LICENSE')){$entry=$zip.CreateEntry($name);$output=$entry.Open();try{$output.WriteByte(42)}finally{$output.Dispose()}}}finally{$zip.Dispose();$stream.Dispose()}
+  $transport=ReadReleaseArchive $archive;if($transport.Count -ne 9 -or $transport['node.exe'][0] -ne 42){throw 'release ZIP mismatch'}
 }finally{Remove-Item -LiteralPath $directory -Recurse -Force}

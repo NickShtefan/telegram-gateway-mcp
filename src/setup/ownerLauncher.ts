@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import { terminalIo } from '../cli/io.js';
+import { ownerLabels, apiInstructions, nextSteps } from './presentation.js';
 import { sha256Hex } from '../core/crypto.js';
 import { installLayout } from '../install/platform.js';
 import { ownerPlanSchema } from './owner.js';
@@ -25,9 +26,10 @@ async function main(): Promise<number> {
   const layout = installLayout(process.platform as 'darwin' | 'linux' | 'win32', sha);
   if (fileURLToPath(import.meta.url) !== join(layout.application, 'dist/setup/ownerLauncher.js') || process.execPath !== layout.node) throw new SetupError('protection_unverified');
   terminalIo.err('Stop all agents and disable terminal capture/UI automation. Same-user software can read your input and client credentials.');
+  terminalIo.err('OWNER READY confirms that you, not an agent, control this terminal and have stopped input capture before secret entry.');
   if (await terminalIo.prompt('Type OWNER READY after completing those steps: ') !== 'OWNER READY') throw new SetupError('invalid_request');
-  terminalIo.err('Obtain your own Telegram application credentials at https://my.telegram.org/apps. Enter them only in this terminal.');
-  const account = await terminalIo.prompt('Gateway account id: '); const user = await terminalIo.prompt('Gateway user id: ');
+  for(const line of apiInstructions)terminalIo.err(line);
+  const {account,user}=await ownerLabels(terminalIo);
   const chosen = await terminalIo.prompt('Clients (codex,claude,opencode,hermes; comma-separated; empty to skip): ');
   const clients = chosen ? chosen.split(',').map(s => s.trim()) as ClientKind[] : [];
   const preview = ownerPlanSchema.parse({ setup_id: randomUUID(), account, user, clients });
@@ -102,6 +104,7 @@ async function main(): Promise<number> {
     const code = await close();
     if (!result || code !== 0 || result.result.phase === 'failed') throw new SetupError('invalid_state');
     terminalIo.out(JSON.stringify({ ...result.result, sdk_connectivity_verified: !!verified, model_tool_loading_verified: false, clients: preview.clients }));
+    nextSteps(terminalIo,preview.clients,verified);
     return result.result.phase === 'needs_service_start' && !verified ? 1 : 0;
   } finally { life.abort(); token = null; await close().catch(() => undefined); }
 }

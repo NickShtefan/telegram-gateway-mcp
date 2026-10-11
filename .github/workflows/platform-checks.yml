@@ -74,6 +74,14 @@ jobs:
         shell: powershell
         run: ./scripts/checks/windows-bootstrap-execution.ps1
 
+      - name: Signed Windows release archive and tamper rejection
+        shell: powershell
+        run: ./scripts/checks/windows-release.ps1
+
+      - name: Parse the Windows README commands without execution
+        shell: powershell
+        run: ./scripts/checks/windows-readme.ps1
+
   unsigned-candidates:
     strategy:
       fail-fast: false
