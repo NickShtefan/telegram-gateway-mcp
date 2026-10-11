@@ -1,12 +1,12 @@
 /** POSIX provisioning backend for an independently trusted root coordinator only. */
-import { constants } from 'node:fs';
+import { constants, type Stats } from 'node:fs';
 import { lstat, open, chmod, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { acquireFileLease } from '../core/fileLease.js';
-import { attestAncestry, attestDirectory, attestFile, newProtectedDirectory, ProtectionError, writeProtectedFile } from './posixPermissions.js';
+import { attestAncestry, attestDirectory, attestFile, attestTree, newProtectedDirectory, ProtectionError, writeProtectedFile } from './posixPermissions.js';
 import { createPosixIdentity } from './posixIdentity.js';
 import { decodeApplicationArchive } from './archive.js';
 import { verifyArtifact, verifyManifest, type ReleaseManifest } from './manifest.js';
@@ -14,14 +14,16 @@ import { serviceDefinition, type InstallLayout } from './platform.js';
 import type { ProvisionBackend, ProvisionPlan, ProvisionReceipt, ServiceIdentity } from './provision.js';
 const run = promisify(execFile);
 
-async function boundedRootFile(path: string, maximum: number): Promise<Buffer> {
+/** With `tree` (from attestTree), its recursive ACL listing replaces the per-file subprocess for listed inodes. */
+async function boundedRootFile(path: string, maximum: number, tree?: ReadonlyMap<string, Stats>): Promise<Buffer> {
   const before = await lstat(path);
   if (!before.isFile() || before.isSymbolicLink()) throw new ProtectionError();
   const fd = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const st = await fd.stat();
     if (!st.isFile() || st.uid !== 0 || st.nlink !== 1 || st.size > maximum || (st.mode & 0o022) !== 0) throw new ProtectionError();
-    await attestFile(path, st);
+    const listed = tree?.get(path);
+    if (!tree) await attestFile(path, st); else if (!listed || listed.ino !== st.ino || listed.dev !== st.dev) throw new ProtectionError();
     const data = Buffer.alloc(st.size + 1); const { bytesRead } = await fd.read(data, 0, data.length, 0);
     if (bytesRead !== st.size) throw new ProtectionError(); return data.subarray(0, bytesRead);
   } finally { await fd.close(); }
@@ -92,25 +94,24 @@ export class PosixProvisionBackend implements ProvisionBackend {
     const decoded = decodeApplicationArchive(this.application!);
     const expected = new Map<string, Buffer>([[layout.node, await boundedRootFile(join(this.candidate, node.name), node.size)],
       ...decoded.map(entry => [join(layout.application, entry.path), entry.data] as [string, Buffer])]);
-    // On same-stage interruption, preserve matching files and reject unknown/corrupt state.
-    const inspectExisting = async (directory: string): Promise<void> => {
-      await attestAncestry(directory);
-      for (const name of await readdir(directory)) {
-        const path = join(directory, name); const st = await lstat(path);
-        if (st.isDirectory() && !st.isSymbolicLink()) {
-          if (![...expected.keys()].some(file => file.startsWith(path + '/'))) throw new ProtectionError();
-          await inspectExisting(path);
-        } else {
-          const bytes = expected.get(path); if (!bytes || !(await boundedRootFile(path, bytes.length)).equals(bytes)) throw new ProtectionError();
-        }
-      }
-    };
-    await inspectExisting(layout.release);
+    // On same-stage interruption, preserve matching files and reject unknown/corrupt state. One recursive ACL
+    // listing covers the existing tree; directories are then remembered, so ancestry checks stay lstat-only.
+    const existing = await attestTree(layout.release);
+    const directories = new Set([layout.release]);
+    for (const path of expected.keys()) {
+      if (!path.startsWith(layout.release + '/')) throw new ProtectionError();
+      for (let directory = dirname(path); !directories.has(directory); directory = dirname(directory)) directories.add(directory);
+    }
+    for (const [path, st] of existing) {
+      if (st.isDirectory()) { if (!directories.has(path)) throw new ProtectionError(); continue; }
+      const bytes = expected.get(path); if (!bytes || !(await boundedRootFile(path, bytes.length, existing)).equals(bytes)) throw new ProtectionError();
+    }
+    const ready = new Set([layout.release]);
     for (const [path, bytes] of expected) {
-      const parents: string[] = []; for (let directory = dirname(path); directory !== layout.release; directory = dirname(directory)) parents.unshift(directory);
-      for (const directory of parents) await ensure(directory);
-      try { if (!(await boundedRootFile(path, bytes.length)).equals(bytes)) throw new ProtectionError(); }
-      catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; await writeProtectedFile(dirname(path), basename(path), bytes, 0o600); }
+      if (existing.has(path)) continue;
+      const parents: string[] = []; for (let directory = dirname(path); !ready.has(directory); directory = dirname(directory)) parents.unshift(directory);
+      for (const directory of parents) { await ensure(directory); ready.add(directory); }
+      await writeProtectedFile(dirname(path), basename(path), bytes, 0o600);
     }
     await chmod(layout.node, 0o755);
     const makeReadable = async (directory: string): Promise<void> => {
@@ -170,11 +171,11 @@ export class PosixProvisionBackend implements ProvisionBackend {
         if (Number(group) !== identity.gid) return false;
       }
       if (receipt.completed.includes('release')) {
-        await attestAncestry(layout.release);
+        await attestAncestry(layout.release); const tree = await attestTree(layout.release);
         const node = this.manifest!.artifacts.find(a => a.role === 'node')!;
-        verifyArtifact(node, await boundedRootFile(layout.node, node.size));
+        verifyArtifact(node, await boundedRootFile(layout.node, node.size, tree));
         for (const entry of decodeApplicationArchive(this.application!)) {
-          const bytes = await boundedRootFile(join(layout.application, entry.path), entry.data.length);
+          const bytes = await boundedRootFile(join(layout.application, entry.path), entry.data.length, tree);
           if (createHash('sha256').update(bytes).digest('hex') !== createHash('sha256').update(entry.data).digest('hex')) return false;
         }
       }

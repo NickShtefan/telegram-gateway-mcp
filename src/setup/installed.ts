@@ -1,8 +1,8 @@
 /** Read the immutable installed profile before any owner-side mutation. */
 import { constants } from 'node:fs';
-import { lstat, open, readdir } from 'node:fs/promises';
+import { lstat, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { attestAncestry, attestDirectory, attestFile } from '../install/posixPermissions.js';
+import { attestAncestry, attestDirectory, attestFile, attestTree } from '../install/posixPermissions.js';
 import { receiptSchema, type ProvisionReceipt } from '../install/provision.js';
 import { installLayout, serviceDefinition, type InstallLayout } from '../install/platform.js';
 import { parseSafe, SetupError } from './contract.js';
@@ -27,20 +27,9 @@ export async function installedPosixProfile(sourceSha: string): Promise<{ layout
   const receipt = parseSafe(receiptSchema, JSON.parse((await readProtectedRootFile(join(layout.prefix, 'install.json'), 16384)).toString('utf8')));
   if (receipt.plan.source_sha !== sourceSha || receipt.plan.platform !== process.platform || receipt.completed.join(',') !== 'identity,release,state,definition,commands'
     || receipt.identity?.kind !== 'posix') throw new SetupError('invalid_state');
-  let count = 0;
-  const walk = async (directory: string): Promise<void> => {
-    await attestAncestry(directory);
-    for (const name of await readdir(directory)) {
-      if (++count > 20000) throw new SetupError('invalid_state');
-      const path = join(directory, name); const st = await lstat(path);
-      if (st.isDirectory() && !st.isSymbolicLink()) await walk(path);
-      else {
-        if (!st.isFile() || st.isSymbolicLink() || st.uid !== 0 || st.nlink !== 1 || (st.mode & 0o022)) throw new SetupError('protection_unverified');
-        await attestFile(path, st);
-      }
-    }
-  };
-  await walk(layout.release);
+  // Attested root ancestry plus one recursive ACL listing over root-owned directories and single-link files
+  // (no symlinks, special files or group/other write) instead of a subprocess per entry.
+  await attestAncestry(layout.release); await attestTree(layout.release, [0], 20000);
   if (!(await readProtectedRootFile(layout.definition, 16384)).equals(Buffer.from(serviceDefinition(layout, receipt.plan.port)))) throw new SetupError('protection_unverified');
   await attestAncestry(dirname(layout.state));
   await attestDirectory(layout.state, [receipt.identity.uid], 0o077);
