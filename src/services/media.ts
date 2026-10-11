@@ -35,6 +35,8 @@ export interface MediaSkip {
 export interface MediaResult {
   files: MediaFile[];
   skipped: MediaSkip[];
+  /** Why the chat directory was refused; nothing could be fetched into it during this call. */
+  refused?: string;
 }
 
 export interface MediaServiceOptions {
@@ -191,7 +193,7 @@ export class MediaService {
       }
 
       try {
-        await (dirChecked ??= this.files.ensureDir(chatDir));
+        await (dirChecked ??= this.files.ensureDir(chatDir).catch((err: Error) => { result.refused = err.message; throw err; }));
         const buffer = await this.fetch(accountId, raw, thumb, options);
         if (!buffer || buffer.length === 0) {
           result.skipped.push({ messageId, reason: 'Telegram returned an empty file' });

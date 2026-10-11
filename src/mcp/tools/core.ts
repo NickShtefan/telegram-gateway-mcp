@@ -662,6 +662,7 @@ function renderExport(job: JobRecord): string {
       `scanned messages: ${r.scanned}`,
       r.date_from && r.date_to ? `dates: ${r.date_from.slice(0, 10)} to ${r.date_to.slice(0, 10)}` : '',
       r.photos > 0 ? `photo previews downloaded: ${r.photos} (paths are in the photo_path column)` : '',
+      r.photos_refused ? `photo previews stopped: ${r.photos_refused}` : '',
       r.truncated ? `TRUNCATED at max_rows=${r.rows}: there are more messages. Narrow the window or raise max_rows (max ${EXPORT_MAX_ROWS}).` : '',
       `columns: ${r.columns.join(', ')}`,
       '',

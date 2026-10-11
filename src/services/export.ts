@@ -88,6 +88,8 @@ export interface ExportResult extends Record<string, unknown> {
   date_to: string | null;
   columns: string[];
   samples: ExportRow[];
+  /** Present when the media directory was refused; later photos were not attempted. */
+  photos_refused?: string;
 }
 
 /** CSV cell following RFC 4180. */
@@ -181,6 +183,8 @@ export class ExportService {
     let rows = 0;
     let scanned = 0;
     let photos = 0;
+    // A refused media directory refuses every later photo too; checking it again per photo only repeats the refusal.
+    let photosRefused: string | undefined;
     let truncated = false;
     let newest: number | null = null;
     let oldest: number | null = null;
@@ -222,10 +226,11 @@ export class ExportService {
           }
           const row = this.toRow(message, chat, params.includeContacts);
 
-          if (params.photos === 'thumb' && message.media?.kind === 'photo' && photos < MAX_PHOTOS) {
+          if (params.photos === 'thumb' && message.media?.kind === 'photo' && photos < MAX_PHOTOS && photosRefused === undefined) {
             const raw = rawById.get(message.id);
             if (raw) {
               const downloaded = await this.deps.media.download(params.accountId, chat.peerKey, [raw], 'thumb', call);
+              photosRefused = downloaded.refused;
               if (downloaded.files[0]) {
                 row.photo_path = downloaded.files[0].path;
                 photos++;
@@ -263,6 +268,7 @@ export class ExportService {
       date_to: newest === null ? null : new Date(newest * 1000).toISOString(),
       columns: EXPORT_COLUMNS,
       samples,
+      ...(photosRefused === undefined ? {} : { photos_refused: photosRefused }),
     };
   }
 }

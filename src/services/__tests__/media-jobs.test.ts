@@ -300,6 +300,7 @@ describe('MediaService', () => {
     const result = await media.download('agent', '-1000000000500', album, 'thumb');
     expect(result.files).toEqual([]);
     expect(result.skipped).toEqual(refusedAlbum(`${join(dir, 'media')} is writable by other users`));
+    expect(result.refused).toContain(`${join(dir, 'media')} is writable by other users`);
     expect(downloadMedia).not.toHaveBeenCalled();
     expect(attest).toHaveBeenCalledOnce();
   });
