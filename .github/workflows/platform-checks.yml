@@ -28,6 +28,14 @@ jobs:
       - name: Production-sized Windows archive ACL batches
         if: runner.os == 'Windows'
         run: node scripts/checks/windows-archive.mjs
+      - name: Signed Windows release archive from the repository encoder and tamper rejection
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/checks/windows-release.ps1
+      - name: Run the Windows README commands in verification mode
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/checks/windows-readme.ps1
   windows-sources:
     runs-on: windows-latest
     steps:
@@ -73,14 +81,6 @@ jobs:
       - name: Clean child environment and staging ancestor regressions
         shell: powershell
         run: ./scripts/checks/windows-bootstrap-execution.ps1
-
-      - name: Signed Windows release archive and tamper rejection
-        shell: powershell
-        run: ./scripts/checks/windows-release.ps1
-
-      - name: Parse the Windows README commands without execution
-        shell: powershell
-        run: ./scripts/checks/windows-readme.ps1
 
   unsigned-candidates:
     strategy:
