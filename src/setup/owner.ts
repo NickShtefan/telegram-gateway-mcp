@@ -43,6 +43,9 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
       if (existingPending && existingPending.user !== p.user) throw new SetupError('invalid_state');
       let credentials = await deps.credentials.read();
       const newCredentials = credentials === null;
+      const login = !deps.storage.sessions.get(p.account) || p.replace_session;
+      // Existing sessions with a missing API file require explicit repair; refuse before asking for secrets.
+      if (newCredentials && !login) throw new SetupError('invalid_state');
       if (credentials === null) {
         deps.io.err('Obtain your own application credentials at https://my.telegram.org/apps. Enter them here; never send them to an agent.');
         const apiId = await deps.io.prompt('Telegram application id: ', { hidden: true });
@@ -50,7 +53,7 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
         credentials = parseSafe(apiSchema, { apiId: Number(apiId), apiHash }, 'invalid_request');
       } else credentials = parseSafe(apiSchema, credentials, 'invalid_state');
       const api = credentials;
-      if (!deps.storage.sessions.get(p.account) || p.replace_session) {
+      if (login) {
         const phone = await deps.io.prompt('Telegram phone (international format): ', { hidden: true });
         await loginAccount({
           factory: deps.factory ?? defaultClientFactory, ...api, phone, accountId: p.account,
@@ -67,8 +70,7 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
             });
           },
         });
-        // Existing sessions with a missing API file require explicit repair.
-      } else if (newCredentials) throw new SetupError('invalid_state');
+      }
       let pending = deps.storage.kv.get(pendingKey(p.setup_id));
       const user = deps.storage.users.get(p.user);
       deps.storage.transaction(() => {

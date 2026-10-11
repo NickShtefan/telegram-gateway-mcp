@@ -67,6 +67,11 @@ describe('authorized owner worker core',()=>{
     expect((await ownerSetup(plan,f.deps)).phase).toBe('failed');expect(f.factory).not.toHaveBeenCalled();expect(f.storage.sessions.get(plan.account)).toBeNull();expect(f.storage.users.list()).toEqual([]);
     expect(await f.deps.credentials.read()).toBeNull();
   });
+  it('refuses an existing session without API credentials before asking for secrets',async()=>{
+    const f=fixture();await ownerSetup(plan,f.deps);f.deps.credentials.read=async()=>null;f.prompts.mockClear();
+    expect(await ownerSetup(plan,f.deps)).toMatchObject({phase:'failed',error_code:'owner_step_failed'});
+    expect(f.prompts).not.toHaveBeenCalled();expect(f.factory).toHaveBeenCalledTimes(1);
+  });
   it('persists an authorized login and new API pair before cleanup terminates the worker',async()=>{
     const f=fixture();const make=f.factory.getMockImplementation()!;
     f.factory.mockImplementationOnce(()=>{const client=make() as unknown as {destroy:()=>Promise<void>};
