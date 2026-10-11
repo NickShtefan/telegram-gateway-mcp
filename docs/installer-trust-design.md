@@ -38,10 +38,9 @@ Only the intended verified bytes may be activated. A manifest supplied solely by
 | Agent/human preflight | Ordinary OS identity, read-only | Platform/architecture, safe presence checks, plan; no service secrets |
 | Initial owner verifier | Explicit scoped sudo/UAC through fixed system tools | Independently pinned release/key, protected staging and verified candidate |
 | Owner terminal administration | Human-selected fixed installed commands, operation-scoped elevation | Credentials directly to service worker; exact access/client plan; no token printing |
-| Setup worker | Dedicated service identity, protected Node/code | Authoritative private journal, own sessions, grants and safe stage outcomes |
+| Setup worker | Dedicated service identity, protected Node/code | Authoritative private state, own sessions, grants and safe stage outcomes |
 | Gateway daemon | Same service identity, no administrator authority | Existing MCP, account queue/deadline and exclusive session ownership |
 | Client adapter | Selected client identity, constrained destination | Direct bearer-token handoff and atomic configuration merge; no service/admin authority |
-| Progress reader | Ordinary OS identity, read-only | Allowlisted published projection only; setup IDs grant no authority |
 
 Root/Administrator controls executable code/runtime, service definitions and trusted command entry points. The service identity controls private configuration, SQLite, encryption key, sessions and authoritative setup progress. Exports/media have their own safe readable directory. An MCP token identifies a gateway user; it never becomes an administrative capability.
 
@@ -51,7 +50,7 @@ The token is delivered to a constrained adapter running as the selected client i
 
 ## Shared stages and resumable outcomes
 
-The owner wizard and agent presenter consume one engine. A human message saying "approved" or "finished" never advances protected state. The worker inspects actual protected resources and validates prior journal records before deciding what remains.
+The owner wizard and agent presenter consume one engine. A human message saying "approved" or "finished" never advances protected state. The worker inspects actual protected resources and validates prior protected state before deciding what remains.
 
 | Stage | Owner/service action | Resume and cancellation |
 | --- | --- | --- |
@@ -73,9 +72,9 @@ Human secrets never enter argv, environment variables, stdout/stderr logs, scree
 
 ## Current engine and proof boundaries
 
-The [setup foundation](setup.md) already supplies read-only preflight/cached status, strict schemas, reconciliation and adapter journal primitives. It does not yet execute installation/login/grant/client stages. The foundation stage changes the unshipped owner action to `open_owner_terminal` and allows selection of any of the four client identifiers; actual client adapters remain stage 6 work. Do not treat existing cached status as fresh service/client proof.
+[Setup preflight](setup.md) is read-only and allows selection of any of the four client identifiers. Installation, login, grant and client stages run through the owner terminal entry ([owner-setup.md](owner-setup.md), [client-adapters.md](client-adapters.md)). There is no published progress projection or agent-readable status command; agents re-inspect actual installation receipts and service state.
 
-The privileged adapters publish only a bounded allowlisted projection. Authoritative progress remains service-protected, with an exclusive setup lease and atomic writes. A setup UUID correlates progress only. Future/unknown schemas, corrupted state, unapproved changes, stale observations and foreign installations cannot silently become ready. Explicit later client selection does not repeat login or rotate existing tokens.
+Authoritative state remains service-protected, with an exclusive setup lease. A setup UUID correlates an owner operation only. Corrupted state, unapproved changes and foreign installations cannot silently become ready. Explicit later client selection does not repeat login or rotate existing tokens.
 
 Verification uses synthetic secrets and fake Telegram first. Required hostile cases include wrong trust key/signature/version/architecture, oversized or substituted payloads, unsafe archives/paths/ACLs, privilege denial, competing/restarted workers, canceled/expired login, repeated handoff, unrelated client config/concurrent edits, wrong service at the port and claimed ready status without actual tools. Record exact candidate, OS/architecture, Node/client versions and artifact checksum, never real secrets or owner screens.
 

@@ -7,7 +7,6 @@ import { clientSchema, parseSafe, safeError, SetupError, type SetupErrorCode, ty
 
 // Provisional new-installation profile; never reuse the existing lab layout automatically.
 export const SETUP_ROOT = '/Library/Application Support/TelegramMCPGateway';
-export const PROGRESS_PATH = `${SETUP_ROOT}/progress.json`;
 const LEGACY_ROOT = '/opt/telegram-gateway-mcp';
 
 const optionsSchema = z.strictObject({

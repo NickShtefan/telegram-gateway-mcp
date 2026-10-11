@@ -39,7 +39,6 @@ const HELP = `tg-mcp ${VERSION}: Telegram MCP gateway
 
 Usage:
   tg-mcp setup preflight [--json] [--port <n>] [--client none|codex|claude|opencode|hermes]  inspect without changing gateway state
-  tg-mcp setup status --setup-id <uuid> [--json]  read cached safe installer progress
   tg-mcp serve [--host <h>] [--port <n>] [--toolsets core,...] [--files-dir <path>]
                                                    run the daemon that owns the Telegram sessions
   tg-mcp stdio [--url <http://127.0.0.1:7777/mcp>] stdio MCP server for agents: proxies to the daemon, token in TG_MCP_TOKEN

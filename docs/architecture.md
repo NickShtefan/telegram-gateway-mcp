@@ -30,11 +30,11 @@ Writes follow the same path twice: preparation stores the request and returns a 
 | Storage | `src/storage` | Storage port and SQLite implementation with migrations |
 | CLI | `src/cli` | `serve`, `stdio`, `login`, `doctor`, users, accounts, scopes |
 | Installation artifacts | `src/install`, `scripts/install` | Pinned manifest/runtime verification and bounded application archive; no service activation |
-| Setup | `src/setup` | Read-only preflight/progress, shared reconciliation and protected-adapter journal primitives |
+| Setup | `src/setup` | Read-only preflight, owner setup worker and launcher, client adapters and handoff |
 
 `core` and `services` do not import `mcp` or `transport`. Dependencies are explicitly injected (`src/runtime.ts`, `src/services/index.ts`), allowing a Telegram double and in-memory database in tests.
 
-The [setup foundation](setup.md) is independent of MCP and does not execute a model, watch Telegram, start services or perform login. `setup preflight/status` bypass configuration/storage initialization. Mutating setup stages require the unfinished native owner/service adapters; no administrative MCP/HTTP API is exposed.
+[Setup preflight](setup.md) is independent of MCP and does not execute a model, watch Telegram, start services or perform login. `setup preflight` bypasses configuration/storage initialization. Mutating setup stages run only through the owner terminal entry ([owner-setup.md](owner-setup.md)); no administrative MCP/HTTP API is exposed.
 
 ## Transport
 

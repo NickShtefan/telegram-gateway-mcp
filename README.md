@@ -56,7 +56,7 @@ State defaults to `~/.tg-mcp`, or `TG_MCP_HOME`. Use only sessions created by th
 
 The source checkout contains the detailed documents; they are not part of the runtime npm archive. Contributor agent instructions live in `AGENTS.md`.
 
-Read-only `tg-mcp setup preflight` and cached `setup status` plus a shared setup engine are implemented; see the [setup foundation](docs/setup.md). The terminal bootstrap, protected service and owner/four-client components are under staged release preparation. Source/synthetic checks do not prove a complete no-Node installation on an owner machine.
+Read-only `tg-mcp setup preflight` is implemented; see [setup preflight](docs/setup.md). The terminal bootstrap, protected service and owner/four-client components are under staged release preparation. Source/synthetic checks do not prove a complete no-Node installation on an owner machine.
 
 The [artifact foundation](docs/install-artifacts.md) verifies signed version/platform-bound candidates and provides no-Node verification entries. Protected apply paths are implemented as release candidates. Independent verifier/signer trust and live platform qualification remain required.
 

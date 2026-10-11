@@ -1,6 +1,6 @@
 # Protected platform provisioning
 
-Platform definitions and protected provisioning components are implemented for the 0.2.0 workstream. They have not been applied to owner/lab machines. Root/Administrator authority is required only through the independently trusted owner coordinator. A setup UUID, cached progress or root-owned copy alone is not artifact/owner authorization.
+Platform definitions and protected provisioning components are implemented for the 0.2.0 workstream. They have not been applied to owner/lab machines. Root/Administrator authority is required only through the independently trusted owner coordinator. A setup UUID or root-owned copy alone is not artifact/owner authorization.
 
 ## Fixed profiles and state
 

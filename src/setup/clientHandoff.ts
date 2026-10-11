@@ -2,7 +2,7 @@
 import type { Storage } from '../storage/port.js';
 import { sha256Hex } from '../core/crypto.js';
 import { acknowledgeClientToken, pendingClientToken, type OwnerPlan, type OwnerResult } from './owner.js';
-import { coordinatorMessageSchema, workerMessageSchema } from './promptChannel.js';
+import { workerMessageSchema } from './promptChannel.js';
 import { SetupError } from './contract.js';
 /** Stable correlation per source/user; it grants no authority. */
 export function ownerOperationId(sourceSha: string, user: string): string {
@@ -17,16 +17,6 @@ export function validatedClientHandoff(value: unknown, setupId: string, port: nu
   if (message.kind !== 'handoff' || message.setup_id !== setupId || message.port !== port || message.clients.join(',') !== clients.join(',')
     || message.service_evidence !== 'listener_owned_by_service') throw new SetupError('protection_unverified');
   return message.token;
-}
-export async function handoffOwnerClients(plan: OwnerPlan, result: OwnerResult, storage: Storage, secret: string, port: number,
-  existingToken: string | string[] | null, send: (message: unknown) => Promise<void>, receive: () => Promise<unknown>, legacySetupId?: string): Promise<OwnerResult> {
-  const prepared = prepareOwnerClients(plan, result, storage, secret, port, existingToken, legacySetupId);
-  if (!prepared.message) return prepared.result;
-  await send(prepared.message);
-  const ack = coordinatorMessageSchema.parse(await receive());
-  if (ack.kind !== 'client_ack' || ack.setup_id !== plan.setup_id) throw new SetupError('invalid_state');
-  acknowledgePreparedClients(plan, storage, secret, ack.token_sha256, legacySetupId);
-  return prepared.result;
 }
 export function prepareOwnerClients(plan: OwnerPlan, result: OwnerResult, storage: Storage, secret: string, port: number,
   existingToken: string | string[] | null, legacySetupId?: string): { result: OwnerResult; message: null | { kind: 'handoff'; setup_id: string; port: number; token: string; clients: OwnerPlan['clients'] } } {

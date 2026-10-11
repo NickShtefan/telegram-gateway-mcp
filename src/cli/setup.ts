@@ -2,12 +2,10 @@
 import { parseArgs } from 'node:util';
 import type { CliIo } from './io.js';
 import { preflight, type PreflightProbe } from '../setup/preflight.js';
-import { decodeProgress, readProgress, type ProgressSnapshot } from '../setup/progress.js';
-import { clientSchema, parseSafe, safeError, SetupError, setupIdSchema } from '../setup/contract.js';
+import { clientSchema, parseSafe, safeError, SetupError } from '../setup/contract.js';
 
 export interface SetupCliDeps {
   probe?: PreflightProbe;
-  readProgress?: (setupId: string) => Promise<ProgressSnapshot>;
 }
 
 export async function runSetup(args: string[], io: CliIo, deps: SetupCliDeps = {}): Promise<number> {
@@ -28,15 +26,6 @@ export async function runSetup(args: string[], io: CliIo, deps: SetupCliDeps = {
         'No installation or configuration was changed. The macOS profile is provisional.',
       ].join('\n'));
       return result.phase === 'failed' ? 1 : 0;
-    }
-    if (sub === 'status') {
-      const { values } = parseArgs({ args: rest, options: { json: { type: 'boolean' }, 'setup-id': { type: 'string' } } });
-      const id = parseSafe(setupIdSchema, values['setup-id'], 'invalid_request');
-      const result = decodeProgress(await (deps.readProgress ?? readProgress)(id), id);
-      // Always identify cached evidence; this is not a fresh service/MCP/client verification.
-      io.out(values.json ? JSON.stringify({ evidence: 'cached_snapshot', ...result })
-        : `Cached setup status: ${result.status.stage}. Next action: ${result.status.next_action}.`);
-      return result.status.outcome === 'failed' ? 1 : 0;
     }
     throw new SetupError('invalid_request');
   } catch (err) {

@@ -152,7 +152,7 @@ export class PosixProvisionBackend implements ProvisionBackend {
   private agentCommand(layout: InstallLayout, port: number): string {
     const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
     const entry = join(layout.application, 'dist/cli/index.js');
-    return `#!/bin/sh\ncase "$1" in help|version|stdio) ;; setup) case "$2" in preflight|status) ;; *) exit 1 ;; esac ;; *) exit 1 ;; esac\nexec /usr/bin/env -i PATH=/usr/bin:/bin TG_MCP_TOKEN="\${TG_MCP_TOKEN-}" TG_MCP_URL="\${TG_MCP_URL-http://127.0.0.1:${port}/mcp}" ${quote(layout.node)} ${quote(entry)} "$@"\n`;
+    return `#!/bin/sh\ncase "$1" in help|version|stdio) ;; setup) case "$2" in preflight) ;; *) exit 1 ;; esac ;; *) exit 1 ;; esac\nexec /usr/bin/env -i PATH=/usr/bin:/bin TG_MCP_TOKEN="\${TG_MCP_TOKEN-}" TG_MCP_URL="\${TG_MCP_URL-http://127.0.0.1:${port}/mcp}" ${quote(layout.node)} ${quote(entry)} "$@"\n`;
   }
   async inspect(receipt: ProvisionReceipt, layout: InstallLayout): Promise<boolean> {
     try {

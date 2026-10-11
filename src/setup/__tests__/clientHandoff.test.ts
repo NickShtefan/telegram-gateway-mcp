@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { SqliteStorage } from '../../storage/sqlite.js';
 import { addUser } from '../../cli/admin.js';
 import { seal, sha256Hex } from '../../core/crypto.js';
 import { pendingClientToken, ownerPlanSchema, type OwnerResult } from '../owner.js';
-import { handoffOwnerClients, ownerOperationId, prepareOwnerClients, acknowledgePreparedClients, validatedClientHandoff } from '../clientHandoff.js';
+import { ownerOperationId, prepareOwnerClients, acknowledgePreparedClients, validatedClientHandoff } from '../clientHandoff.js';
 const secret = 'synthetic-session-secret'; const sha = 'a'.repeat(40);
 const plan = ownerPlanSchema.parse({ setup_id: ownerOperationId(sha, 'owner'), account: 'account', user: 'owner', clients: ['codex','claude'] });
 const result: OwnerResult = { format_version: 1, setup_id: plan.setup_id, phase: 'needs_client_configuration', error_code: null };
@@ -14,30 +14,30 @@ function fixture() {
   return { storage, token };
 }
 describe('direct credential handoff receipts', () => {
-  it('clears pending bytes only after all selected clients acknowledge the exact token', async () => {
-    const { storage, token } = fixture(); const send = vi.fn(async () => undefined);
+  it('clears pending bytes only after all selected clients acknowledge the exact token', () => {
+    const { storage, token } = fixture();
     try {
-      const done = await handoffOwnerClients(plan, result, storage, secret, 7777, null, send, async () => ({ kind: 'client_ack', setup_id: plan.setup_id, token_sha256: sha256Hex(token) }));
-      expect(send.mock.calls[0]).toEqual([{kind:'handoff',setup_id:plan.setup_id,port:7777,token,clients:['codex','claude']}]);
-      expect(done.phase).toBe('needs_service_start'); expect(JSON.stringify(done)).not.toContain(token);
+      const prepared = prepareOwnerClients(plan, result, storage, secret, 7777, null);
+      expect(prepared.message).toEqual({kind:'handoff',setup_id:plan.setup_id,port:7777,token,clients:['codex','claude']});
+      expect(prepared.result.phase).toBe('needs_service_start'); expect(JSON.stringify(prepared.result)).not.toContain(token);
+      acknowledgePreparedClients(plan, storage, secret, sha256Hex(token));
       expect(pendingClientToken(storage, plan.setup_id, secret)).toBeNull();
     } finally { storage.close(); }
   });
-  it('retains sealed pending data on a failed or wrong acknowledgement', async () => {
+  it('retains sealed pending data on a wrong acknowledgement', () => {
     const { storage, token } = fixture();
     try {
-      await expect(handoffOwnerClients(plan, result, storage, secret, 7777, null, async () => undefined,
-        async () => ({ kind: 'client_ack', setup_id: plan.setup_id, token_sha256: 'b'.repeat(64) }))).rejects.toThrow('invalid_state');
+      expect(() => acknowledgePreparedClients(plan, storage, secret, 'b'.repeat(64))).toThrow('invalid_state');
       expect(pendingClientToken(storage, plan.setup_id, secret)?.token).toBe(token);
     } finally { storage.close(); }
   });
-  it('validates reused credentials against the selected gateway user hash', async () => {
-    const { storage, token } = fixture(); storage.kv.set(`setup.handoff.${plan.setup_id}`, ''); const send = vi.fn(async () => undefined);
+  it('validates reused credentials against the selected gateway user hash', () => {
+    const { storage, token } = fixture(); storage.kv.set(`setup.handoff.${plan.setup_id}`, '');
     try {
-      expect((await handoffOwnerClients(plan, result, storage, secret, 7777, 'wrong'.repeat(10), send, async () => undefined)).phase).toBe('needs_existing_client_credential');
-      expect(send).not.toHaveBeenCalled();
-      expect((await handoffOwnerClients(plan, result, storage, secret, 7777, token, send,
-        async () => ({kind:'client_ack',setup_id:plan.setup_id,token_sha256:sha256Hex(token)}))).phase).toBe('needs_service_start');
+      const rejected = prepareOwnerClients(plan, result, storage, secret, 7777, 'wrong'.repeat(10));
+      expect(rejected).toEqual({ result: { ...result, phase: 'needs_existing_client_credential' }, message: null });
+      const reused = prepareOwnerClients(plan, result, storage, secret, 7777, token);
+      expect(reused.result.phase).toBe('needs_service_start'); expect(reused.message?.token).toBe(token);
     } finally { storage.close(); }
   });
   it('keeps per-user operation identities distinct and stable without treating them as authorization', () => {

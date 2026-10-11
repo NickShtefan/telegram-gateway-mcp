@@ -429,20 +429,8 @@
       "destination": "src/setup/contract.ts"
     },
     {
-      "source": "src/setup/engine.ts",
-      "destination": "src/setup/engine.ts"
-    },
-    {
-      "source": "src/setup/journal.ts",
-      "destination": "src/setup/journal.ts"
-    },
-    {
       "source": "src/setup/preflight.ts",
       "destination": "src/setup/preflight.ts"
-    },
-    {
-      "source": "src/setup/progress.ts",
-      "destination": "src/setup/progress.ts"
     },
     {
       "source": "src/setup/__tests__/setup.test.ts",
@@ -455,6 +443,10 @@
     {
       "source": "src/core/__tests__/lock.test.ts",
       "destination": "src/core/__tests__/lock.test.ts"
+    },
+    {
+      "source": "src/core/__tests__/fileLease.test.ts",
+      "destination": "src/core/__tests__/fileLease.test.ts"
     },
     {
       "source": "docs/install-artifacts.md",
