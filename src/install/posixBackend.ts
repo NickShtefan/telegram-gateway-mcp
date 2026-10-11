@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { acquireFileLease } from '../core/fileLease.js';
+import { readBoundedFile } from '../core/safeFs.js';
 import { attestAncestry, attestDirectory, attestFile, attestTree, newProtectedDirectory, ProtectionError, writeProtectedFile } from './posixPermissions.js';
 import { createPosixIdentity } from './posixIdentity.js';
 import { decodeApplicationArchive } from './archive.js';
@@ -16,18 +17,11 @@ import { SetupError } from '../setup/contract.js';
 const run = promisify(execFile);
 
 /** With `tree` (from attestTree), its recursive ACL listing replaces the per-file subprocess for listed inodes. */
-async function boundedRootFile(path: string, maximum: number, tree?: ReadonlyMap<string, Stats>): Promise<Buffer> {
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink()) throw new ProtectionError();
-  const fd = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const st = await fd.stat();
-    if (!st.isFile() || st.uid !== 0 || st.nlink !== 1 || st.size > maximum || (st.mode & 0o022) !== 0) throw new ProtectionError();
-    const listed = tree?.get(path);
-    if (!tree) await attestFile(path, st); else if (!listed || listed.ino !== st.ino || listed.dev !== st.dev) throw new ProtectionError();
-    const data = Buffer.alloc(st.size + 1); const { bytesRead } = await fd.read(data, 0, data.length, 0);
-    if (bytesRead !== st.size) throw new ProtectionError(); return data.subarray(0, bytesRead);
-  } finally { await fd.close(); }
+function boundedRootFile(path: string, maximum: number, tree?: ReadonlyMap<string, Stats>): Promise<Buffer> {
+  const attest = tree ? async (target: string, st: Stats): Promise<void> => {
+    const listed = tree.get(target); if (!listed || listed.ino !== st.ino || listed.dev !== st.dev) throw new ProtectionError();
+  } : attestFile;
+  return readBoundedFile(path, { maximum, owners: [0], modeMask: 0o022, attest, fail: () => new ProtectionError() });
 }
 
 /** True when the attested prefix holds nothing but this installer's empty, root-private lease file. */

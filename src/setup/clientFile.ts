@@ -1,8 +1,9 @@
 /** Client-profile writes run only as the original, unelevated owner. No privileged user-tree writes. */
 import { constants } from 'node:fs';
-import { lstat, open, mkdir, rename, unlink } from 'node:fs/promises';
+import { open, mkdir, rename, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { readBoundedFile } from '../core/safeFs.js';
 import { patchClientConfig, clientRelativePath, configuredGatewayToken, ClientEntryConflict, type ClientKind } from './clientConfig.js';
 import { SetupError } from './contract.js';
 
@@ -17,19 +18,13 @@ export interface OwnerProfile {
 }
 const limit = 1048576;
 async function readExisting(path: string, owner: OwnerProfile): Promise<{ bytes: Buffer; inode: number; device: number } | null> {
-  let before;
-  try { before = await lstat(path); } catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null; throw err; }
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > limit) throw new SetupError('invalid_state');
-  // Existing settings may be readable; the new credential-bearing file is private.
-  await owner.attest(path, false);
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  let inode = 0; let device = 0;
   try {
-    const st = await file.stat();
-    if (!st.isFile() || st.nlink !== 1 || st.size > limit || st.ino !== before.ino || st.dev !== before.dev) throw new SetupError('invalid_state');
-    const bytes = Buffer.alloc(limit + 1); const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
-    if (bytesRead > limit) throw new SetupError('invalid_state');
-    return { bytes: bytes.subarray(0, bytesRead), inode: st.ino, device: st.dev };
-  } finally { await file.close(); }
+    // Existing settings may be readable; the new credential-bearing file is private.
+    const bytes = await readBoundedFile(path, { maximum: limit, fail: () => new SetupError('invalid_state'),
+      attest: async (target, st) => { await owner.attest(target, false); inode = st.ino; device = st.dev; } });
+    return { bytes, inode, device };
+  } catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null; throw err; }
 }
 export async function configureClient(owner: OwnerProfile, client: ClientKind, port: number, token: string, replace = false): Promise<{ client: ClientKind; evidence: 'configuration_written'; tool_loading_verified: false }> {
   try {

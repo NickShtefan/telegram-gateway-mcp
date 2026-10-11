@@ -1,5 +1,5 @@
 /** DB-only receipt worker, invoked by the fixed service control command. No MTProto client. */
-import { lstat, open, unlink, rename } from 'node:fs/promises';
+import { open, unlink, rename } from 'node:fs/promises';
 import { join, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { z } from 'zod';
 import { installLayout } from '../install/platform.js';
 import { acquireFileLease } from '../core/fileLease.js';
+import { readBoundedFile } from '../core/safeFs.js';
 import { loadSessionSecret } from '../core/config.js';
 import { openStorage } from '../storage/sqlite.js';
 import { ownerPlanSchema } from './owner.js';
@@ -22,13 +23,8 @@ async function main(): Promise<void> {
   const attest=async(path:string):Promise<void>=>{await run('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
     ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',join(layout.application,'dist/setup/owner-protection.ps1'),'-Path',path,'-RequireServiceIdentity'],
     {windowsHide:true,timeout:15000,maxBuffer:1024,env:{SystemRoot:'C:\\Windows'}});};
-  const read=async(path:string):Promise<unknown>=>{
-    await attest(path);const before=await lstat(path);if(!before.isFile()||before.isSymbolicLink()||before.nlink!==1||before.size>2048)throw new SetupError('invalid_state');
-    const file=await open(path,'r');try{const st=await file.stat();if(!st.isFile()||st.nlink!==1||st.ino!==before.ino||st.size>2048)throw new SetupError('invalid_state');
-      const bytes=Buffer.alloc(2049);const {bytesRead}=await file.read(bytes,0,bytes.length,0);if(bytesRead>2048)throw new SetupError('invalid_state');
-      return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,bytesRead)).replace(/^\uFEFF/,'')) as unknown;
-    }finally{await file.close();}
-  };
+  const read=async(path:string):Promise<unknown>=>JSON.parse(new TextDecoder('utf-8',{fatal:true})
+    .decode(await readBoundedFile(path,{maximum:2048,attest,fail:()=>new SetupError('invalid_state')})).replace(/^\uFEFF/,'')) as unknown;
   const plan=z.strictObject({format_version:z.literal(1),source_sha:z.string().regex(/^[0-9a-f]{40}$/),legacy_setup_id:setupIdSchema.nullable().default(null),plan:ownerPlanSchema}).parse(await read(join(mailbox,'plan.json')));
   const ack=coordinatorMessageSchema.parse(await read(join(mailbox,'client-ack.json')));
   if(plan.source_sha!==sha||ack.kind!=='client_ack'||ack.setup_id!==plan.plan.setup_id)throw new SetupError('invalid_state');

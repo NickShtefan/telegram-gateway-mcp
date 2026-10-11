@@ -1,7 +1,6 @@
 /** Read the immutable installed profile before any owner-side mutation. */
-import { constants } from 'node:fs';
-import { lstat, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { readBoundedFile } from '../core/safeFs.js';
 import { attestAncestry, attestDirectory, attestFile, attestTree } from '../install/posixPermissions.js';
 import { receiptSchema, type ProvisionReceipt } from '../install/provision.js';
 import { installLayout, serviceDefinition, type InstallLayout } from '../install/platform.js';
@@ -9,17 +8,7 @@ import { parseSafe, SetupError } from './contract.js';
 
 export async function readProtectedRootFile(path: string, maximum: number): Promise<Buffer> {
   await attestAncestry(dirname(path));
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink()) throw new SetupError('protection_unverified');
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const st = await file.stat();
-    if (!st.isFile() || st.uid !== 0 || st.nlink !== 1 || (st.mode & 0o022) || st.size > maximum) throw new SetupError('protection_unverified');
-    await attestFile(path, st);
-    const bytes = Buffer.alloc(st.size + 1); const result = await file.read(bytes, 0, bytes.length, 0);
-    if (result.bytesRead !== st.size) throw new SetupError('invalid_state');
-    return bytes.subarray(0, st.size);
-  } finally { await file.close(); }
+  return readBoundedFile(path, { maximum, owners: [0], modeMask: 0o022, attest: attestFile, fail: () => new SetupError('protection_unverified') });
 }
 export async function installedPosixProfile(sourceSha: string): Promise<{ layout: InstallLayout; receipt: ProvisionReceipt }> {
   if (process.getuid?.() !== 0 || !['darwin', 'linux'].includes(process.platform)) throw new SetupError('protection_unverified');

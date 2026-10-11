@@ -4,8 +4,10 @@
  * never follow symlinks or modify other users' files. Otherwise a
  * malicious symlink could expose a session key as an image
  * or overwrite the daemon's `.env` through an export.
+ * readBoundedFile is the one reader for protected installer, state and profile files.
  */
-import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, unlinkSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, unlinkSync, writeSync, type Stats } from 'node:fs';
+import { lstat, open } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { GatewayError } from './errors.js';
 
@@ -103,4 +105,43 @@ export function readOwnFile(path: string, maxBytes: number): Buffer | null {
   } finally {
     closeSync(fd);
   }
+}
+
+/** Caller policy for readBoundedFile. Owners and mode bits apply on POSIX only; Windows callers attest through `attest`. */
+export interface BoundedFilePolicy {
+  /** Largest accepted size in bytes. */
+  maximum: number;
+  /** POSIX: accepted owner uids of the open file. */
+  owners?: readonly number[];
+  /** POSIX: mode bits that must be clear. */
+  modeMask?: number;
+  /** Path attestation (ACL, Windows security descriptor, tree listing) of the inode already open as `st`. */
+  attest?: (path: string, st: Stats) => Promise<void>;
+  /** Error for every policy failure. */
+  fail: () => Error;
+}
+
+/**
+ * Read a whole single-link regular file without following links or blocking on special files. The first lstat, the
+ * open descriptor and, after `attest`, a second lstat must name the same device/inode; the read asks for one byte
+ * beyond the descriptor size, so growth or shrinkage fails. Only the first lstat and open errors (ENOENT: absent)
+ * propagate unchanged; a later ENOENT means the file changed and fails like every other check.
+ */
+export async function readBoundedFile(path: string, policy: BoundedFilePolicy): Promise<Buffer> {
+  const same = (st: Stats, other: Stats): boolean => st.isFile() && !st.isSymbolicLink() && st.dev === other.dev && st.ino === other.ino;
+  const before = await lstat(path);
+  if (!before.isFile() || before.isSymbolicLink()) throw policy.fail();
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const st = await file.stat(); const posix = process.platform !== 'win32';
+    if (!same(st, before) || st.nlink !== 1 || st.size > policy.maximum
+      || (posix && ((policy.owners && !policy.owners.includes(st.uid)) || (st.mode & (policy.modeMask ?? 0)) !== 0))) throw policy.fail();
+    if (policy.attest) {
+      try { await policy.attest(path, st); if (!same(await lstat(path), st)) throw policy.fail(); }
+      catch (err) { throw (err as NodeJS.ErrnoException).code === 'ENOENT' ? policy.fail() : err; }
+    }
+    const bytes = Buffer.alloc(st.size + 1); const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+    if (bytesRead !== st.size) throw policy.fail();
+    return bytes.subarray(0, bytesRead);
+  } finally { await file.close(); }
 }

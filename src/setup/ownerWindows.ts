@@ -1,6 +1,5 @@
 /** Windows VSA owner worker: private on-demand mailbox, no network/admin endpoint. */
-import { constants } from 'node:fs';
-import { open, lstat, rename, unlink } from 'node:fs/promises';
+import { open, rename, unlink } from 'node:fs/promises';
 import { join, win32 } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -11,6 +10,7 @@ import { coordinatorMessageSchema, questions } from './promptChannel.js';
 import { installLayout } from '../install/platform.js';
 import { acquireFileLease } from '../core/fileLease.js';
 import { acquireLock } from '../core/lock.js';
+import { readBoundedFile } from '../core/safeFs.js';
 import { loadSessionSecret } from '../core/config.js';
 import { openStorage } from '../storage/sqlite.js';
 import { ApiCredentialFile } from './credentials.js';
@@ -31,16 +31,8 @@ async function main(): Promise<void> {
       { windowsHide: true, timeout: 15000, maxBuffer: 1024, env: { SystemRoot: 'C:\\Windows' } });
   };
   const mailbox = join(layout.prefix, 'owner-setup');
-  const read = async (path: string): Promise<string> => {
-    const st = await lstat(path); await attest(path);
-    if (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1 || st.size > 2048) throw new SetupError('invalid_state');
-    const file = await open(path, constants.O_RDONLY);
-    try {
-      const actual = await file.stat(); if (!actual.isFile() || actual.nlink !== 1 || actual.size > 2048 || actual.ino !== st.ino) throw new SetupError('invalid_state');
-      const buffer = Buffer.alloc(2049); const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      if (bytesRead > 2048) throw new SetupError('invalid_state'); return buffer.subarray(0, bytesRead).toString('utf8').replace(/^\uFEFF/, '');
-    } finally { await file.close(); }
-  };
+  const read = async (path: string): Promise<string> =>
+    (await readBoundedFile(path, { maximum: 2048, attest, fail: () => new SetupError('invalid_state') })).toString('utf8').replace(/^\uFEFF/, '');
   const plan = planSchema.parse(JSON.parse(await read(join(mailbox, 'plan.json'))));
   if (plan.source_sha !== sha || plan.plan.setup_id !== id) throw new SetupError('invalid_state');
   const write = async (name: string, value: unknown): Promise<void> => {

@@ -1,8 +1,9 @@
 /** Private service-side application credentials; never an agent-readable configuration command. */
 import { constants } from 'node:fs';
-import { open, lstat, rename, unlink } from 'node:fs/promises';
+import { open, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { readBoundedFile } from '../core/safeFs.js';
 import type { ApiCredentials } from './owner.js';
 import { SetupError } from './contract.js';
 
@@ -10,23 +11,13 @@ export class ApiCredentialFile {
   constructor(private readonly home: string, private readonly attestPrivateHome: () => Promise<void>,
     private readonly attestWindowsFile?: (path: string) => Promise<void>) {}
   private async text(): Promise<string | null> {
-    await this.attestPrivateHome(); const path = join(this.home, '.env');
-    let file;
+    await this.attestPrivateHome();
+    // Windows has no POSIX owner/mode proof: its file ACL attestation is mandatory.
+    const windows = this.attestWindowsFile ?? (async () => { throw new SetupError('protection_unverified'); });
     try {
-      const before = await lstat(path); if (!before.isFile() || before.isSymbolicLink()) throw new SetupError('invalid_state');
-      if (process.platform === 'win32') {
-        if (!this.attestWindowsFile) throw new SetupError('protection_unverified');
-        await this.attestWindowsFile(path);
-      }
-      file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      return (await readBoundedFile(join(this.home, '.env'), { maximum: 65_536, owners: process.getuid ? [process.getuid()] : undefined, modeMask: 0o077,
+        attest: process.platform === 'win32' ? windows : undefined, fail: () => new SetupError('invalid_state') })).toString('utf8');
     } catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null; throw new SetupError('invalid_state'); }
-    try {
-      const st = await file.stat();
-      if (!st.isFile() || st.size > 65_536 || st.nlink !== 1 || (process.getuid && st.uid !== process.getuid())
-        || (process.platform !== 'win32' && (st.mode & 0o077) !== 0)) throw new SetupError('invalid_state');
-      const buffer = Buffer.alloc(65_537); const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      if (bytesRead > 65_536) throw new SetupError('invalid_state'); return buffer.subarray(0, bytesRead).toString('utf8');
-    } finally { await file.close(); }
   }
   async read(): Promise<ApiCredentials | null> {
     const text = await this.text(); if (text === null) return null;
