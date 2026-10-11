@@ -1,5 +1,5 @@
 /** Installed administrator terminal entry. Never exposed by the agent wrapper or MCP. */
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -106,6 +106,13 @@ async function main(): Promise<number> {
     plan = ownerPlanSchema.parse({ setup_id: receipt.plan.setup_id, account, user, replace_session: false, rotate_token: false });
   }
   const rootLease = await acquireFileLease(layout.prefix, 'owner.lock');
+  // A signal must not skip supervision restore: it kills live children and ends private input so the
+  // structured cleanup below runs. A SIGKILLed coordinator leaves the protected restore marker instead.
+  let interrupted = false; const children = new Set<ChildProcess>();
+  const interrupt = (): void => { interrupted = true; for (const live of children) live.kill('SIGKILL'); if (channel) process.stdin.destroy(); };
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+  for (const signal of signals) process.on(signal, interrupt);
+  const supervised = <T extends ChildProcess>(child: T): T => { children.add(child); if (interrupted) child.kill('SIGKILL'); return child; };
   try {
     const stopped = await stopPosixService(layout);
     let activate = false;
@@ -113,10 +120,10 @@ async function main(): Promise<number> {
     let pendingHandoff: Extract<ReturnType<typeof workerMessageSchema.parse>, {kind:'handoff'}> | null=null;
     let exitCode=1;
     try {
-      const child = spawn(layout.node, [entry, 'worker', sha!], {
+      const child = supervised(spawn(layout.node, [entry, 'worker', sha!], {
         cwd: layout.release, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', TG_MCP_HOME: layout.state },
         stdio: ['pipe', 'pipe', 'ignore'], timeout: 15 * 60_000, killSignal: 'SIGKILL',
-      });
+      }));
       // Start waiting immediately so an early worker failure cannot lose its exit event.
       const exited = once(child, 'close').then(([code]) => code as number | null);
       const inputLife = new AbortController();
@@ -149,7 +156,7 @@ async function main(): Promise<number> {
           }
         }
         const code = await exited;
-        if (result?.kind !== 'result' || result.result.setup_id !== plan.setup_id || (code === 0) !== (result.result.phase !== 'failed')) throw new SetupError('invalid_state');
+        if (interrupted || result?.kind !== 'result' || result.result.setup_id !== plan.setup_id || (code === 0) !== (result.result.phase !== 'failed')) throw new SetupError('invalid_state');
         activate = result.result.phase === 'needs_service_start';
         completed=result;exitCode=code===0?0:1;
       } finally {
@@ -161,22 +168,22 @@ async function main(): Promise<number> {
     } finally { await stopped.restore(activate); }
     if(activate) {
       await attestManagedListener(layout,identity.uid,receipt.plan.port);
-      if(!channel||!pendingHandoff) throw new SetupError('invalid_state');
+      if(!channel||!pendingHandoff||interrupted) throw new SetupError('invalid_state');
       await sendPrivate(process.stdout,{...pendingHandoff,service_evidence:'listener_owned_by_service'});
       const next=await withTimeout(parentInput!.next(),300000,'client configuration'); if(next.done) throw new SetupError('invalid_state');
       const ack=coordinatorMessageSchema.parse(JSON.parse(next.value));
       if(ack.kind!=='client_ack'||ack.setup_id!==plan.setup_id) throw new SetupError('invalid_state');
       // The budget covers process start and bounded state attestation; the release walk stays with the coordinator.
-      const child=spawn(layout.node,[entry,'ack-worker',sha!],{cwd:layout.release,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},stdio:['pipe','ignore','ignore'],timeout:120000,killSignal:'SIGKILL'});
+      const child=supervised(spawn(layout.node,[entry,'ack-worker',sha!],{cwd:layout.release,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},stdio:['pipe','ignore','ignore'],timeout:120000,killSignal:'SIGKILL'}));
       const exited=once(child,'close').then(([code])=>code as number|null);
       child.stdin.on('error',()=>undefined);
       try {await sendPrivate(child.stdin,{kind:'plan',plan});await sendPrivate(child.stdin,ack);child.stdin.end();if(await exited!==0) throw new SetupError('invalid_state');}
       finally {child.stdin.end();if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');await exited;}
     }
-    if(!completed) throw new SetupError('invalid_state');
+    if(!completed||interrupted) throw new SetupError('invalid_state');
     if(channel) await sendPrivate(process.stdout,completed);else terminalIo.out(JSON.stringify(completed.result));
     return exitCode;
-  } finally { await rootLease.release(); }
+  } finally { for (const signal of signals) process.off(signal, interrupt); await rootLease.release(); }
 }
 // No stack, filesystem path, Telegram library text or private answer in output.
 runPrivateProcess(main, 'owner_step_failed');
