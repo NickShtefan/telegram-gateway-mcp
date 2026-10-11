@@ -8,6 +8,8 @@ Use a fresh macOS arm64 VM or otherwise uninstalled test Mac and a fresh Windows
 
 Start with only README and the owner-signed draft. GitHub private drafts need authorized access and are not visible to anonymous/read-only outsiders in the same way as a public release. The owner must arrange appropriate draft access or hand over the public signed assets plus an independently trusted README/bootstrap. Record this limitation as an access prerequisite, not a successful anonymous test.
 
+The owner has confirmed availability of macOS only. Windows source/archive CI is available, but the live new-user Windows row remains blocked until a test environment is provided.
+
 ## Trial
 
 1. Let the tester choose the correct asset using only README. Record confusion around arm64/Intel, Linux architecture and draft access.
@@ -22,7 +24,7 @@ Start with only README and the owner-signed draft. GitHub private drafts need au
 | Target | OS/build and candidate SHA | Commands before wizard | Needed help or external lookup | SDK / model tool result | Result |
 | --- | --- | --- | --- | --- | --- |
 | New macOS arm64 user | Pending owner execution | Pending | Pending | Pending | Not run |
-| New Windows 11 x64 user | Pending owner execution | Pending | Pending | Pending | Not run |
+| New Windows 11 x64 user | Environment unavailable | Pending | Pending | Pending | Blocked: no live test environment |
 | Intel macOS (not lab) | Pending | Pending | Pending | Pending | Not run |
 | Ubuntu 24.04 x64/arm64 | Pending | Pending | Pending | Pending | Not run |
 | Arch x64 | Pending; record snapshot/package versions | Pending | Pending | Pending | Not run |

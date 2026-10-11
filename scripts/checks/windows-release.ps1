@@ -27,4 +27,6 @@ try {
   try { & $powershell -NoLogo -NoProfile -NonInteractive -File $fixture -Archive $bad 2>$null; $rejectedExit=$LASTEXITCODE } finally { $ErrorActionPreference=$previous }
   if($rejectedExit -eq 0){throw 'tampered archive accepted'}
   $cert.Dispose()
+  $global:LASTEXITCODE=0
+  Write-Output 'Signed Windows ZIP and payload tamper rejection passed.'
 }finally{$rsa.Dispose();Remove-Item -LiteralPath $root -Recurse -Force}
