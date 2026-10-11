@@ -166,15 +166,19 @@ export class AccountLimiter {
         // teleproto DC migration invokes authorization/config RPCs while its
         // outer RPC still owns this lane. Serialize siblings under that owner;
         // descendants get their own context, avoiding a wait behind themselves.
+        // A FLOOD_WAIT retry also stays here: the lane queue is blocked behind the parent.
         const work = parent.tail.then(async () => {
-          if (this.stopped || !parent.active) { item.reject(new GatewayError('UNAVAILABLE', 'Authentication operation ended.')); return; }
-          let wait: number;
-          while (!this.stopped && parent.active && (wait = this.requiredWait(lane, this.now())) > 0) {
-            if (wait > item.startBy - this.now()) { item.reject(this.waitTooLongError(lane)); return; }
-            await this.interruptibleSleep(lane, wait);
+          for (let retry = true; retry;) {
+            retry = false;
+            if (this.stopped || !parent.active) { item.reject(new GatewayError('UNAVAILABLE', 'Authentication operation ended.')); return; }
+            let wait: number;
+            while (!this.stopped && parent.active && (wait = this.requiredWait(lane, this.now())) > 0) {
+              if (wait > item.startBy - this.now()) { item.reject(this.waitTooLongError(lane)); return; }
+              await this.interruptibleSleep(lane, wait);
+            }
+            if (this.stopped || !parent.active) { item.reject(new GatewayError('UNAVAILABLE', 'Authentication operation ended.')); return; }
+            await this.execute(accountId, lane, item, () => { retry = true; });
           }
-          if (this.stopped || !parent.active) { item.reject(new GatewayError('UNAVAILABLE', 'Authentication operation ended.')); return; }
-          await this.execute(accountId, lane, item);
         });
         parent.tail = work.catch(() => undefined);
       } else this.enqueue(accountId, lane, item);
@@ -332,7 +336,7 @@ export class AccountLimiter {
     });
   }
 
-  private async execute(accountId: string, lane: Lane, item: Item): Promise<void> {
+  private async execute(accountId: string, lane: Lane, item: Item, retry = (): void => this.enqueue(accountId, lane, item, true)): Promise<void> {
     const startedAt = this.now();
     this.windowCount(lane, startedAt);
     lane.windowCount++;
@@ -384,7 +388,7 @@ export class AccountLimiter {
         if (seconds <= this.floodCapSeconds && fitsBudget && item.retries < this.maxFloodRetries) {
           // FLOOD_WAIT means the request was not executed; retry is safe even for writes.
           item.retries++;
-          this.enqueue(accountId, lane, item, true);
+          retry();
           return;
         }
         item.reject(
