@@ -9,7 +9,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # The POSIX bootstrap test accepts only the qualified Linux baseline (Ubuntu 24.04).
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -22,8 +23,8 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run build
       - run: npm run typecheck
-      - name: Common contracts and native pipe ownership
-        run: npx --no-install vitest run src/install/__tests__/provision.test.ts src/install/__tests__/prerequisites.test.ts src/install/__tests__/runtimeEntry.test.ts src/core/__tests__/windowsLease.test.ts src/setup/__tests__/promptChannel.test.ts src/cli/__tests__/io.test.ts src/core/__tests__/pool.test.ts src/core/__tests__/limiter.test.ts src/setup/__tests__/clientConfig.test.ts src/setup/__tests__/clientFile.test.ts src/setup/__tests__/clientHandoff.test.ts src/setup/__tests__/clientProbe.test.ts src/setup/__tests__/owner.test.ts
+      - name: Full test suite
+        run: npm test
       - name: Production-sized Windows archive ACL batches
         if: runner.os == 'Windows'
         run: node scripts/checks/windows-archive.mjs

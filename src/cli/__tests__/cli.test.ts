@@ -16,6 +16,8 @@ import type { CliIo } from '../io.js';
 import { runLogin } from '../login.js';
 import { main } from '../main.js';
 
+// Windows owns sessions through a named-pipe lease; the Unix liveness socket cases are POSIX-only.
+const windows = process.platform === 'win32';
 let home: string;
 let config: GatewayConfig;
 let storage: SqliteStorage;
@@ -192,7 +194,7 @@ describe('lock: races and stale files', () => {
     await (won[0] as PromiseFulfilledResult<{ release(): Promise<void> }>).value.release();
   });
 
-  it('reclaims a dead process socket', async () => {
+  it.skipIf(windows)('reclaims a dead process socket', async () => {
     // Closed server without socket removal, as after kill -9.
     const dead = createServer();
     await new Promise<void>(resolve => dead.listen(lockPath(home), resolve));
@@ -204,13 +206,13 @@ describe('lock: races and stale files', () => {
     await lock.release();
   });
 
-  it('explains an oversized home path instead of returning EINVAL', async () => {
+  it.skipIf(windows)('explains an oversized home path instead of returning EINVAL', async () => {
     const deep = join(home, 'a'.repeat(60), 'b'.repeat(60));
     expect(await isLockHeld(deep)).toBe(false);
     await expect(acquireLock(deep)).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('Set TG_MCP_HOME to a shorter path') });
   });
 
-  it('preserves a regular file at the socket path as unsafe state', async () => {
+  it.skipIf(windows)('preserves a regular file at the socket path as unsafe state', async () => {
     writeFileSync(lockPath(home), 'stale');
     await expect(acquireLock(home)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
     expect(await isLockHeld(home)).toBe(true);
