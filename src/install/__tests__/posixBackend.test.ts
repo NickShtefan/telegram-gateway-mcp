@@ -71,7 +71,7 @@ describe.skipIf(process.getuid?.() !== 0 || process.env.TG_MCP_ROOT_TESTS !== '1
     spawned.length = 0; expect(await backend.inspect(released, layout)).toBe(true); expect(spawned).toHaveLength(1);
     spawned.length = 0; await backend.installRelease(layout); expect(spawned.length).toBeLessThanOrEqual(3);
     expect(readdirSync(join(layout.application, 'dist')).sort()).toEqual(['d1', 'd2', 'd3', ...Array.from({ length: 15 }, (_, i) => `f${i * 40}.js`)].sort());
-  });
+  }, 30_000); // About 640 files with per-file fsync; parallel root runs have exceeded the 10 s default.
   it('rejects ACLs, symlinks, unexpected and corrupt files on inspection and resume', async () => {
     const { backend, layout } = fixture(base, application(10, 50)); await backend.installRelease(layout);
     const file = join(layout.application, 'dist', 'd1', 'f1.js'); const extra = join(layout.application, 'dist', 'extra.js');
