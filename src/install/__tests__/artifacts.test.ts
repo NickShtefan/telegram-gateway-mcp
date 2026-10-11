@@ -130,11 +130,19 @@ describe.skipIf(process.platform === 'win32')('pinned signatures and no-Node POS
       '--node-version',process.versions.node,'--node-license',license,'--signing-key',keyPath,'--certificate',certPath,
       '--source-sha',sourceSha,'--platform',process.platform,'--architecture',process.arch,'--fixture-runtime'],{encoding:'utf8',timeout:20000});
     expect(result.status,result.stderr).toBe(0);expect(readdirSync(bundle)).not.toContain('fixture-key.pem');
-    const invoke=()=>spawnSync('/bin/sh',[resolve('scripts/install/bootstrap-posix.sh'),bundle,signerSha256,sourceSha,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});
+    const production=readFileSync(resolve('scripts/install/bootstrap-posix.sh'),'utf8');
+    // Test keys are pinned only in a disposable copy; production has no pin override.
+    const original=production.replace("trusted_signer_sha256='f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682'",`trusted_signer_sha256='${signerSha256}'`);
+    expect(original).not.toBe(production);
+    const fixtureBootstrap=join(directory,'fixture-bootstrap.sh');writeFileSync(fixtureBootstrap,original);
+    const productionRejected=spawnSync('/bin/sh',[resolve('scripts/install/bootstrap-posix.sh'),bundle,sourceSha,'verify'],{encoding:'utf8',timeout:20000});
+    expect(productionRejected.status).toBe(1);expect(productionRejected.stderr).toContain('bootstrap_verification_failed');
+    const overrideRejected=spawnSync('/bin/sh',[resolve('scripts/install/bootstrap-posix.sh'),bundle,signerSha256,sourceSha,'verify'],{encoding:'utf8',timeout:20000});
+    expect(overrideRejected.status).toBe(1);
+    const invoke=()=>spawnSync('/bin/sh',[fixtureBootstrap,bundle,sourceSha,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});
     const verified=invoke();expect(verified.status,verified.stderr).toBe(0);expect(JSON.parse(verified.stdout)).toMatchObject({phase:'candidate_verified',installed:false,node_version:process.versions.node,version:'0.2.0'});
     // Deterministic adversarial interleavings after pathname prechecks and
     // before snapshot sysopen. The injected code is a local test shim only.
-    const original=readFileSync(resolve('scripts/install/bootstrap-posix.sh'),'utf8');
     const installer=join(bundle,'installer.mjs');const originalInstaller=readFileSync(installer);
     for(const kind of ['fifo','oversized'] as const) {
       const shim=join(directory,`snapshot-${kind}.sh`);

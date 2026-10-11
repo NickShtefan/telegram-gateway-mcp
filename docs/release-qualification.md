@@ -29,6 +29,8 @@ For each row record OS build/architecture, source commit, manifest SHA-256, publ
 
 ## Local owner signing
 
+The owner has established certificate fingerprint `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682`. For current tests, reuse its existing encrypted key and certificate. Do not regenerate or reissue them: a new certificate changes its DER fingerprint and requires an explicit bootstrap trust update. The commands below describe initial key onboarding, not a step to repeat after pinning.
+
 Create the production key only in an ordinary owner terminal with agents/capture stopped. Do not run the following through an agent, CI or shared shell transcript. Store the private directory outside the checkout, backup it privately and never send its key/passphrase to chat. This is a custom release signature and does not require paid Apple membership or notarization.
 
 ```sh
@@ -42,7 +44,7 @@ cd "$HOME/tg-mcp-signing"
 chmod 600 owner-signing-key.pem
 ```
 
-OpenSSL asks for the encryption passphrase directly. Keep the encrypted PKCS#8 `BEGIN ENCRYPTED PRIVATE KEY` format; do not remove encryption. The certificate is public. Establish its DER SHA-256 independently before installation. No OS publisher/CA trust is implied.
+Keep both `-new` and `-x509` in the certificate command. On macOS system LibreSSL, omitting `-new` makes `req` expect an existing certificate request instead of creating one from the key. OpenSSL asks for the encryption passphrase directly. Keep the encrypted PKCS#8 `BEGIN ENCRYPTED PRIVATE KEY` format; do not remove encryption. The certificate is public. Establish its DER SHA-256 independently before installation. No OS publisher/CA trust is implied.
 
 From the reviewed source checkout, after approving the exact source and manifest hashes, sign an unsigned candidate using the owner-only helper:
 

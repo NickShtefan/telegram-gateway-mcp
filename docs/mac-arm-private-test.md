@@ -46,7 +46,8 @@ TG_BUNDLE="$TG_TEST_ROOT/bundle"
 TG_SOURCE="$TG_TEST_ROOT/source"
 TG_REPO="$HOME/Projects/CODE/Chanel/tg-mcp"
 TG_SIGNING_DIR="$HOME/tg-mcp-signing"
-TG_TRUSTED_VERIFIER=/Library/TelegramMCPGateway-bootstrap-42e0874.sh
+TG_BOOTSTRAP="$TG_REPO/scripts/install/bootstrap-posix.sh"
+TG_TRUSTED_VERIFIER=/Library/TelegramMCPGateway-bootstrap-f6d3d70c.sh
 mkdir -m 700 "$TG_TEST_ROOT"
 gh api repos/NickShtefan/telegram-gateway-mcp --jq .private
 gh api repos/NickShtefan/telegram-gateway-mcp/actions/artifacts/11705630926/zip \
@@ -80,7 +81,7 @@ This is an unsigned candidate. Do not launch its Node or install it yet. If the 
 
 ## 3. Prepare the signing helper from the exact fixed source
 
-The repository was updated to this source before this guide was written. Export its tracked files into a separate directory, preserving your working checkout:
+Update the repository to include the owner-pinned bootstrap before starting. The application and signing helper stay frozen at source `42e0874`; the bootstrap comes from the updated checkout and must match the new hash below. Do not use the older unpinned bootstrap exported with the application source. Export its tracked files into a separate directory, preserving your working checkout:
 
 ```sh
 git -C "$TG_REPO" cat-file -e "$TG_SOURCE_SHA^{commit}"
@@ -89,17 +90,17 @@ git -C "$TG_REPO" archive "$TG_SOURCE_SHA" | /usr/bin/tar -x -C "$TG_SOURCE"
 cd "$TG_SOURCE"
 npm ci --ignore-scripts --no-audit --no-fund --cache "$TG_TEST_ROOT/npm-cache"
 npm run build
-shasum -a 256 scripts/install/bootstrap-posix.sh scripts/release/sign-candidate.mjs
+shasum -a 256 "$TG_BOOTSTRAP" scripts/release/sign-candidate.mjs
 ```
 
 Expected: dependency installation and build exit successfully. Script hashes, in the printed order:
 
 ```text
-f7f830aa0c23af1c926d8d23591e4839b302b5c2b4386ee5e12f0f63ff05b028
+a38abb05090f89b79144ecd000730b1a6139948dfefa37fc177e10246d5fce59
 63c368974ef7cf87411d910d16b617803c134e75fdbc7793c8679ec10a1348d1
 ```
 
-Review the [verifier at the frozen source](https://github.com/NickShtefan/telegram-gateway-mcp/blob/42e0874ce0d45a625fbc1c7a6141b23f732f11d9/scripts/install/bootstrap-posix.sh) and the [owner signing helper](https://github.com/NickShtefan/telegram-gateway-mcp/blob/42e0874ce0d45a625fbc1c7a6141b23f732f11d9/scripts/release/sign-candidate.mjs). Establish your trust in this exact source before giving it a signing key or elevation. Hashes printed by a download alone do not establish independent authenticity.
+Review the [owner-pinned verifier](https://github.com/NickShtefan/telegram-gateway-mcp/blob/codex/install-trust-design/scripts/install/bootstrap-posix.sh) and the [owner signing helper](https://github.com/NickShtefan/telegram-gateway-mcp/blob/42e0874ce0d45a625fbc1c7a6141b23f732f11d9/scripts/release/sign-candidate.mjs). Establish your trust in this exact source before giving it a signing key or elevation. Hashes printed by a download alone do not establish independent authenticity.
 
 ```sh
 node "$TG_SOURCE/dist/cli/index.js" setup preflight --client codex --json
@@ -111,19 +112,17 @@ Expected: `phase: "preflight_ready"`, `architecture: "arm64"`, `next_action: "re
 
 **Stop all agents and disable terminal capture/UI automation now. Keep them stopped through signing, installation and Telegram login.** Hidden prompts do not protect against arbitrary software running as your OS user. Perform the remaining commands yourself in an ordinary Terminal, not an agent tool or shared transcript. Keep this Terminal open so the `TG_*` variables remain available.
 
-If you already have the matching encrypted key and certificate in `$TG_SIGNING_DIR`, reuse them and skip key generation. Do not overwrite an existing key/certificate. For a first key:
+Use your existing encrypted key and certificate in `$TG_SIGNING_DIR`. You have already established the certificate fingerprint. **Do not generate another key or certificate for this test.** If those files are unavailable or stored elsewhere, stop and locate your own files rather than replacing the signing identity.
 
 ```sh
-mkdir -m 700 "$TG_SIGNING_DIR"
-/usr/bin/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
-  -aes-256-cbc -out "$TG_SIGNING_DIR/owner-signing-key.pem"
-chmod 600 "$TG_SIGNING_DIR/owner-signing-key.pem"
-/usr/bin/openssl req -new -x509 -key "$TG_SIGNING_DIR/owner-signing-key.pem" \
-  -sha256 -days 3650 -out "$TG_SIGNING_DIR/owner-signing-certificate.pem" \
-  -subj '/CN=Telegram MCP Gateway Owner Release Signing'
+TG_SIGNER_PIN="$(/usr/bin/openssl x509 \
+  -in "$TG_SIGNING_DIR/owner-signing-certificate.pem" -outform DER |
+  /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+printf 'Public signer SHA-256: %s\n' "$TG_SIGNER_PIN"
+test "$TG_SIGNER_PIN" = f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682
 ```
 
-Expected: OpenSSL asks you to choose/confirm an encryption passphrase, then asks for it to create the certificate. Input is hidden. Two files exist in your private signing directory; neither belongs in the repository or bundle. The key remains exclusively yours. This project signature does not imply Apple notarization.
+Expected: the printed value is exactly `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682` and `test` exits 0. This reads only the public certificate. A mismatch means stop: the pinned bootstrap will reject that certificate. The encrypted private key stays exclusively yours, outside the bundle/repository. The initial creation command in [release-qualification.md](release-qualification.md) includes `req -new -x509`; it is not a repeat step now that your certificate is pinned.
 
 ## 5. Sign the candidate locally
 
@@ -145,8 +144,8 @@ Expected: a hidden passphrase prompt, then JSON with `phase: "owner_signed"`, th
 ## 6. Verify without installing
 
 ```sh
-/bin/sh "$TG_SOURCE/scripts/install/bootstrap-posix.sh" \
-  "$TG_BUNDLE" "$TG_SIGNER_PIN" "$TG_SOURCE_SHA" verify
+/bin/sh "$TG_BOOTSTRAP" \
+  "$TG_BUNDLE" "$TG_SOURCE_SHA" verify
 ```
 
 Expected: exit 0 and JSON containing `phase: "candidate_verified"`, `version: "0.2.0"`, the frozen source SHA, `platform: "darwin"`, `architecture: "arm64"`, `node_version: "24.21.0"`, and `installed: false`. Verification creates only disposable private staging. It does not create a service or Telegram session.
@@ -159,17 +158,17 @@ First put the exact reviewed verifier in the root-owned `/Library` location. If 
 
 ```sh
 sudo /usr/bin/install -o root -g wheel -m 0555 \
-  "$TG_SOURCE/scripts/install/bootstrap-posix.sh" "$TG_TRUSTED_VERIFIER"
+  "$TG_BOOTSTRAP" "$TG_TRUSTED_VERIFIER"
 test ! -L "$TG_TRUSTED_VERIFIER"
 /usr/bin/stat -f '%u:%g:%Lp' "$TG_TRUSTED_VERIFIER"
 /usr/bin/shasum -a 256 "$TG_TRUSTED_VERIFIER"
 ```
 
-Expected: `0:0:555` and verifier SHA-256 `f7f830aa0c23af1c926d8d23591e4839b302b5c2b4386ee5e12f0f63ff05b028`. Do not execute it if either differs. `/Library` must be a normal protected system directory, not an owner/agent-writable replacement.
+Expected: `0:0:555` and verifier SHA-256 `a38abb05090f89b79144ecd000730b1a6139948dfefa37fc177e10246d5fce59`. Do not execute it if either differs. `/Library` must be a normal protected system directory, not an owner/agent-writable replacement.
 
 ```sh
 sudo /bin/sh "$TG_TRUSTED_VERIFIER" \
-  "$TG_BUNDLE" "$TG_SIGNER_PIN" "$TG_SOURCE_SHA" install
+  "$TG_BUNDLE" "$TG_SOURCE_SHA" install
 ```
 
 Expected: verified extraction metadata followed by JSON with `phase: "needs_api_credentials"`, `error_code: null`, and `service_started: false`. The owner command now exists:
