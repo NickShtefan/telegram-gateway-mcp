@@ -9,7 +9,9 @@ import { randomToken, seal, sha256Hex, unseal, type Sealed } from '../core/crypt
 import { addUser, grantAccount } from '../cli/admin.js';
 import { parseSafe, setupIdSchema, SetupError } from './contract.js';
 
-const id = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/);
+/** Local account and user labels; the wizard explains this rule before the plan is built. */
+export const ownerLabelPattern = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const id = z.string().regex(ownerLabelPattern);
 export const ownerPlanSchema = z.strictObject({ setup_id: setupIdSchema, account: id, user: id,
   replace_session: z.boolean().default(false), rotate_token: z.boolean().default(false),
   clients: z.array(z.enum(['codex', 'claude', 'opencode', 'hermes'])).max(4).default([]),
@@ -47,8 +49,7 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
       // Existing sessions with a missing API file require explicit repair; refuse before asking for secrets.
       if (newCredentials && !login) throw new SetupError('invalid_state');
       if (credentials === null) {
-        deps.io.err('Open https://my.telegram.org/apps, sign in, choose API development tools and create an application.');
-        deps.io.err('Enter its api_id and api_hash in the hidden prompts. Keep login codes/passwords out of agent chat.');
+        // The original-user launcher shows the API application guidance when this fixed question arrives.
         const apiId = await deps.io.prompt('Telegram application id: ', { hidden: true });
         const apiHash = (await deps.io.prompt('Telegram application hash: ', { hidden: true })).trim();
         credentials = parseSafe(apiSchema, { apiId: Number(apiId), apiHash }, 'invalid_request');
@@ -94,7 +95,6 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
         const handoff = pendingClientToken(deps.storage, p.setup_id, deps.sessionSecret);
         if (!handoff || handoff.user !== p.user) throw new SetupError('invalid_state');
       }
-      deps.io.err('Owner setup completed. Client credentials are handed off directly; no token is printed.');
       return { ...result, phase: pending ? 'needs_client_configuration' : 'needs_existing_client_credential', error_code: null };
     }));
   } catch (err) {

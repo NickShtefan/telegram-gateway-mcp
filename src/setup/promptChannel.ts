@@ -90,6 +90,7 @@ export async function nextPrivate(input: AsyncIterator<string>, signal: AbortSig
   try { return await withTimeout(Promise.race([input.next(), aborted]), timeoutMs, 'private owner input'); }
   finally { signal.removeEventListener('abort', cancel); }
 }
+/** Worker notices never cross the boundary; the launcher shows fixed guidance for each closed question identifier. */
 export function workerIo(input: AsyncIterator<string>, output: Writable): CliIo {
   let sequence = 0;
   return { out: () => { throw new SetupError('invalid_state'); }, err: () => undefined,
