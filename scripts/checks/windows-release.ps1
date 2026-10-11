@@ -23,7 +23,8 @@ try {
   if($LASTEXITCODE -ne 0){throw 'signed archive rejected'};$meta=$result|ConvertFrom-Json
   if($meta.source_sha -cne $source -or $meta.phase -cne 'bundle_verified' -or $meta.installed){throw 'archive identity failed'}
   $payload['node.exe']=[byte[]](43);$bad=Join-Path $root 'bad.zip';WriteZip $bad
-  & $powershell -NoLogo -NoProfile -NonInteractive -File $fixture -Archive $bad 2>$null
-  if($LASTEXITCODE -eq 0){throw 'tampered archive accepted'}
+  $previous=$ErrorActionPreference;$ErrorActionPreference='Continue'
+  try { & $powershell -NoLogo -NoProfile -NonInteractive -File $fixture -Archive $bad 2>$null; $rejectedExit=$LASTEXITCODE } finally { $ErrorActionPreference=$previous }
+  if($rejectedExit -eq 0){throw 'tampered archive accepted'}
   $cert.Dispose()
 }finally{$rsa.Dispose();Remove-Item -LiteralPath $root -Recurse -Force}
