@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GatewayError } from './errors.js';
+import { sleep } from './time.js';
 import { acquireWindowsLease, isWindowsLeaseHeld } from './windowsLease.js';
 
 export interface FileLease { release(): Promise<void>; }
@@ -62,18 +63,31 @@ async function trustedFile(home: string, filename: string, create: boolean): Pro
   }
 }
 
+/**
+ * flock has no query operation: a concurrent isFileLeaseHeld probe briefly
+ * holds the lock it tests. Short bounded retries keep that probe from
+ * defeating a real owner; a genuinely held lease still fails in about half a second.
+ */
+const BUSY_RETRY_MS = [50, 100, 150, 200];
+
 export async function acquireFileLease(home: string, filename: string): Promise<FileLease> {
   if (process.platform === 'win32') return acquireWindowsLease(home, filename);
   const file = await trustedFile(home, filename, true);
   if (!file) throw new GatewayError('UNAVAILABLE', 'The kernel-lock file is missing.');
   try {
-    if (!await kernelLock(file)) throw new FileLeaseBusyError();
+    for (let attempt = 0; !await kernelLock(file); attempt++) {
+      if (attempt >= BUSY_RETRY_MS.length) throw new FileLeaseBusyError();
+      await sleep(BUSY_RETRY_MS[attempt]!);
+    }
   } catch (err) { await file.close(); throw err; }
   let released: Promise<void> | undefined;
   return { release: () => released ??= file.close() };
 }
 
-/** Read-only probe; absence does not create a file. Errors conservatively mean held/unsafe. */
+/**
+ * Read-only probe; absence does not create a file. Errors conservatively mean held/unsafe.
+ * Testing a free lease takes it until the file closes; acquireFileLease retries past that.
+ */
 export async function isFileLeaseHeld(home: string, filename: string): Promise<boolean> {
   if (process.platform === 'win32') return isWindowsLeaseHeld(home, filename);
   let file: FileHandle | null = null;

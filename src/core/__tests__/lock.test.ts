@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { acquireLock, isLockHeld, lockPath } from '../lock.js';
-import { acquireFileLease, isFileLeaseHeld } from '../fileLease.js';
+import { acquireFileLease, FileLeaseBusyError, isFileLeaseHeld } from '../fileLease.js';
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -65,6 +65,29 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
     expect(await isLockHeld(directory)).toBe(true);
   });
 
+  it('waits out a transient holder such as a read-only probe instead of failing the real owner', async () => {
+    const directory = home(); const child = await childOwner(directory, true);
+    const pending = acquireFileLease(directory, 'sessions.lock');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited;
+    const lease = await pending;
+    try { expect(await isFileLeaseHeld(directory, 'sessions.lock')).toBe(true); }
+    finally { await lease.release(); }
+    // flock cannot query: each probe briefly takes the free lease it tests.
+    for (let round = 0; round < 10; round++) {
+      const [, , owner] = await Promise.all([isLockHeld(directory), isFileLeaseHeld(directory, 'sessions.lock'), acquireLock(directory)]);
+      await owner.release();
+    }
+  });
+
+  it('still rejects a genuinely held lease after bounded retries', async () => {
+    const directory = home(); await childOwner(directory, true);
+    const started = Date.now();
+    await expect(acquireFileLease(directory, 'sessions.lock')).rejects.toBeInstanceOf(FileLeaseBusyError);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(450); expect(elapsed).toBeLessThan(5_000);
+  });
+
   it('only one of competing restarts wins after a killed owner leaves its socket', async () => {
     for (let attempt = 0; attempt < 8; attempt++) {
       const directory = home(); const child = await childOwner(directory, true);
@@ -79,7 +102,7 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
       } finally { await Promise.all(winners.map(r => r.value.release())); }
       expect(readdirSync(directory)).toEqual(['sessions.lock']);
     }
-  });
+  }, 30_000); // Each round's losers spend the bounded busy retries (about half a second).
 
   it('release is idempotent and cannot remove the next owner socket', async () => {
     const directory = home(); const first = await acquireLock(directory);
