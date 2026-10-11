@@ -4,16 +4,16 @@ This is an execution checklist, not a claim of completed live qualification. Aut
 
 ## Environment and access
 
-Use a fresh macOS arm64 VM or otherwise uninstalled test Mac and a fresh Windows 11 x64 VM/test computer. Create a new empty ordinary OS user yourself. Do not reuse a global installation, copy a Telegram session, change the Intel lab, or ask an agent to handle a signing key/password/login code.
+Use a fresh macOS arm64 VM or otherwise uninstalled test Mac and a fresh Windows 11 x64 VM/test computer. Create a new, empty OS user with administrator rights yourself (the installation needs system authorization; the wizard runs unelevated). Do not reuse a global installation, copy a Telegram session, change the Intel lab, or ask an agent to handle a signing key/password/login code.
 
-Start with only README and the owner-signed draft. GitHub private drafts need authorized access and are not visible to anonymous/read-only outsiders in the same way as a public release. The owner must arrange appropriate draft access or hand over the public signed assets plus an independently trusted README/bootstrap. Record this limitation as an access prerequisite, not a successful anonymous test.
+Start with only README and the owner-signed draft. GitHub private drafts need authorized access and are not visible to anonymous/read-only outsiders in the same way as a public release. The owner must arrange appropriate draft access (the commands download with `gh`) or hand over the public signed assets plus an independently trusted README. Record this limitation as an access prerequisite, not a successful anonymous test.
 
 The owner has confirmed availability of macOS only. Windows source/archive CI is available, but the live new-user Windows row remains blocked until a test environment is provided.
 
 ## Trial
 
 1. Let the tester choose the correct asset using only README. Record confusion around arm64/Intel, Linux architecture and draft access.
-2. Download the archive and immutable bootstrap. Run the three README commands; no Node/npm, compiler, local signing or typed hashes may be required.
+2. Run the three commands for the platform from README, or the same commands from the draft's release notes with the exact source pin; record which. No Node/npm, compiler, local signing or typed hashes may be required. Record any browser download and what it did to the archive.
 3. Approve system changes manually. On Linux inspect/confirm only the displayed official-source prerequisite transaction with `INSTALL`.
 4. Complete wizard defaults, API application creation, phone/code/2FA and client selection. Secrets remain in the human terminal with agents/capture stopped.
 5. Restart the selected client and observe a real `telegram_gateway` / `tg_status` call. SDK success without model tool loading is incomplete.

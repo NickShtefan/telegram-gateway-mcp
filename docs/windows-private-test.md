@@ -1,13 +1,13 @@
 # Private installation check: Windows 11
 
-Target: Windows 11 x64. Use Windows PowerShell and a fresh ordinary OS user. Installation commands run in an Administrator window; the short owner command runs in an ordinary window.
+Target: Windows 11 x64. Use Windows PowerShell and a fresh OS user with administrator rights. Commands 1 and 2 run in a Windows PowerShell opened as Administrator by that same account (elevating with another account's credentials changes `$HOME`); the short owner command runs in an ordinary unelevated window.
 
 ## Steps and expected results
 
-1. Obtain the owner-signed draft and trusted README/bootstrap. Private draft access is a prerequisite; do not use unsigned CI files as a user installer.
-2. Select the matching archive from the README table. Download it and the pinned bootstrap into Downloads. Expected: no build, npm or local signing operation.
-3. Run the three README commands exactly. Expected: checksum OK; signature/source/platform checks succeed; protected service provisioning ends with needs_api_credentials and the service is not yet started.
-4. Run the installed owner wizard as an ordinary user. Explain/accept defaults or use stable local labels. Type OWNER READY only after agents/capture are stopped. Enter Telegram application credentials, phone/code/2FA directly into hidden prompts.
+1. Obtain access to the owner-signed draft and a trusted README. Private draft access is a prerequisite (`gh auth login` with an authorized account); do not use unsigned CI files as a user installer.
+2. Use an administrator account. Pick the README block for this platform, or the same block from the draft's release notes, which also pins the exact source commit. Command 1 downloads the bootstrap and archive into Downloads. Expected: no build, npm or local signing operation.
+3. Run commands 1 and 2 exactly. Expected: checksum OK; signature/source/platform checks succeed; protected service provisioning ends with needs_api_credentials and the service is not yet started.
+4. Run command 3, the installed owner wizard, unelevated as the same user. Explain/accept defaults or use stable local labels. Type OWNER READY only after agents/capture are stopped. Enter Telegram application credentials, phone/code/2FA directly into hidden prompts.
 5. Select a client and approve only an explicitly shown conflicting-entry replacement. Expected: sdk_connectivity_verified true, tokens absent from output, command returns without hanging.
 6. Restart the chosen client and request a real telegram_gateway tg_status call. Expected: the chosen account connected. Plain prose or SDK-only success is insufficient.
 7. Repeat the same wizard/candidate with the same labels. Expected: no token rotation or new Telegram login. In a separate trial, cancel and resume while preserving state.
