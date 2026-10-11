@@ -653,6 +653,14 @@
       "destination": "src/setup/__tests__/clientProbe.test.ts"
     },
     {
+      "source": "src/setup/__tests__/privateLifecycle.test.ts",
+      "destination": "src/setup/__tests__/privateLifecycle.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/serviceControl.test.ts",
+      "destination": "src/setup/__tests__/serviceControl.test.ts"
+    },
+    {
       "source": "scripts/checks/windows-owner-contract.ps1",
       "destination": "scripts/checks/windows-owner-contract.ps1"
     },
@@ -759,6 +767,10 @@
     {
       "source": "src/install/__tests__/runtimeEntry.test.ts",
       "destination": "src/install/__tests__/runtimeEntry.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/posixBackend.test.ts",
+      "destination": "src/install/__tests__/posixBackend.test.ts"
     }
   ],
   "excludedTrackedFiles": [
