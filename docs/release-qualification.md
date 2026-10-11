@@ -8,6 +8,8 @@ Decision 68 prioritizes owner installation and client testing before new-reposit
 
 When the owner later resumes publication, rebuild and verify the actual clean-import/release SHA. Results from the private candidate remain evidence for that candidate rather than automatic qualification of a different signed artifact.
 
+For the first actual ARM Mac run, use [mac-arm-private-test.md](mac-arm-private-test.md), which supplies the frozen download, hashes, commands and expected outcomes.
+
 ## Evidence matrix
 
 Record one evidence row per actual candidate and environment. Do not include passwords, Telegram application hashes, codes, bearer tokens, session contents, profile contents or private keys.
@@ -35,7 +37,7 @@ mkdir "$HOME/tg-mcp-signing"
 cd "$HOME/tg-mcp-signing"
 /usr/bin/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
   -aes-256-cbc -out owner-signing-key.pem
-/usr/bin/openssl req -x509 -key owner-signing-key.pem -sha256 -days 3650 \
+/usr/bin/openssl req -new -x509 -key owner-signing-key.pem -sha256 -days 3650 \
   -out owner-signing-certificate.pem -subj '/CN=Telegram MCP Gateway Owner Release Signing'
 chmod 600 owner-signing-key.pem
 ```

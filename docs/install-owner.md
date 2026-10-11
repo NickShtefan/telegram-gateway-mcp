@@ -1,5 +1,7 @@
 # Independent owner installation: 0.2.0 candidate
 
+For the owner's first ARM Mac test, start with the [concrete step-by-step guide](mac-arm-private-test.md). This page is the generic multi-platform contract.
+
 This is the candidate workflow. Publication, production signer establishment and live qualification are still required before it becomes an installation recommendation. Use the owner-approved exact source commit and platform bundle, not the current repository's private history or another npm package named `tg-mcp`.
 
 1. Obtain the versioned bootstrap verifier and bundle from the project owner's trusted release channel. Independently establish the verifier's exact code/checksum, the DER signer-certificate SHA-256 fingerprint and source commit. A fingerprint supplied only by an agent or by the same unauthenticated download is not an independent trust anchor. Have the human review and establish verifier trust before elevation; do not execute an untrusted downloaded verifier as administrator.

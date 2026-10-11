@@ -26,6 +26,10 @@ The current repository and package remain private and unpublished. The selected 
 
 The candidate now carries MIT, contribution/security policies and production dependency notices. Managed provisioning and owner/client components are implemented; artifact, platform and live qualification remain release gates. The selected first public version is 0.2.0. Release targets are macOS 13+ (arm64/Intel), Linux and native Windows; qualification is pending. The terminal installer has no paid Apple Developer dependency. No production installation recommendation is implied by the development commands below.
 
+## First private installation test
+
+For the owner's Apple Silicon Mac, follow the [step-by-step ARM test guide](docs/mac-arm-private-test.md). It pins the current fixed candidate, its download/checksums, local signing, installation commands and expected results. Other platforms follow after this first live test. New-repository and open-source work remain deferred.
+
 ## Development
 
 Requires Node.js 22.13 or later and npm. macOS source builds also need the Xcode Command Line Tools to build the small universal kernel-lease helper; the release installer will bundle it, so target users need no compiler. The release policy is to recommend a tested LTS branch and verify the minimum Node version separately. Local and hosted source checks cover macOS, Linux and Windows; tested Node versions and live support evidence are recorded separately before release.
