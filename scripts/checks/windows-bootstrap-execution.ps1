@@ -38,6 +38,26 @@ try {
   $failed=$false;try{AssertStagingAncestors 'C:\ProgramData'}catch{$failed=$true};if(-not $failed){throw 'unsafe ancestor ACL accepted'}
   $script:acls['C:\']=$safe;$root.Attributes=[IO.FileAttributes]::ReparsePoint
   $failed=$false;try{AssertStagingAncestors 'C:\ProgramData'}catch{$failed=$true};if(-not $failed){throw 'ancestor reparse accepted'}
+  # Staging cleanup: only a GUID directory inside the attested parent, links removed without following them.
+  foreach($name in @('RemoveStaging','RemoveTree')){
+    $function=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name},$true)
+    if(@($function).Count -ne 1){throw 'missing cleanup helper'};. ([scriptblock]::Create($function[0].Extent.Text))
+  }
+  $script:attested=@();function AssertStagingAncestors {param($Path) $script:attested+=$Path}
+  $parent=Join-Path $directory 'staging';$outside=Join-Path $directory 'outside'
+  $null=New-Item -ItemType Directory -Path $parent;$null=New-Item -ItemType Directory -Path $outside
+  $kept=Join-Path $outside 'kept.txt';[IO.File]::WriteAllText($kept,'kept')
+  $stage=Join-Path $parent ([guid]::NewGuid().ToString())
+  $null=New-Item -ItemType Directory -Path (Join-Path $stage 'application\dist')
+  foreach($file in @('node.exe','application\dist\index.js','application\readonly.js')){[IO.File]::WriteAllText((Join-Path $stage $file),'synthetic')}
+  (New-Object IO.FileInfo (Join-Path $stage 'application\readonly.js')).IsReadOnly=$true
+  $null=New-Item -ItemType Junction -Path (Join-Path $stage 'application\link') -Target $outside
+  $failed=$false;try{RemoveStaging $parent (Join-Path $parent 'not-a-guid')}catch{$failed=$true};if(-not $failed){throw 'non-staging name accepted'}
+  $failed=$false;try{RemoveStaging $outside $stage}catch{$failed=$true};if(-not $failed -or -not (Test-Path -LiteralPath $stage)){throw 'foreign staging parent accepted'}
+  if($script:attested.Count -ne 0){throw 'cleanup attested before path validation'}
+  RemoveStaging $parent $stage
+  if((Test-Path -LiteralPath $stage) -or -not (Test-Path -LiteralPath $kept) -or $script:attested -notcontains $parent){throw 'staging cleanup failed or followed a link'}
+  RemoveStaging $parent $stage
 }finally{
   Remove-Item function:Get-Item -ErrorAction SilentlyContinue;Remove-Item function:Get-Acl -ErrorAction SilentlyContinue
   $env:NODE_OPTIONS=$oldOptions;$env:NODE_PATH=$oldPath

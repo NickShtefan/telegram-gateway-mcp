@@ -37,6 +37,25 @@ function AssertStagingAncestors([string]$Path) {
     }
   }
 }
+function RemoveStaging([string]$Parent,[string]$Path) {
+  # Only this run's GUID directory directly inside the attested staging parent. Links are removed, never followed.
+  if([IO.Path]::GetDirectoryName($Path) -cne $Parent -or [IO.Path]::GetFileName($Path) -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'){Fail}
+  AssertStagingAncestors $Parent
+  $root=New-Object IO.DirectoryInfo $Path
+  if(-not $root.Exists){return}
+  if($root.Attributes -band [IO.FileAttributes]::ReparsePoint){$root.Delete();return}
+  RemoveTree $root
+}
+function RemoveTree([IO.DirectoryInfo]$Directory) {
+  foreach($child in @($Directory.EnumerateFileSystemInfos())){
+    $link=[bool]($child.Attributes -band [IO.FileAttributes]::ReparsePoint)
+    if($child -is [IO.DirectoryInfo] -and -not $link){RemoveTree $child;continue}
+    if(-not $link -and ($child.Attributes -band [IO.FileAttributes]::ReadOnly)){$child.Attributes=[IO.FileAttributes]::Normal}
+    # A non-recursive delete of a junction or symbolic link removes only the link.
+    $child.Delete()
+  }
+  $Directory.Delete()
+}
 function NativeReader {
   if('TgBootstrapNative' -as [type]){return}
   $assembly=[AppDomain]::CurrentDomain.DefineDynamicAssembly((New-Object Reflection.AssemblyName 'TgBootstrapNative'),[Reflection.Emit.AssemblyBuilderAccess]::Run)
@@ -102,6 +121,7 @@ function HashBytes([byte[]]$Bytes) {
   $sha=[Security.Cryptography.SHA256]::Create()
   try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
 }
+$stage=$null;$keep=$false
 try {
   AssertSignerPin $SignerSha256
   if($SignerSha256 -cnotmatch '^[0-9a-f]{64}$' -or ($SourceSha -and $SourceSha -cnotmatch '^[0-9a-f]{40}$') -or ([bool]$Bundle -eq [bool]$Archive)){Fail}
@@ -166,9 +186,13 @@ try {
       RunClean (Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe') @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',(Join-Path $stage 'application\dist\setup\provision-windows.ps1'),'-Candidate',$stage,'-SourceSha',$SourceSha,'-SignerSha256',$SignerSha256)
     }
     if($Install){[Console]::Error.WriteLine('Installation prepared. In an ordinary terminal run C:\ProgramData\TelegramMCPGateway\bin\tg-mcp-owner.cmd setup.');@{format_version=1;phase='needs_api_credentials';installed=$true;service_started=$false}|ConvertTo-Json -Compress}
-    else{@{format_version=1;phase='candidate_staged';candidate=$stage;installed=$false}|ConvertTo-Json -Compress}
+    else{$keep=$true;@{format_version=1;phase='candidate_staged';candidate=$stage;installed=$false}|ConvertTo-Json -Compress}
     return
   }
   # Verification does not execute agent-writable Node/helpers or grant administration.
   @{format_version=1;phase='bundle_verified';version='0.2.0';source_sha=$SourceSha;platform='win32';architecture=$arch;node_version=$nodeVersion;installed=$false}|ConvertTo-Json -Compress
 } catch { [Console]::Error.WriteLine('{"format_version":1,"error_code":"bootstrap_verification_failed"}');exit 1 }
+finally {
+  # Install and failed attempts leave no staged node.exe or application; -Prepare keeps the candidate it reported.
+  if($stage -and -not $keep){try{RemoveStaging $parent $stage}catch{[Console]::Error.WriteLine('{"format_version":1,"warning_code":"staging_cleanup_failed"}')}}
+}
