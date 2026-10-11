@@ -38,7 +38,7 @@ Writes follow the same path twice: preparation stores the request and returns a 
 
 ## Transport
 
-- **HTTP** (`transport/http.ts`): stateless Streamable HTTP on `127.0.0.1`. Checks `Host` against DNS rebinding and rejects browser `Origin`; body limit 1 MB; only `POST /mcp`. `/healthz` needs no token and reveals no account information. Non-localhost binding requires `TG_MCP_ALLOW_REMOTE=1`.
+- **HTTP** (`transport/http.ts`): stateless Streamable HTTP on `127.0.0.1`. Checks `Host` against DNS rebinding and rejects browser `Origin`; body limit 1 MB: an oversized body is read to its end (up to 8 MB extra within 10 s) and answered with 413, otherwise the connection is dropped; only `POST /mcp`. `/healthz` needs no token and reveals no account information. Non-localhost binding requires `TG_MCP_ALLOW_REMOTE=1`.
 - **stdio** (`transport/stdio.ts`): reads stdin JSON-RPC, forwards it to the daemon with `TG_MCP_TOKEN`, writes responses to stdout. Opens no sessions itself.
 - **Lock** (`core/lock.ts`): POSIX session ownership uses a permanent-inode kernel lease (`core/fileLease.ts`). Stale `daemon.sock` cleanup occurs only while that lease is held; the socket remains a liveness endpoint and excludes still-running older daemons. A killed owner releases the kernel lease without unlinking its file. `flock` has no query operation, so a read-only probe (`isLockHeld`, used by `doctor` and `login`) briefly takes a free lease; acquisition therefore retries a busy lease for about half a second before reporting another owner. Windows uses canonical-directory first-instance named pipes; native execution/ACL qualification remains open. Duplicate session use causes `AUTH_KEY_DUPLICATED`.
 
