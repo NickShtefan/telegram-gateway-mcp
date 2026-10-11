@@ -5,7 +5,7 @@ import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { terminalIo } from '../cli/io.js';
-import { installedPosixProfile } from './installed.js';
+import { installedPosixChildProfile, installedPosixProfile } from './installed.js';
 import { stopPosixService } from './serviceControl.js';
 import { attestDirectory, attestFile } from '../install/posixPermissions.js';
 import { acquireFileLease } from '../core/fileLease.js';
@@ -14,7 +14,7 @@ import { loadSessionSecret } from '../core/config.js';
 import { openStorage } from '../storage/sqlite.js';
 import { ApiCredentialFile } from './credentials.js';
 import { ownerSetup, ownerPlanSchema } from './owner.js';
-import { coordinatorMessageSchema, privateLines, sendPrivate, workerIo, workerMessageSchema, questions, nextPrivate } from './promptChannel.js';
+import { coordinatorMessageSchema, privateExchange, privateLines, runPrivateProcess, sendPrivate, workerIo, workerMessageSchema, questions, nextPrivate } from './promptChannel.js';
 import { SetupError } from './contract.js';
 import { prepareOwnerClients, acknowledgePreparedClients, ownerOperationId } from './clientHandoff.js';
 import { withTimeout } from '../core/time.js';
@@ -23,7 +23,8 @@ import { attestManagedListener } from './listener.js';
 async function main(): Promise<number> {
   const [mode, sha, ...extra] = process.argv.slice(2);
   if (!['terminal', 'worker', 'ack-worker', 'root-channel'].includes(mode ?? '') || !/^[0-9a-f]{40}$/.test(sha ?? '') || extra.length) throw new SetupError('invalid_request');
-  const { layout, receipt } = await installedPosixProfile(sha!);
+  // Worker children start under a root coordinator that has just walked the whole release.
+  const { layout, receipt } = await (mode === 'worker' || mode === 'ack-worker' ? installedPosixChildProfile(sha!) : installedPosixProfile(sha!));
   const entry = join(layout.application, 'dist/setup/ownerCli.js');
   if (fileURLToPath(import.meta.url) !== entry || process.execPath !== layout.node || receipt.identity?.kind !== 'posix') throw new SetupError('protection_unverified');
   const identity = receipt.identity;
@@ -120,14 +121,16 @@ async function main(): Promise<number> {
       const exited = once(child, 'close').then(([code]) => code as number | null);
       const inputLife = new AbortController();
       void exited.then(() => inputLife.abort(), () => inputLife.abort());
+      // The worker's stdin ends with its final frame, so a pending worker read cannot outlive the exchange.
+      const worker = privateExchange(child.stdout, child.stdin);
       let result: ReturnType<typeof workerMessageSchema.parse> | undefined;
       let sequence = 0;
       try {
         await sendPrivate(child.stdin, { kind: 'plan', plan, existing_tokens: Array.isArray(existingToken)?existingToken:existingToken?[existingToken]:[] });
-        for await (const line of privateLines(child.stdout)) {
+        for await (const line of worker.frames) {
           const message = workerMessageSchema.parse(JSON.parse(line));
           if (result) throw new SetupError('invalid_state');
-          if (message.kind === 'result') { result = message; continue; }
+          if (message.kind === 'result') { result = message; worker.finish(); continue; }
           if (message.kind === 'handoff' && channel) {
             if(pendingHandoff||message.setup_id!==plan.setup_id||message.port!==receipt.plan.port||message.clients.join(',')!==plan.clients.join(',')) throw new SetupError('invalid_state');
             pendingHandoff=message;continue;
@@ -150,7 +153,7 @@ async function main(): Promise<number> {
         activate = result.result.phase === 'needs_service_start';
         completed=result;exitCode=code===0?0:1;
       } finally {
-        inputLife.abort();
+        worker.finish(); inputLife.abort();
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
         // Supervision is restored only after OS-confirmed worker termination.
         await exited;
@@ -163,17 +166,17 @@ async function main(): Promise<number> {
       const next=await withTimeout(parentInput!.next(),300000,'client configuration'); if(next.done) throw new SetupError('invalid_state');
       const ack=coordinatorMessageSchema.parse(JSON.parse(next.value));
       if(ack.kind!=='client_ack'||ack.setup_id!==plan.setup_id) throw new SetupError('invalid_state');
-      const child=spawn(layout.node,[entry,'ack-worker',sha!],{cwd:layout.release,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},stdio:['pipe','ignore','ignore'],timeout:30000,killSignal:'SIGKILL'});
+      // The budget covers process start and bounded state attestation; the release walk stays with the coordinator.
+      const child=spawn(layout.node,[entry,'ack-worker',sha!],{cwd:layout.release,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},stdio:['pipe','ignore','ignore'],timeout:120000,killSignal:'SIGKILL'});
       const exited=once(child,'close').then(([code])=>code as number|null);
+      child.stdin.on('error',()=>undefined);
       try {await sendPrivate(child.stdin,{kind:'plan',plan});await sendPrivate(child.stdin,ack);child.stdin.end();if(await exited!==0) throw new SetupError('invalid_state');}
-      finally {if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');await exited;}
+      finally {child.stdin.end();if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');await exited;}
     }
     if(!completed) throw new SetupError('invalid_state');
     if(channel) await sendPrivate(process.stdout,completed);else terminalIo.out(JSON.stringify(completed.result));
     return exitCode;
   } finally { await rootLease.release(); }
 }
-main().then(code => { process.exitCode = code; }).catch(() => {
-  // No stack, filesystem path, Telegram library text or private answer in output.
-  process.stderr.write('{"format_version":1,"error_code":"owner_step_failed"}\n'); process.exitCode = 1;
-});
+// No stack, filesystem path, Telegram library text or private answer in output.
+runPrivateProcess(main, 'owner_step_failed');

@@ -51,6 +51,36 @@ export async function sendPrivate(output: Writable, message: unknown): Promise<v
   if (Buffer.byteLength(bytes) > 2049) throw new SetupError('invalid_state');
   await new Promise<void>((resolve, reject) => output.write(bytes, err => err ? reject(new SetupError('invalid_state')) : resolve()));
 }
+/**
+ * Parent half of the final-frame lifecycle. A peer blocked reading an open pipe never exits, so the parent
+ * ends the peer's input once the final frame arrives (`finish`) or the exchange fails, then waits only
+ * `graceMs` for the peer to close its output.
+ */
+export function privateExchange(input: Readable, output: Writable, graceMs = 30000): { frames: AsyncIterable<string>; finish(): void } {
+  let deadline = 0;
+  // Write failures surface through sendPrivate callbacks; an emitted EPIPE must not crash cleanup.
+  output.on('error', () => undefined);
+  const finish = (): void => { if (deadline) return; deadline = Date.now() + graceMs; output.end(); };
+  return { finish, frames: { async *[Symbol.asyncIterator]() {
+    const lines = privateLines(input)[Symbol.asyncIterator]();
+    try {
+      for (;;) {
+        const next = await (deadline ? withTimeout(lines.next(), deadline - Date.now(), 'private peer exit') : lines.next());
+        if (next.done) return; yield next.value;
+      }
+    } finally { finish(); }
+  } } };
+}
+/**
+ * Child half: whatever the outcome, release stdin once `main` settles so a pending pipe read cannot keep
+ * the process alive, and keep a vanished parent's EPIPE from crashing cleanup. Output is a fixed code only.
+ */
+export function runPrivateProcess(main: () => Promise<number>, errorCode: string): void {
+  process.stdout.on('error', () => undefined);
+  void main().then(code => { process.exitCode = code; }, () => {
+    process.stderr.write(`{"format_version":1,"error_code":"${errorCode}"}\n`); process.exitCode = 1;
+  }).finally(() => { process.stdin.destroy(); });
+}
 export async function nextPrivate(input: AsyncIterator<string>, signal: AbortSignal, timeoutMs = 300000): Promise<IteratorResult<string>> {
   let cancel: () => void = () => undefined;
   const aborted = new Promise<never>((_resolve, reject) => {

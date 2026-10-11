@@ -13,7 +13,7 @@ import { ownerPlanSchema } from './owner.js';
 import { originalOwnerProfile } from './ownerProfile.js';
 import { configureClient, readSelectedClientTokens } from './clientFile.js';
 import { ClientEntryConflict, type ClientKind } from './clientConfig.js';
-import { privateLines, sendPrivate, workerMessageSchema, questions } from './promptChannel.js';
+import { privateExchange, sendPrivate, workerMessageSchema, questions } from './promptChannel.js';
 import { probeConfiguredGateway } from './clientProbe.js';
 import { SetupError } from './contract.js';
 import { withTimeout } from '../core/time.js';
@@ -32,13 +32,18 @@ async function main(): Promise<number> {
   const clients = chosen ? chosen.split(',').map(s => s.trim()) as ClientKind[] : [];
   const preview = ownerPlanSchema.parse({ setup_id: randomUUID(), account, user, clients });
   const owner = originalOwnerProfile(preview.clients); await owner.authorize();
-  let input: Readable; let output: Writable; let close: () => Promise<number | null>;
+  let input: Readable; let output: Writable; let closing: () => Promise<number | null>;
   if (process.platform !== 'win32') {
     const child = spawn('/usr/bin/sudo', ['--', layout.node, join(layout.application, 'dist/setup/ownerCli.js'), 'root-channel', sha],
       { env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }, stdio: ['pipe', 'pipe', 'ignore'] });
     const exited = once(child, 'close').then(([code]) => code as number | null);
     input = child.stdout; output = child.stdin;
-    close = async () => { child.stdin.end(); return withTimeout(exited, 30000, 'owner coordinator exit'); };
+    // A coordinator that outlives its ended input gets SIGTERM, which sudo relays to its restoring cleanup.
+    child.on('error', () => undefined);
+    closing = async () => {
+      child.stdin.end();
+      try { return await withTimeout(exited, 30000, 'owner coordinator exit'); } catch (err) { child.kill('SIGTERM'); throw err; }
+    };
   } else {
     const id = randomUUID(); const pipeName = `\\\\.\\pipe\\TelegramMCPSetup-${id}`;
     const server = createServer(); server.maxConnections = 1;
@@ -56,13 +61,16 @@ async function main(): Promise<number> {
     try { socket = await withTimeout(Promise.race([connected, launchExit.then(() => { throw new SetupError('protection_unverified'); })]), 120000, 'system approval'); }
     catch { server.close(); throw new SetupError('protection_unverified'); }
     input = socket; output = socket;
-    close = async () => { socket.end(); server.close(); return withTimeout(launchExit, 30000, 'owner coordinator exit'); };
+    closing = async () => { socket.end(); server.close(); return withTimeout(launchExit, 30000, 'owner coordinator exit'); };
   }
+  let closed: Promise<number | null> | undefined; const close = (): Promise<number | null> => closed ??= closing();
+  // The coordinator's input ends with its final frame, so its pending read cannot keep it (and sudo) alive.
+  const exchange = privateExchange(input, output);
   const life = new AbortController(); input.once('end', () => life.abort()); input.once('close', () => life.abort()); input.once('error', () => life.abort());
   let result: Extract<ReturnType<typeof workerMessageSchema.parse>, { kind: 'result' }> | null = null;
   let setupId: string | null = null; let port = 0; let token: string | null = null; let sequence = 0; let verified=false;
   try {
-    for await (const line of privateLines(input)) {
+    for await (const line of exchange.frames) {
       const message = workerMessageSchema.parse(JSON.parse(line));
       if (result) throw new SetupError('invalid_state');
       if (message.kind === 'profile') {
@@ -88,7 +96,7 @@ async function main(): Promise<number> {
         verified=await probeConfiguredGateway(port,token);if(!verified) throw new SetupError('invalid_state');
         await sendPrivate(output, { kind: 'client_ack', setup_id: setupId, token_sha256: sha256Hex(token) });
       } else {
-        if (!setupId || message.result.setup_id !== setupId) throw new SetupError('invalid_state'); result = message;
+        if (!setupId || message.result.setup_id !== setupId) throw new SetupError('invalid_state'); result = message; exchange.finish();
       }
     }
     const code = await close();
