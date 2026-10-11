@@ -47,7 +47,8 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
       // Existing sessions with a missing API file require explicit repair; refuse before asking for secrets.
       if (newCredentials && !login) throw new SetupError('invalid_state');
       if (credentials === null) {
-        deps.io.err('Obtain your own application credentials at https://my.telegram.org/apps. Enter them here; never send them to an agent.');
+        deps.io.err('Open https://my.telegram.org/apps, sign in, choose API development tools and create an application.');
+        deps.io.err('Enter its api_id and api_hash in the hidden prompts. Keep login codes/passwords out of agent chat.');
         const apiId = await deps.io.prompt('Telegram application id: ', { hidden: true });
         const apiHash = (await deps.io.prompt('Telegram application hash: ', { hidden: true })).trim();
         credentials = parseSafe(apiSchema, { apiId: Number(apiId), apiHash }, 'invalid_request');

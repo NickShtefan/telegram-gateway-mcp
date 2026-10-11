@@ -1,0 +1,5 @@
+import { describe,it,expect } from 'vitest';import { ownerLabels,nextSteps,apiInstructions } from '../presentation.js';
+describe('owner wizard presentation',()=>{
+ it('explains labels, accepts Enter defaults and preserves chosen labels',async()=>{const text:string[]=[];const answers=['',''];const io={err:(s:string)=>text.push(s),out:()=>{},prompt:async()=>answers.shift()!};expect(await ownerLabels(io)).toEqual({account:'personal',user:'owner'});expect(text.join(' ')).toContain('not its Telegram username');answers.push('test-arm','owner-arm');expect(await ownerLabels(io)).toEqual({account:'test-arm',user:'owner-arm'})});
+ it('distinguishes SDK verification, actual model tools and incomplete setup',()=>{const lines:string[]=[];const io={err:(s:string)=>lines.push(s),out:()=>{},prompt:async()=>''};nextSteps(io,['codex','claude'],true);expect(lines.join('\n')).toContain('Close and reopen Codex Desktop/CLI, Claude Code');expect(lines.join('\n')).toContain('telegram_gateway');lines.length=0;nextSteps(io,[],false);expect(lines.join('\n')).not.toContain('Setup complete');expect(apiInstructions.join('\n')).toContain('API development tools')});
+});

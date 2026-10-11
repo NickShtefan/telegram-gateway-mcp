@@ -783,6 +783,42 @@
     {
       "source": "docs/mac-arm-private-test.md",
       "destination": "docs/mac-arm-private-test.md"
+    },
+    {
+      "source": "src/install/releasePackage.ts",
+      "destination": "src/install/releasePackage.ts"
+    },
+    {
+      "source": "src/install/__tests__/releasePackage.test.ts",
+      "destination": "src/install/__tests__/releasePackage.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/batchSign.test.ts",
+      "destination": "src/install/__tests__/batchSign.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/releasePlan.test.ts",
+      "destination": "src/install/__tests__/releasePlan.test.ts"
+    },
+    {
+      "source": "src/setup/presentation.ts",
+      "destination": "src/setup/presentation.ts"
+    },
+    {
+      "source": "src/setup/__tests__/presentation.test.ts",
+      "destination": "src/setup/__tests__/presentation.test.ts"
+    },
+    {
+      "source": "scripts/release/batch-sign.mjs",
+      "destination": "scripts/release/batch-sign.mjs"
+    },
+    {
+      "source": "scripts/release/draft-release.mjs",
+      "destination": "scripts/release/draft-release.mjs"
+    },
+    {
+      "source": "scripts/release/plan.mjs",
+      "destination": "scripts/release/plan.mjs"
     }
   ],
   "excludedTrackedFiles": [

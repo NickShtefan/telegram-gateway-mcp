@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ARTIFACT_ROLES, encodeManifest, parseManifest, verifyArtifact, verifyManifest, type ReleaseManifest } from '../manifest.js';
+import { encodeReleaseTar } from '../releasePackage.js';
 import { decodeApplicationArchive, encodeApplicationArchive, extractApplicationArchive } from '../archive.js';
 
 const sourceSha = 'a'.repeat(40);
@@ -141,6 +142,13 @@ describe.skipIf(process.platform === 'win32')('pinned signatures and no-Node POS
     expect(overrideRejected.status).toBe(1);
     const invoke=()=>spawnSync('/bin/sh',[fixtureBootstrap,bundle,sourceSha,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});
     const verified=invoke();expect(verified.status,verified.stderr).toBe(0);expect(JSON.parse(verified.stdout)).toMatchObject({phase:'candidate_verified',installed:false,node_version:process.versions.node,version:'0.2.0'});
+    const transport=join(directory,'release.tar.gz');
+    const transportNames=['manifest.tsv','manifest.sig','signer.der',...names];
+    writeFileSync(transport,encodeReleaseTar(new Map(transportNames.map(name=>[name,readFileSync(join(bundle,name))]))));
+    const archiveResult=spawnSync('/bin/sh',[fixtureBootstrap,transport,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});
+    expect(archiveResult.status,archiveResult.stderr).toBe(0);expect(JSON.parse(archiveResult.stdout)).toMatchObject({source_sha:sourceSha,installed:false});
+    const archiveBytes=readFileSync(transport);writeFileSync(transport,archiveBytes.subarray(0,archiveBytes.length-8));
+    const brokenArchive=spawnSync('/bin/sh',[fixtureBootstrap,transport,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});expect(brokenArchive.status).toBe(1);
     // Deterministic adversarial interleavings after pathname prechecks and
     // before snapshot sysopen. The injected code is a local test shim only.
     const installer=join(bundle,'installer.mjs');const originalInstaller=readFileSync(installer);

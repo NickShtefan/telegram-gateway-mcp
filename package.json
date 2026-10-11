@@ -17,7 +17,8 @@
     "check": "npm run typecheck && npm test",
     "prepack": "npm run build",
     "notices": "node scripts/release/dependency-notices.mjs",
-    "candidate:ci": "node scripts/release/ci-candidate.mjs"
+    "candidate:ci": "node scripts/release/ci-candidate.mjs",
+    "release:draft": "npm run build && node scripts/release/draft-release.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
