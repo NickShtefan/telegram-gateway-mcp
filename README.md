@@ -27,7 +27,7 @@ Install a **signed release archive**, not an unsigned Actions candidate. No Node
 Before you start:
 
 - Use an **administrator account**: a macOS Administrator, a Linux user allowed to use `sudo`, or a Windows administrator account. A standard account cannot authorize command 2. Command 3 runs unelevated as that same user. On Windows, elevate your own account: elevating with another account's credentials changes `$HOME`, so the commands would read another profile's Downloads.
-- While the repository is private, install [GitHub CLI](https://cli.github.com/) and sign in with an account that can see the release (`gh auth login`). Command 1 uses it to download, including from a draft.
+- While the repository is private, install [GitHub CLI](https://cli.github.com/) (for example `brew install gh`, `sudo apt install gh`, `sudo pacman -S github-cli` or `winget install GitHub.cli`) and sign in with an account that can see the release (`gh auth login`). Command 1 uses it to download, including from a draft.
 - The current Node 24 bundle needs macOS 13.5 or later. macOS 13.0-13.4 requires a separately prepared Node 22 bundle and is not qualified by these assets. Other platforms/versions remain unqualified until tested. See [platform checks](docs/outsider-test.md).
 
 Run the three commands for your platform, each as shown:
@@ -41,7 +41,7 @@ Expected: on macOS and Linux the checksum line ends in `OK`; then `needs_api_cre
 ### macOS Apple Silicon (arm64)
 
 ```sh
-cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz
+/bin/mkdir -p "$HOME/Downloads" && cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz
 sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /private/tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/shasum -a 256 -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz"
 '/Library/Application Support/TelegramMCPGateway/bin/tg-mcp-owner' setup
 ```
@@ -49,7 +49,7 @@ sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /private/tmp/tg-bootstrap.XXXXX
 ### macOS Intel (x64)
 
 ```sh
-cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-macos-x64.tar.gz
+/bin/mkdir -p "$HOME/Downloads" && cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-macos-x64.tar.gz
 sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /private/tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/shasum -a 256 -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-macos-x64.tar.gz"
 '/Library/Application Support/TelegramMCPGateway/bin/tg-mcp-owner' setup
 ```
@@ -59,7 +59,7 @@ The Terminal may ask once for access to the Downloads folder: allow it.
 ### Ubuntu 24.04 x64 and Arch Linux x64
 
 ```sh
-cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-linux-x64.tar.gz
+/bin/mkdir -p "$HOME/Downloads" && cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-linux-x64.tar.gz
 sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/sha256sum -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-linux-x64.tar.gz"
 /opt/telegram-mcp-gateway/bin/tg-mcp-owner setup
 ```
@@ -67,7 +67,7 @@ sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /tmp/tg-bootstrap.XXXXXX); trap
 ### Ubuntu 24.04 arm64
 
 ```sh
-cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-linux-arm64.tar.gz
+/bin/mkdir -p "$HOME/Downloads" && cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-linux-arm64.tar.gz
 sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/sha256sum -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-linux-arm64.tar.gz"
 /opt/telegram-mcp-gateway/bin/tg-mcp-owner setup
 ```

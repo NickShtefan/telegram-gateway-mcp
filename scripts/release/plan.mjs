@@ -43,8 +43,8 @@ export function installCommands({repo,tag,sourceSha,bootstrapSha256,download}){
   }
   const boot=names.posixBootstrap;
   const fetch=download==='gh'
-   ?`cd "$HOME/Downloads" && gh release download ${tag} --repo ${repo} --clobber --pattern ${boot} --pattern ${archive}`
-   :`cd "$HOME/Downloads" && curl -fL --proto '=https' -O https://github.com/${repo}/releases/download/${tag}/${boot} -O https://github.com/${repo}/releases/download/${tag}/${archive}`;
+   ?`/bin/mkdir -p "$HOME/Downloads" && cd "$HOME/Downloads" && gh release download ${tag} --repo ${repo} --clobber --pattern ${boot} --pattern ${archive}`
+   :`/bin/mkdir -p "$HOME/Downloads" && cd "$HOME/Downloads" && curl -fL --proto '=https' -O https://github.com/${repo}/releases/download/${tag}/${boot} -O https://github.com/${repo}/releases/download/${tag}/${archive}`;
   const [temporary,check,owner]=os==='darwin'
    ?['/private/tmp','/usr/bin/shasum -a 256',`'/Library/Application Support/TelegramMCPGateway/bin/tg-mcp-owner' setup`]
    :['/tmp','/usr/bin/sha256sum','/opt/telegram-mcp-gateway/bin/tg-mcp-owner setup'];
