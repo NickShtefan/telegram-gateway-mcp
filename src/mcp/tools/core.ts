@@ -5,7 +5,6 @@
  */
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';
-import { readOwnFile } from '../../core/safeFs.js';
 import { createEnvelope, safeLabel } from '../../policy/envelope.js';
 import type { PrivateMode } from '../../policy/scopes.js';
 import type { DialogDto, DialogFolder, DialogsPosition } from '../../services/dialogs.js';
@@ -778,7 +777,7 @@ const tgGetMedia = defineTool({
       for (const f of result.files) {
         if (images.length >= INLINE_MAX_IMAGES) break;
         if (f.bytes > INLINE_MAX_BYTES || !f.mime.startsWith('image/')) continue;
-        const data = readOwnFile(f.path, INLINE_MAX_BYTES);
+        const data = await services.files.readOwnFile(f.path, INLINE_MAX_BYTES);
         if (data) images.push({ data: data.toString('base64'), mimeType: f.mime });
       }
     } else if (args.inline === true) {

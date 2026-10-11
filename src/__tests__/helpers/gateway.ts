@@ -68,7 +68,8 @@ export function makeTestGateway(options: { now?: () => number; writeLimits?: Gat
   storage.users.update('user_a', { defaultAccount: 'agent' });
 
   const runtime = { config, storage, tg, log, close: async () => undefined } as unknown as Runtime;
-  const services = buildServices(runtime, { now: options.now });
+  // Windows ACL attestation of the files directory is a fake here; core/__tests__/sharedFiles.test.ts runs the real one.
+  const services = buildServices(runtime, { now: options.now, attestDirectories: async () => null });
 
   return {
     home,

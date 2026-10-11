@@ -8,11 +8,11 @@
  */
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, writeSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { randomToken, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
 import { totalReactions } from '../core/reactions.js';
-import { ensureTrustedDir, openNewFile } from '../core/safeFs.js';
+import type { SharedFiles } from '../core/safeFs.js';
 import type { TgCallOptions } from '../core/tg.js';
 import { sanitizeText } from '../policy/envelope.js';
 import type { EntityRecord, Storage } from '../storage/port.js';
@@ -113,7 +113,8 @@ export interface ExportServiceDeps {
   history: HistoryService;
   search: SearchService;
   media: MediaService;
-  filesDir: string;
+  /** Shared gateway directory; exports are stored in `<root>/exports`. */
+  files: SharedFiles;
   now?: () => number;
 }
 
@@ -175,10 +176,8 @@ export class ExportService {
     const stamp = new Date(this.now()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
     // Random filename suffix prevents path prediction and pre-creation.
     const name = `${stamp}-${slugify([chat.username ?? chat.peerKey, params.query ?? ''].join(' '))}-${randomBytes(3).toString('hex')}.${params.format}`;
-    const path = join(this.deps.filesDir, 'exports', context.job.userId, name);
-    ensureTrustedDir(dirname(path), this.deps.filesDir);
-
-    const fd = openNewFile(path, 0o644);
+    const path = join(this.deps.files.root, 'exports', context.job.userId, name);
+    const fd = await this.deps.files.openNewFile(path, 0o644);
     let rows = 0;
     let scanned = 0;
     let photos = 0;
