@@ -1,13 +1,12 @@
 /** Installed administrator terminal entry. Never exposed by the agent wrapper or MCP. */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { terminalIo } from '../cli/io.js';
-import { installedPosixChildProfile, installedPosixProfile } from './installed.js';
+import { attestServiceState, installedPosixProfile } from './installed.js';
 import { stopPosixService } from './serviceControl.js';
-import { attestDirectory, attestFile } from '../install/posixPermissions.js';
+import { attestDirectory } from '../install/posixPermissions.js';
 import { acquireFileLease } from '../core/fileLease.js';
 import { acquireLock } from '../core/lock.js';
 import { loadSessionSecret } from '../core/config.js';
@@ -23,8 +22,8 @@ import { attestManagedListener } from './listener.js';
 async function main(): Promise<number> {
   const [mode, sha, ...extra] = process.argv.slice(2);
   if (!['terminal', 'worker', 'ack-worker', 'root-channel'].includes(mode ?? '') || !/^[0-9a-f]{40}$/.test(sha ?? '') || extra.length) throw new SetupError('invalid_request');
-  // Worker children start under a root coordinator that has just walked the whole release.
-  const { layout, receipt } = await (mode === 'worker' || mode === 'ack-worker' ? installedPosixChildProfile(sha!) : installedPosixProfile(sha!));
+  // Every mode, including the root-started worker children, attests the whole installed profile before anything else.
+  const { layout, receipt } = await installedPosixProfile(sha!);
   const entry = join(layout.application, 'dist/setup/ownerCli.js');
   if (fileURLToPath(import.meta.url) !== entry || process.execPath !== layout.node || receipt.identity?.kind !== 'posix') throw new SetupError('protection_unverified');
   const identity = receipt.identity;
@@ -38,12 +37,7 @@ async function main(): Promise<number> {
     await attestDirectory(layout.state,[identity.uid],0o077);
     const lease=await acquireFileLease(layout.state,'setup.lock');
     try {
-      for(const name of await readdir(layout.state)) {
-        const path=join(layout.state,name);const st=await lstat(path);
-        if(name==='daemon.sock'&&st.isSocket()&&st.uid===identity.uid)continue;
-        if(!st.isFile()||st.isSymbolicLink()||st.uid!==identity.uid||st.nlink!==1||(st.mode&0o077))throw new SetupError('protection_unverified');
-        await attestFile(path,st);
-      }
+      await attestServiceState(layout.state,identity.uid);
       const storage=openStorage(join(layout.state,'gateway.sqlite'));
       try { acknowledgePreparedClients(message.plan,storage,loadSessionSecret(layout.state,{}),ack.token_sha256,receipt.plan.setup_id); }
       finally { storage.close(); }
@@ -61,15 +55,7 @@ async function main(): Promise<number> {
     try {
       const sessionLease = await acquireLock(layout.state);
       try {
-        const attestState = async (): Promise<void> => {
-          await attestDirectory(layout.state, [identity.uid], 0o077);
-          for (const name of await readdir(layout.state)) {
-            const path = join(layout.state, name); const st = await lstat(path);
-            if (name === 'daemon.sock' && st.isSocket() && st.uid === identity.uid) continue;
-            if (!st.isFile() || st.isSymbolicLink() || st.uid !== identity.uid || st.nlink !== 1 || (st.mode & 0o077)) throw new SetupError('protection_unverified');
-            await attestFile(path, st);
-          }
-        };
+        const attestState = (): Promise<void> => attestServiceState(layout.state, identity.uid);
         await attestState();
         const secret = loadSessionSecret(layout.state, {});
         const storage = openStorage(join(layout.state, 'gateway.sqlite'));
@@ -173,7 +159,7 @@ async function main(): Promise<number> {
       const next=await withTimeout(parentInput!.next(),300000,'client configuration'); if(next.done) throw new SetupError('invalid_state');
       const ack=coordinatorMessageSchema.parse(JSON.parse(next.value));
       if(ack.kind!=='client_ack'||ack.setup_id!==plan.setup_id) throw new SetupError('invalid_state');
-      // The budget covers process start and bounded state attestation; the release walk stays with the coordinator.
+      // The budget covers process start, the installed-profile check (one recursive release ACL listing) and state attestation.
       const child=supervised(spawn(layout.node,[entry,'ack-worker',sha!],{cwd:layout.release,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},stdio:['pipe','ignore','ignore'],timeout:120000,killSignal:'SIGKILL'}));
       const exited=once(child,'close').then(([code])=>code as number|null);
       child.stdin.on('error',()=>undefined);
