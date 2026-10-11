@@ -1,7 +1,8 @@
 # Signed ZIP bootstrap regression with a disposable in-memory certificate. No Node/service execution.
 $ErrorActionPreference='Stop'
 $root=Join-Path ([IO.Path]::GetTempPath()) ('tg-signed-zip-'+[guid]::NewGuid().ToString());$null=New-Item -ItemType Directory $root
-$rsa=[Security.Cryptography.RSACryptoServiceProvider]::new(3072)
+# Windows PowerShell 5.1: RSA.Create() returns a provider whose KeySize cannot be set; ask CNG for 3072 bits directly.
+$rsa=New-Object Security.Cryptography.RSACng 3072
 try {
   $request=[Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=Synthetic Windows Release Fixture',$rsa,[Security.Cryptography.HashAlgorithmName]::SHA256,[Security.Cryptography.RSASignaturePadding]::Pkcs1)
   $cert=$request.CreateSelfSigned([DateTimeOffset]::Now.AddDays(-1),[DateTimeOffset]::Now.AddDays(1));[byte[]]$der=$cert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
