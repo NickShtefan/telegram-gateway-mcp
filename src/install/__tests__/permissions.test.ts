@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { homedir, tmpdir, userInfo } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { attestAncestry, attestFile, attestTree, newProtectedDirectory, writeProtectedFile } from '../posixPermissions.js';
+import { aclAccepted, attestAncestry, attestFile, attestTree, newProtectedDirectory, writeProtectedFile } from '../posixPermissions.js';
 
 // Count the fixed ACL utility subprocesses while still running the real system tools.
 const spawned = vi.hoisted(() => [] as string[]);
@@ -43,6 +43,23 @@ describe.skipIf(process.platform !== 'darwin')('macOS protected-file ACL attesta
       expect(fstatSync(fd).mode&0o777).toBe(0o644);
       await expect(attestFile(path,fstatSync(fd))).rejects.toThrow('protection_unverified');
     } finally {if(fd!==undefined)closeSync(fd);rmSync(root,{recursive:true,force:true})}
+  });
+});
+
+describe.skipIf(!posix || !aclTools)('ACL policies', () => {
+  it('system paths reject any ACE; home paths accept only macOS deny ACEs', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tg-acl-policy-'));
+    const both = async (): Promise<boolean[]> => [await aclAccepted(dir, 'system'), await aclAccepted(dir, 'home')];
+    try {
+      expect(await both()).toEqual([true, true]);
+      if (process.platform === 'darwin') {
+        // The default ACE on macOS home folders.
+        execFileSync('/bin/chmod', ['+a', 'group:everyone deny delete', dir]);
+        expect(await both()).toEqual([false, true]);
+      }
+      grant(dir); expect(await both()).toEqual([false, false]);
+      revoke(dir); expect(await both()).toEqual([true, true]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
 

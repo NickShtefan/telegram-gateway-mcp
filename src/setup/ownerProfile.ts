@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { SetupError } from './contract.js';
+import { aclAccepted } from '../install/posixPermissions.js';
 import type { ClientKind } from './clientConfig.js';
 import type { OwnerProfile } from './clientFile.js';
 const run = promisify(execFile);
@@ -35,14 +36,7 @@ export function originalOwnerProfile(clients: ClientKind[]): OwnerProfile {
         const st = await lstat(current);
         if (st.isSymbolicLink() || (!st.isFile() && !st.isDirectory()) || ![0, owner.uid].includes(st.uid) || (st.mode & 0o022)
           || (current === path && privateFile && (st.mode & 0o077))) throw new SetupError('protection_unverified');
-        const command = process.platform === 'darwin' ? '/bin/ls' : '/usr/bin/getfacl';
-        const args = process.platform === 'darwin' ? ['-lde', current] : ['-cp', current];
-        const { stdout } = await run(command, args, { env: { PATH: '/usr/bin:/bin' }, timeout: 1000, maxBuffer: 8192 });
-        if (process.platform === 'darwin') {
-          // A home may carry a harmless inherited deny-delete ACE. Allow ACEs
-          // are conservatively unsupported, including inherited file-read grants.
-          if (/\n\s*\d+:.*\ballow\b/.test(stdout)) throw new SetupError('protection_unverified');
-        } else if (stdout.split('\n').some(line => line && !/^(user::[rwx-]{3}|group::[rwx-]{3}|other::[rwx-]{3})$/.test(line))) throw new SetupError('protection_unverified');
+        if (!await aclAccepted(current, 'home')) throw new SetupError('protection_unverified');
         if (current === '/') break;
       }
     }, preparePrivateFile: process.platform === 'win32' ? path => windows(path, true, true) : undefined,

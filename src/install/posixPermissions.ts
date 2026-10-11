@@ -9,19 +9,26 @@ import { promisify } from 'node:util';
 const runFile = promisify(execFile);
 export class ProtectionError extends Error { constructor() { super('protection_unverified'); } }
 
-/** One fixed utility call covers a path or, with `tree`, the path and every entry below it. macOS `ls -e`
- *  prints every ACE; Linux `getfacl -s` prints only entries with extended or default ACLs. Any ACL fails closed. */
-async function noAcl(path: string, tree = false): Promise<void> {
+/** 'system': any ACL fails. 'home' (the original user's profile): on macOS deny-only ACEs such as the default
+ *  "group:everyone deny delete" on home folders pass and allow ACEs fail, including inherited read grants; on Linux
+ *  any extended entry fails. */
+export type AclPolicy = 'system' | 'home';
+/** One fixed utility call covers a path or, with `tree` (system policy), the path and every entry below it. macOS
+ *  `ls -e` prints every ACE; Linux `getfacl -s` prints only entries with extended or default ACLs. Other platforms fail. */
+export async function aclAccepted(path: string, policy: AclPolicy, tree = false): Promise<boolean> {
   const options = { env: { PATH: '/usr/bin:/bin' }, maxBuffer: tree ? 33_554_432 : 8192, timeout: tree ? 60_000 : 5000 };
   if (process.platform === 'darwin') {
     // Headers in a recursive listing are absolute paths, so only ACE lines and mode strings can match.
     const { stdout } = await runFile('/bin/ls', [tree ? '-leaR' : '-lde', path], options);
-    if (/^\s*\d+:/m.test(stdout) || /^[-a-z][-rwxsStT]{9}\+/m.test(stdout)) throw new ProtectionError();
-  } else if (process.platform === 'linux') {
+    return policy === 'home' ? !/\n\s*\d+:.*\ballow\b/.test(stdout) : !/^\s*\d+:/m.test(stdout) && !/^[-a-z][-rwxsStT]{9}\+/m.test(stdout);
+  }
+  if (process.platform === 'linux') {
     const { stdout } = await runFile('/usr/bin/getfacl', tree ? ['-R', '-s', '-P', '-p', path] : ['-cp', path], options);
-    if (tree ? stdout.trim() !== '' : stdout.split('\n').some(line => line && !/^(user::[rwx-]{3}|group::[rwx-]{3}|other::[rwx-]{3})$/.test(line))) throw new ProtectionError();
-  } else throw new ProtectionError();
+    return tree ? stdout.trim() === '' : stdout.split('\n').every(line => !line || /^(user::[rwx-]{3}|group::[rwx-]{3}|other::[rwx-]{3})$/.test(line));
+  }
+  return false;
 }
+async function noAcl(path: string, tree = false): Promise<void> { if (!await aclAccepted(path, 'system', tree)) throw new ProtectionError(); }
 
 // Only root can change the mode, ACL or entries of a root-owned directory without group/other write. Once
 // its ACL check passes within an attested ancestry, later walks in this process still lstat it (type,
