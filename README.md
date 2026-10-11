@@ -20,25 +20,71 @@ One process owns each session. Bearer tokens separate gateway users and their ac
 
 Write tools return a preview and `approval_id`. The agent must show it to the owner and call `tg_confirm` only after consent. The gateway cannot independently verify human approval; client permissions are part of this boundary.
 
-## Preparation status
+## Installation
 
-The current repository and package remain private and unpublished. The selected public repository and npm name is `telegram-mcp-gateway`; the command stays `tg-mcp`. Do not run `npx tg-mcp`: that package belongs to a different project.
+Download a **signed release archive**, not an unsigned Actions candidate. No Node/npm, compiler, local signing key or manually entered hash is required. Only the maintainer signs releases. The current repository is private and a signed draft must first be prepared by the owner: draft releases are visible only to authorized users with the necessary repository permissions. Anonymous installation is unavailable until the owner publishes a release and chooses repository visibility. See [private tester access](docs/outsider-test.md).
 
-The candidate now carries MIT, contribution/security policies and production dependency notices. Managed provisioning and owner/client components are implemented; artifact, platform and live qualification remain release gates. The selected first public version is 0.2.0. Release targets are macOS 13+ (arm64/Intel), Linux and native Windows; qualification is pending. The terminal installer has no paid Apple Developer dependency. No production installation recommendation is implied by the development commands below.
+1. In your browser, open [Releases](https://github.com/NickShtefan/telegram-gateway-mcp/releases) and download the archive for your machine into **Downloads**. Also download the bootstrap from the immutable source link below, not from an untrusted mirror. Do not rename the files or open/extract the archive yourself.
+2. Run the matching three-command sequence below. The first automatically checks the bootstrap against this README. The second installs with system authorization; the third runs the wizard as your ordinary user.
+3. In the wizard, press Enter for local account/user labels if appropriate, choose clients, and enter your own Telegram API credentials, phone/code/2FA directly into its hidden prompts. Restart selected clients after setup, then ask for an actual `telegram_gateway` / `tg_status` tool call.
 
-## Trusted installer certificate
+| Platform | Signed archive |
+| --- | --- |
+| macOS arm64 (Apple Silicon) | `telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz` |
+| macOS Intel | `telegram-mcp-gateway-0.2.0-macos-x64.tar.gz` |
+| Ubuntu 24.04 x64, Arch x64 | `telegram-mcp-gateway-0.2.0-linux-x64.tar.gz` |
+| Ubuntu 24.04 arm64 | `telegram-mcp-gateway-0.2.0-linux-arm64.tar.gz` |
+| Windows 11 x64 | `telegram-mcp-gateway-0.2.0-windows-x64.zip` |
 
-The owner-approved SHA-256 fingerprint of the DER signing certificate is:
+The current Node 24 bundle needs macOS 13.5 or later. macOS 13.0-13.4 requires a separately prepared Node 22 bundle and is not qualified by these assets. Other platforms/versions remain unqualified until tested. See [platform checks](docs/outsider-test.md).
 
-```text
-f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682
+### macOS
+
+Download [bootstrap-posix.sh at immutable source f16ac13](https://github.com/NickShtefan/telegram-gateway-mcp/blob/f16ac135c6e98d37876fffc161769fcea6e287dc/scripts/install/bootstrap-posix.sh) using **Download raw file**. For Apple Silicon, run in Terminal:
+
+```sh
+cd "$HOME/Downloads" && printf '4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  bootstrap-posix.sh\n' | /usr/bin/shasum -a 256 -c -
+sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /private/tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  %s\n" "$d/bootstrap.sh" | /usr/bin/shasum -a 256 -c -; /bin/sh "$d/bootstrap.sh" "$2" install' sh "$HOME/Downloads/bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz"
+'/Library/Application Support/TelegramMCPGateway/bin/tg-mcp-owner' setup
 ```
 
-Both bootstrap scripts pin this fingerprint and reject another certificate or caller-supplied fingerprint. This hashes the DER certificate, not its PEM text or the private key. POSIX invocation is `bootstrap-posix.sh BUNDLE SOURCE_SHA verify|prepare|install`; Windows requires `-Bundle` and `-SourceSha`, with optional `-Prepare`/`-Install`. Legacy explicit-pin arguments remain accepted only when they match this pin. Authenticate the bootstrap code itself before elevation; the pinned value does not make an untrusted downloaded script self-authenticating. The private signing key stays with the owner.
+On Intel, use the same commands with `macos-x64.tar.gz` in command 2. Expected: checksum `OK`, then `needs_api_credentials` with no service started yet; the wizard subsequently verifies the authenticated connection and tells you which clients to restart. Stop if a checksum fails or an existing/foreign installation is reported. Keep the same signed archive for retries.
 
-## First private installation test
+### Ubuntu 24.04 and Arch
 
-For the owner's Apple Silicon Mac, follow the [step-by-step ARM test guide](docs/mac-arm-private-test.md). It pins the current fixed candidate, its download/checksums, local signing, installation commands and expected results. Other platforms follow after this first live test. New-repository and open-source work remain deferred.
+Download the same immutable [bootstrap-posix.sh](https://github.com/NickShtefan/telegram-gateway-mcp/blob/f16ac135c6e98d37876fffc161769fcea6e287dc/scripts/install/bootstrap-posix.sh). For x64:
+
+```sh
+cd "$HOME/Downloads" && printf '4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  bootstrap-posix.sh\n' | /usr/bin/sha256sum -c -
+sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  %s\n" "$d/bootstrap.sh" | /usr/bin/sha256sum -c -; /bin/sh "$d/bootstrap.sh" "$2" install' sh "$HOME/Downloads/bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-linux-x64.tar.gz"
+/opt/telegram-mcp-gateway/bin/tg-mcp-owner setup
+```
+
+On Ubuntu arm64, use `linux-arm64.tar.gz` in command 2. Arch ARM is not part of this release. If OS utilities are missing, the installer shows the complete official-source package transaction and asks you to type `INSTALL`. Cancel to leave gateway provisioning unstarted. It uses isolated Ubuntu official sources or Arch core/extra, never AUR/third-party repositories, and does not perform a full OS upgrade. Resolve stale Arch package databases by updating your OS yourself before retrying; the installer does not refresh the host database. [Linux checklist](docs/linux-private-test.md).
+
+### Windows 11 x64
+
+Download [bootstrap-windows.ps1 at immutable source f16ac13](https://github.com/NickShtefan/telegram-gateway-mcp/blob/f16ac135c6e98d37876fffc161769fcea6e287dc/scripts/install/bootstrap-windows.ps1). Open **Windows PowerShell as Administrator** for commands 1 and 2 (same OS user). Command 2 copies the verified bootstrap into a fresh administrator/System-only directory before execution. After it finishes, close that elevated window and use an ordinary PowerShell for command 3:
+
+```powershell
+if ((Get-FileHash "$HOME\Downloads\bootstrap-windows.ps1" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '83f714d2f4ecf0c36cbe71438e936cc370c1071c0523845182c61487fada1a29') { throw 'Bootstrap checksum mismatch: stop' }
+& { $acl=New-Object Security.AccessControl.DirectorySecurity; $acl.SetAccessRuleProtection($true,$false); $admin=New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'; $acl.SetOwner($admin); foreach($sid in @($admin,(New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))){ $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'))) }; $d=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) ('TelegramMCPBootstrap-'+[guid]::NewGuid()); $null=[IO.Directory]::CreateDirectory($d,$acl); try{ Copy-Item -LiteralPath "$HOME\Downloads\bootstrap-windows.ps1" -Destination "$d\bootstrap.ps1"; if((Get-FileHash "$d\bootstrap.ps1" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '83f714d2f4ecf0c36cbe71438e936cc370c1071c0523845182c61487fada1a29'){throw 'Bootstrap checksum mismatch'}; & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$d\bootstrap.ps1" -Archive "$HOME\Downloads\telegram-mcp-gateway-0.2.0-windows-x64.zip" -Install; if($LASTEXITCODE -ne 0){throw 'Installation failed: preserve state'} }finally{Remove-Item -LiteralPath $d -Recurse -Force} }
+& "$env:ProgramData\TelegramMCPGateway\bin\tg-mcp-owner.cmd" setup
+```
+
+The process-scoped PowerShell execution policy does not change machine policy or replace signature verification. An organization policy may refuse execution. Expected: installation creates a stopped manual service; the ordinary-user wizard performs login and starts/verifies it. [Windows checklist](docs/windows-private-test.md).
+
+### Bootstrap trust and limits
+
+The bootstrap is the trust root. This README pins its immutable repository commit and SHA-256; commands compare hashes automatically before executing a protected copy. Authenticate the repository/README independently (for example a reviewed clone or a known maintainer channel). A checksum from the same compromised release page is not independent proof. Replacing both an untrusted README and bootstrap, compromising the repository/maintainer account, or compromising the local OS remains outside this protection. A release page attacker who can replace only package bytes cannot pass the embedded owner-certificate check.
+
+The signed manifest supplies the exact source SHA only **after** RSA signature verification, so users never type it. The owner draft command binds all five CI manifests, the release target and existing tag to one frozen SHA. Bootstrap does not resolve a mutable GitHub tag during privileged execution: fresh installation trusts an owner-signed 0.2.0 manifest; existing installation receipts prevent silently adopting another source/certificate. Keep the selected release fixed during qualification/retries.
+
+Owner certificate DER SHA-256: `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682`. `SHA256SUMS` detects corrupted downloads but is not an independent authenticity root. The installer verifies the certificate, signature and every payload before executing bundled Node. No key, token or session is included. Private chats and writes default to disabled; secrets go only into the human terminal with agents/capture stopped.
+
+## Maintainer draft preparation
+
+Only the owner runs the [one-command draft procedure](docs/release-qualification.md), entering the signing passphrase once. Never give the signing key/passphrase to an agent or CI. Publication, repository visibility and npm remain separate owner decisions. The gateway package is private and unpublished; do not run `npx tg-mcp` (that package belongs to another project).
 
 ## Development
 

@@ -149,6 +149,6 @@ try {
   $command="@echo off`r`nsetlocal`r`nif not `"%~1`"==`"setup`" exit /b 1`r`nif not `"%~2`"==`"`" exit /b 1`r`nset NODE_OPTIONS=`r`nset NODE_PATH=`r`nset NODE_USE_ENV_PROXY=`r`n`""+$layout.node+"`" `""+(Join-Path $release 'application\dist\setup\ownerLauncher.js')+"`"`r`nexit /b %ERRORLEVEL%`r`n"
   if(Test-Path -LiteralPath $launcher){AssertAdminOwned $launcher;if((Get-Content -LiteralPath $launcher -Raw) -cne $command){Fail}}
   else{[IO.File]::WriteAllText($launcher,$command,[Text.Encoding]::ASCII);Protect $launcher $sid $false $false}
-  SaveStage 'complete' 
+  SaveStage 'complete'
   @{format_version=1;phase='needs_api_credentials';service_started=$false}|ConvertTo-Json -Compress
 } catch {[Console]::Error.WriteLine('{"format_version":1,"error_code":"provision_failed"}');exit 1}

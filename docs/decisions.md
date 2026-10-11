@@ -643,3 +643,14 @@ Reason: after stage 7 the owner explicitly prioritized testing all installation 
 The owner supplied and approved DER certificate SHA-256 `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682` for the bootstrap scripts and README. Embed it in both POSIX and Windows bootstrap verification. An optional legacy caller pin may match this constant but cannot replace it. Do not load trust from environment variables or the downloaded bundle. A certificate/key rotation requires a separately approved code/documentation update. Reuse the established encrypted key/certificate for current private tests. The bootstrap itself still requires independent authentication before elevation.
 
 Reason: the owner explicitly requested embedding this fingerprint and documenting it, alongside the macOS certificate-command `-new` correction.
+
+
+## 70. Signed owner draft and no-build user entry (accepted 2026-10-12)
+
+The owner prepares all five frozen CI candidates with one command and one hidden passphrase, verifies CI manifest hashes, packages/signs them and creates only a draft GitHub Release. Key/certificate files in the owner's Projects/KEYS/tg-mcp-signing directory remain exclusively owner-operated; agents must not inspect them. Publication, repository visibility/new repository and npm are separate owner decisions.
+
+End users use signed platform archives, authenticated immutable bootstrap/checksum instructions, authorized provisioning and the ordinary-user wizard. They do not build, install Node/npm, sign packages or enter hashes/source SHA. Source identity comes from the verified manifest and the owner's frozen release/tag preparation. Windows supplies a short installed owner command. Private draft access and uncompromised independently authenticated README/source are explicit trust prerequisites; no anonymous availability or local same-user protection is claimed.
+
+The wizard explains labels/defaults, OWNER READY, API application creation and client restart/tool verification. Actual README-only trials on new macOS/Windows users remain owner-controlled proof, separate from source/fixture CI. No lab changes are authorized.
+
+Reason: the owner explicitly specified this installer entry/release/testing workstream.

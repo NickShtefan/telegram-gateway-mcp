@@ -819,6 +819,30 @@
     {
       "source": "scripts/release/plan.mjs",
       "destination": "scripts/release/plan.mjs"
+    },
+    {
+      "source": "scripts/checks/windows-release.ps1",
+      "destination": "scripts/checks/windows-release.ps1"
+    },
+    {
+      "source": "docs/outsider-test.md",
+      "destination": "docs/outsider-test.md"
+    },
+    {
+      "source": "docs/mac-intel-private-test.md",
+      "destination": "docs/mac-intel-private-test.md"
+    },
+    {
+      "source": "docs/windows-private-test.md",
+      "destination": "docs/windows-private-test.md"
+    },
+    {
+      "source": "docs/linux-private-test.md",
+      "destination": "docs/linux-private-test.md"
+    },
+    {
+      "source": "scripts/checks/windows-readme.ps1",
+      "destination": "scripts/checks/windows-readme.ps1"
     }
   ],
   "excludedTrackedFiles": [

@@ -1,75 +1,44 @@
-# Owner qualification and release checklist
+# Owner draft preparation and qualification
 
-Source tests and candidate construction are complete independently of this checklist. A passing hosted runner is not a fresh installation or a real Telegram/client qualification. Keep the existing Intel lab gateway untouched until a specific installation/migration action is approved. Never copy sessions between machines.
+End users follow README Installation. They never build or sign a package. Only the owner prepares a signed draft, in an ordinary private terminal with agents and capture stopped.
 
-## Test first in the existing private repository
+## One owner command
 
-Decision 68 prioritizes owner installation and client testing before new-repository or open-source work. Use an unsigned CI candidate from the current private PR, freeze its exact source SHA, then sign it locally before installation. New repository creation, clean import and npm access do not block this test phase. PR #21 is ready for review/testing; merging remains a separate owner decision. Keep the same candidate identity across cancellation/resume checks.
-
-When the owner later resumes publication, rebuild and verify the actual clean-import/release SHA. Results from the private candidate remain evidence for that candidate rather than automatic qualification of a different signed artifact.
-
-For the first actual ARM Mac run, use [mac-arm-private-test.md](mac-arm-private-test.md), which supplies the frozen download, hashes, commands and expected outcomes.
-
-## Evidence matrix
-
-Record one evidence row per actual candidate and environment. Do not include passwords, Telegram application hashes, codes, bearer tokens, session contents, profile contents or private keys.
-
-| Target | Required evidence | Current live result |
-| --- | --- | --- |
-| macOS 26.6.2 arm64, owner development Mac | Exact signed bundle; protected service; fresh local session; selected client model tools | Pending |
-| macOS 15.7.9 x64, owner Intel Mac | Exact signed bundle; explicit existing-gateway coexistence/migration decision; separate local session | Pending |
-| Ubuntu 24.04 LTS x64 | Fresh environment without Node/npm; official prerequisite consent; systemd isolation; local session/client | Pending |
-| Ubuntu 24.04 LTS arm64 | Same qualification on arm64 if claiming that architecture | Pending |
-| Fully updated Arch Linux x64 | Record snapshot date and package versions; no AUR/full-upgrade transaction; isolation/login/client | Pending |
-| Windows 11 x64, owner Intel machine | Native no-Node bootstrap; protected ACL/virtual service identity; bounded extraction; local session/client | Pending |
-
-macOS 13 remains a designed floor and explicitly unqualified until tested. Extra macOS 13 hardware is not a release blocker. Other Windows versions/architectures, WSL, Arch ARM/derivatives and other distributions are unqualified.
-
-For each row record OS build/architecture, source commit, manifest SHA-256, public signer DER SHA-256, Node version, chosen client versions, date, checks performed and safe failure codes. Mark a client/OS combination qualified only after that actual model has loaded the catalog and used a controlled read tool. SDK initialize/catalog/status alone does not establish model-tool availability.
-
-## Local owner signing
-
-The owner has established certificate fingerprint `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682`. For current tests, reuse its existing encrypted key and certificate. Do not regenerate or reissue them: a new certificate changes its DER fingerprint and requires an explicit bootstrap trust update. The commands below describe initial key onboarding, not a step to repeat after pinning.
-
-Create the production key only in an ordinary owner terminal with agents/capture stopped. Do not run the following through an agent, CI or shared shell transcript. Store the private directory outside the checkout, backup it privately and never send its key/passphrase to chat. This is a custom release signature and does not require paid Apple membership or notarization.
+Freeze a reviewed commit and its successful Platform foundations CI run. Check out that exact commit in a clean development checkout with dependencies installed. The owner command builds its local helper, downloads all five candidates, verifies artifact digests and manifest hashes from the corresponding CI job logs, and prompts for the encrypted signing key passphrase once:
 
 ```sh
-umask 077
-mkdir "$HOME/tg-mcp-signing"
-cd "$HOME/tg-mcp-signing"
-/usr/bin/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
-  -aes-256-cbc -out owner-signing-key.pem
-/usr/bin/openssl req -new -x509 -key owner-signing-key.pem -sha256 -days 3650 \
-  -out owner-signing-certificate.pem -subj '/CN=Telegram MCP Gateway Owner Release Signing'
-chmod 600 owner-signing-key.pem
+npm run release:draft -- --sha FROZEN_FULL_COMMIT_SHA --run SUCCESSFUL_CI_RUN_NUMBER
 ```
 
-Keep both `-new` and `-x509` in the certificate command. On macOS system LibreSSL, omitting `-new` makes `req` expect an existing certificate request instead of creating one from the key. OpenSSL asks for the encryption passphrase directly. Keep the encrypted PKCS#8 `BEGIN ENCRYPTED PRIVATE KEY` format; do not remove encryption. The certificate is public. Establish its DER SHA-256 independently before installation. No OS publisher/CA trust is implied.
+These two identifiers are maintainer inputs, never user installation inputs. The default repository is `NickShtefan/telegram-gateway-mcp`, tag `v0.2.0`. To prepare a distinctly named private test draft, pass `--tag v0.2.0-test.1`. The command rejects a mismatched existing tag/release; it never replaces or publishes one.
 
-From the reviewed source checkout, after approving the exact source and manifest hashes, sign an unsigned candidate using the owner-only helper:
+Default owner-only file paths (the agent must not inspect them):
 
-```sh
-node scripts/release/sign-candidate.mjs \
-  --candidate /absolute/private/unsigned-candidate \
-  --private-key "$HOME/tg-mcp-signing/owner-signing-key.pem" \
-  --certificate "$HOME/tg-mcp-signing/owner-signing-certificate.pem" \
-  --source-sha EXACT_SOURCE_SHA --manifest-sha256 EXACT_MANIFEST_SHA256
-```
+- `/Users/nikolayshkolenko/Projects/KEYS/tg-mcp-signing/owner-signing-key.pem`
+- `/Users/nikolayshkolenko/Projects/KEYS/tg-mcp-signing/owner-signing-certificate.pem`
 
-The helper prompts for the passphrase without display, verifies candidate files before/after input and creates only the public certificate/signature alongside them. Share only these public artifacts and safe hashes when needed. Independently authenticate the verifier itself before privilege elevation as described in `install-owner.md`.
+If your local filenames differ, supply `--key /your/local/key.pem --certificate /your/local/certificate.pem` yourself. Never put the passphrase in argv/environment, chat, CI or logs. No key/certificate onboarding or rotation is performed. The existing encrypted PKCS#8 RSA-3072 key must be owner-only; the certificate must match the embedded DER fingerprint `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682`.
 
-## Per-environment checks
+## Expected result
 
-1. Verify the approved candidate without installation. Reject a wrong signer/source/platform and tampered copy before staged execution. Use copies for negative probes.
-2. Approve the concrete system installation in the owner terminal. If prerequisites are missing, inspect the entire isolated official-source transaction and confirm separately. Cancellation must leave gateway provisioning unstarted.
-3. Confirm separate service identity and immutable executable tree; ordinary owner/agent cannot read protected session/key/state or replace executable code. Check service registration and safe status without exposing private files.
-4. Stop agents/capture. Run owner setup from the ordinary terminal, enter the machine's fresh Telegram login directly and select clients. Test cancellation and same-candidate resumption without duplicate MTProto ownership or silent token rotation.
-5. Verify the service owns the expected listener, then SDK connectivity. Restart each selected client and use the same controlled read-only prompt from `scenarios.md` through Codex, Claude Code, OpenCode and Hermes where qualification is claimed.
-6. Qualify writes only if separately authorized for the owner test account/channel: preview, explicit owner consent, then confirm once. Do not repeat uncertain writes. Default managed installation keeps writes disabled.
-7. Record result/failure code and the exact artifact identity. Investigate failures while retaining private state. Updates/backups/destructive uninstall are separate follow-ups.
+Before the password prompt all five candidate identities, manifests and payloads have passed verification. After the prompt every candidate is checked again before any signature is written. The output directory contains:
 
-## Publication gates
+- Five signed archives: macos-arm64, macos-x64, linux-x64, linux-arm64 (`.tar.gz`), windows-x64 (`.zip`).
+- `bootstrap-posix.sh`, `bootstrap-windows.ps1`, `SHA256SUMS`.
+- Local release notes and diagnostic/download work files; only the eight public assets above are uploaded.
 
-The owner deferred creation of the new clean private repository and npm access. Neither is waived. Build a file-only selected snapshot with provenance, let the owner create its destination, then verify its new source commit and required CI. The private source commit and clean-import commit are different identities: rebuild/sign the final public candidate for its actual commit.
+The final result says `draft_release_created` and `published: false`. GitHub Release is created with `--draft` against the frozen SHA. No repository, visibility change, npm package or published release is created. If a failure occurs, preserve the local output and inspect the draft before retrying; an existing draft/tag is not silently overwritten. Missing/expired seven-day CI artifacts require a new successful run of the same chosen source, not a silent source substitution.
 
-Stage 8 receives its one independent review after qualification, before any merge/tag/publication. Correct medium-or-higher findings and reverify without another review round. Obtain explicit owner approval for merge and for the exact final release commit. Only then create the release/tag, change visibility or publish npm as authorized. Finally verify anonymous retrieval, checksums/signatures, installation documentation and package contents. A post-publication failure requires owner-approved remediation and does not count as release completion.
+## Trust and access
+
+The release target and CI candidates have one source SHA. Manifests bind the exact source/runtime/platform and are signed by the owner. End-user bootstrap derives source SHA only after signature verification. The README pins independently authenticated bootstrap source/checksums; adjacent release assets and unsigned SHA256SUMS alone cannot establish that trust. See README limitations.
+
+Private drafts require authorized GitHub access. The owner can hand the public signed files to a tester without handing over a private key. No anonymous availability is claimed before separate publication/visibility approval. See [outsider-test.md](outsider-test.md).
+
+## Required live qualification
+
+Use fresh, otherwise uninstalled macOS and Windows environments with a new empty ordinary user. A new user on a machine with a global gateway installation is not a clean-install test. Do not delete another user's gateway to make a test pass. Intel lab at `/opt/telegram-gateway-mcp` is excluded.
+
+Follow only README plus the signed draft and record each place that required external help. Also qualify available Intel macOS, Ubuntu 24.04 x64/arm64 and Arch x64 using their checklists. Each machine gets its own fresh Telegram session through gateway login. Never copy sessions. Default checks are read-only; any write needs its own preview and owner consent on the controlled account/channel.
+
+The final qualification review is one independent round before merge/publication; correct medium-or-higher findings and reverify. Merge, publish, repository visibility and npm remain exact owner decisions. A changed final release SHA requires its own artifacts/verification.
