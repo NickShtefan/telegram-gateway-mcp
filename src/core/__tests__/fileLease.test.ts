@@ -60,5 +60,5 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
         for (const r of results) if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(FileLeaseBusyError);
       } finally { await Promise.all(winners.map(r => r.value.release())); }
     }
-  });
+  }, 30_000); // Each round's loser spends the bounded busy retries (about half a second).
 });

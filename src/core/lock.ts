@@ -4,7 +4,7 @@
  * socket reclamation under the lease so concurrent restarts cannot unlink
  * a newly acquired owner's socket. Kernel ownership ends on process death.
  */
-import { lstatSync, unlinkSync, type Stats } from 'node:fs';
+import { chmodSync, lstatSync, unlinkSync, type Stats } from 'node:fs';
 import { connect, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { GatewayError } from './errors.js';
@@ -101,7 +101,10 @@ export async function acquireLock(home: string): Promise<DaemonLock> {
         socket.destroy();
       });
       server.once('error', reject);
-      server.listen(path, () => resolve(server));
+      // The umask (002 for Ubuntu user groups) must not leave a group-writable endpoint that a restart after a crash rejects as unsafe.
+      server.listen(path, () => {
+        try { chmodSync(path, 0o600); resolve(server); } catch (err) { server.close(); reject(err); }
+      });
     });
 
   let server: Server;

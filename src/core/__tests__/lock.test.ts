@@ -2,6 +2,7 @@ import { chmodSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, s
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { acquireLock, isLockHeld, lockPath } from '../lock.js';
 import { acquireFileLease, FileLeaseBusyError, isFileLeaseHeld } from '../fileLease.js';
@@ -25,7 +26,7 @@ async function childOwner(directory: string, lease: boolean): Promise<ChildProce
   const script = `import {openSync,constants} from 'node:fs'; import {spawnSync} from 'node:child_process'; import {createServer} from 'node:net';
     if(process.argv[2]==='lease') { const fd=openSync(process.argv[1]+'/sessions.lock',constants.O_RDWR|constants.O_CREAT,0o600);
       const mac=process.platform==='darwin'; const r=spawnSync(mac?process.argv[3]:'/usr/bin/flock',mac?[]:['-n','3'],{stdio:['ignore','ignore','ignore',fd]}); if(r.status!==0) process.exit(2); }
-    createServer(s=>s.end()).listen(process.argv[1]+'/daemon.sock',()=>process.stdout.write('ready\\n'));`;
+    process.umask(0o022); createServer(s=>s.end()).listen(process.argv[1]+'/daemon.sock',()=>process.stdout.write('ready\\n'));`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', script, directory, lease ? 'lease' : 'legacy', resolve('dist/native/lease-darwin')], { stdio: ['ignore', 'pipe', 'ignore'] });
   children.push(child);
   await Promise.race([
@@ -78,6 +79,18 @@ describe.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')('
       const [, , owner] = await Promise.all([isLockHeld(directory), isFileLeaseHeld(directory, 'sessions.lock'), acquireLock(directory)]);
       await owner.release();
     }
+  });
+
+  it('creates a private liveness endpoint whatever the umask, so a crash leaves a reclaimable socket', async () => {
+    const directory = home();
+    const script = `const {acquireLock}=await import(${JSON.stringify(pathToFileURL(resolve('dist/core/lock.js')).href)}); process.umask(0o002);
+      await acquireLock(process.argv[1]); process.stdout.write('ready\\n'); setInterval(()=>{},1000);`;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script, directory], { stdio: ['ignore', 'pipe', 'ignore'] });
+    children.push(child); await once(child.stdout!, 'data');
+    expect(lstatSync(lockPath(directory)).mode & 0o777).toBe(0o600);
+    const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited;
+    expect(await isLockHeld(directory)).toBe(false);
+    const next = await acquireLock(directory); await next.release();
   });
 
   it('still rejects a genuinely held lease after bounded retries', async () => {
