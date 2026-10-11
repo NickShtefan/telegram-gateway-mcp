@@ -136,6 +136,11 @@ export class MediaService {
    */
   async download(accountId: string, chatKey: string, rawMessages: unknown[], size: MediaSize, options?: TgCallOptions): Promise<MediaResult> {
     const result: MediaResult = { files: [], skipped: [] };
+    // Private message IDs are account-specific, so their caches must be separate; one call writes one chat directory.
+    const chatDir = join(this.root, accountId, chatDirName(chatKey));
+    // Checked once, before the first Telegram download: a refused directory skips every later fetch of this call.
+    // SharedFiles does not remember the refusal, so the next call checks again; each write still re-checks the chain.
+    let dirChecked: Promise<void> | undefined;
 
     for (const raw of rawMessages as RawMessage[]) {
       const messageId = raw?.id;
@@ -173,8 +178,7 @@ export class MediaService {
         ext = /^\.[a-z0-9]{1,8}$/.test(named) ? named : (MIME_EXT[mime] ?? '.bin');
       }
 
-      // Private message IDs are account-specific, so their caches must be separate.
-      const path = join(this.root, accountId, chatDirName(chatKey), `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
+      const path = join(chatDir, `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
       // Only owned regular files count as cache hits; never follow planted symlinks.
       if ((await this.files.isOwnRegularFile(path)) && lstatSync(path).size > 0) {
         const bytes = lstatSync(path).size;
@@ -187,6 +191,7 @@ export class MediaService {
       }
 
       try {
+        await (dirChecked ??= this.files.ensureDir(chatDir));
         const buffer = await this.fetch(accountId, raw, thumb, options);
         if (!buffer || buffer.length === 0) {
           result.skipped.push({ messageId, reason: 'Telegram returned an empty file' });

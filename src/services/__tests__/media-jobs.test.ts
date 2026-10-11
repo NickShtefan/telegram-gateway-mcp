@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RPCMessageToError } from 'teleproto/errors';
@@ -121,7 +121,8 @@ describe('MediaService', () => {
     const result = await oversized.media.download('agent', '42', [raw], 'full');
     expect(result.files).toEqual([]);
     expect(result.skipped[0]!.reason).toContain('1001 bytes, over the 1000 byte limit');
-    expect(existsSync(join(dir, 'media'))).toBe(false);
+    // The chat directory is checked before the download; the oversized file is never written.
+    expect(readdirSync(join(dir, 'media', 'agent', 'u42'))).toEqual([]);
     const boundary = setup(vi.fn(async () => Buffer.alloc(1000)));
     const ok = await boundary.media.download('agent', '42', [raw], 'full');
     expect(ok.files[0]).toMatchObject({ bytes: 1000, cached: false });
@@ -243,7 +244,7 @@ describe('MediaService', () => {
     const result = await media.download('agent', '-1000000000500', [photoMessage(10)], 'thumb');
     expect(result.files).toEqual([]);
     expect(result.skipped[0]!.reason).toContain('n1000000000500 is a symbolic link');
-    expect(downloadMedia).toHaveBeenCalledTimes(1);
+    expect(downloadMedia).not.toHaveBeenCalled();
     expect(readFileSync(join(elsewhere, '10-thumb.jpg'), 'utf8')).toBe('TOP-SECRET');
     expect(await files.readOwnFile(join(dir, 'media', 'agent', 'n1000000000500', '10-thumb.jpg'), 1_000_000)).toBeNull();
   });
@@ -285,6 +286,51 @@ describe('MediaService', () => {
     const result = await media.download('agent', '-1000000000500', [photoMessage(10)], 'thumb');
     expect(result.files).toEqual([]);
     expect(result.skipped[0]!.reason).toContain('writable by other users');
+  });
+
+  // An album into a refused directory: one directory check, no Telegram download, own skip reasons kept in order.
+  const album = [photoMessage(10), { className: 'Message', id: 11 }, photoMessage(12), videoMessage(13, 10, []), photoMessage(14)];
+  const refusedAlbum = (why: string) => [10, 11, 12, 13, 14].map(messageId => ({
+    messageId, reason: messageId === 11 ? 'no media' : messageId === 13 ? 'no preview available' : expect.stringContaining(why),
+  }));
+
+  it('checks a refused Windows directory once per call and downloads nothing into it', async () => {
+    const { media, downloadMedia } = setup(undefined, { windows: true });
+    attest.mockResolvedValue({ path: join(dir, 'media'), why: 'is writable by other users' });
+    const result = await media.download('agent', '-1000000000500', album, 'thumb');
+    expect(result.files).toEqual([]);
+    expect(result.skipped).toEqual(refusedAlbum(`${join(dir, 'media')} is writable by other users`));
+    expect(downloadMedia).not.toHaveBeenCalled();
+    expect(attest).toHaveBeenCalledOnce();
+  });
+
+  it.skipIf(windows)('downloads nothing into a POSIX directory writable by others', async () => {
+    mkdirSync(join(dir, 'media'), { mode: 0o755 });
+    chmodSync(join(dir, 'media'), 0o777);
+    const { media, downloadMedia } = setup();
+    const result = await media.download('agent', '-1000000000500', album, 'thumb');
+    expect(result.files).toEqual([]);
+    expect(result.skipped).toEqual(refusedAlbum(`${join(dir, 'media')} is writable by other users`));
+    expect(downloadMedia).not.toHaveBeenCalled();
+  });
+
+  it('creates no directory for cache hits or messages without media', async () => {
+    const { media, files, downloadMedia } = setup(undefined, { windows: true });
+    const ensureDir = vi.spyOn(files, 'ensureDir');
+    const chat = join(dir, 'media', 'agent', 'n1000000000500');
+    mkdirSync(chat, { recursive: true, mode: 0o755 });
+    writeFileSync(join(chat, '10-thumb.jpg'), 'CACHED');
+    writeFileSync(join(chat, '12-thumb.jpg'), 'CACHED');
+    const cached = await media.download('agent', '-1000000000500', [photoMessage(10), photoMessage(12)], 'thumb');
+    expect(cached.files.map(f => [f.messageId, f.cached])).toEqual([[10, true], [12, true]]);
+    // Only the cache-hit check attests the existing chain.
+    expect(attest.mock.calls).toEqual([[[dir, join(dir, 'media'), join(dir, 'media', 'agent'), chat]]]);
+    const none = await media.download('agent', '42', [{ className: 'Message', id: 1 }, videoMessage(2, 10, [])], 'thumb');
+    expect(none.skipped.map(s => s.reason)).toEqual(['no media', 'no preview available']);
+    expect(existsSync(join(dir, 'media', 'agent', 'u42'))).toBe(false);
+    expect(ensureDir).not.toHaveBeenCalled();
+    expect(attest).toHaveBeenCalledOnce();
+    expect(downloadMedia).not.toHaveBeenCalled();
   });
 
   it('restricts file extensions supplied by Telegram', async () => {
