@@ -13,7 +13,8 @@ import { loadSessionSecret } from '../core/config.js';
 import { openStorage } from '../storage/sqlite.js';
 import { ApiCredentialFile } from './credentials.js';
 import { ownerSetup, ownerPlanSchema } from './owner.js';
-import { coordinatorMessageSchema, privateExchange, privateLines, runPrivateProcess, sendPrivate, workerIo, workerMessageSchema, questions, nextPrivate } from './promptChannel.js';
+import { coordinatorMessageSchema, privateExchange, privateLines, runPrivateProcess, sendPrivate, workerIo, workerMessageSchema, nextPrivate } from './promptChannel.js';
+import { answerOwnerPrompt } from './presentation.js';
 import { SetupError } from './contract.js';
 import { prepareOwnerClients, acknowledgePreparedClients, ownerOperationId } from './clientHandoff.js';
 import { withTimeout } from '../core/time.js';
@@ -137,7 +138,7 @@ async function main(): Promise<number> {
             if (answer.kind !== 'answer' || answer.sequence !== sequence) throw new SetupError('invalid_state');
             await sendPrivate(child.stdin, answer);
           } else {
-            const value = await terminalIo.prompt(questions[message.question], { hidden: true, signal: inputLife.signal });
+            const value = await answerOwnerPrompt(terminalIo, message.question, inputLife.signal);
             await sendPrivate(child.stdin, { kind: 'answer', sequence, value });
           }
         }
