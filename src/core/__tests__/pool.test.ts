@@ -306,6 +306,12 @@ describe('loginAccount', () => {
     await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,persist:async()=>{throw failure}})).rejects.toBe(failure);
     expect(created[0]!.destroy).toHaveBeenCalledOnce();
   });
+  it('drops whitespace from pasted login codes but passes passwords verbatim', async () => {
+    const {factory}=makeFactory(c=>{c.start.mockImplementation(async(params:{phoneCode:()=>Promise<string>;password:(h?:string)=>Promise<string>})=>{
+      expect(await params.phoneCode()).toBe('12345');expect(await params.password()).toBe(' pass word ');
+    })});
+    await loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>' 12 345 \n',password:async()=>' pass word '},log:silent});
+  });
 });
 
 describe('config', () => {

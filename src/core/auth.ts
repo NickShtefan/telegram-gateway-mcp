@@ -90,7 +90,8 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
   try {
     await client.start({
       phoneNumber: phone,
-      phoneCode: () => ask('phone code input', () => options.prompts.code()),
+      // Codes are digits: drop pasted spaces/newlines; passwords stay verbatim.
+      phoneCode: async () => (await ask('phone code input', () => options.prompts.code())).replace(/\s/g, ''),
       password: (hint?: string) => ask('2FA password input', () => options.prompts.password(hint)),
       // Without this, teleproto silently signs up unregistered numbers and accepts Telegram terms.
       firstAndLastNames: async () => {
