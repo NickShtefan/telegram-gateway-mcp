@@ -525,6 +525,14 @@
       "destination": "src/core/__tests__/windowsLease.test.ts"
     },
     {
+      "source": "src/core/windowsAcl.ts",
+      "destination": "src/core/windowsAcl.ts"
+    },
+    {
+      "source": "src/core/__tests__/sharedFiles.test.ts",
+      "destination": "src/core/__tests__/sharedFiles.test.ts"
+    },
+    {
       "source": "src/install/platform.ts",
       "destination": "src/install/platform.ts"
     },

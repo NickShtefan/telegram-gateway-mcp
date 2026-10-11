@@ -5,7 +5,6 @@
  */
 import { z } from 'zod';
 import { GatewayError } from '../../core/errors.js';
-import { readOwnFile } from '../../core/safeFs.js';
 import { createEnvelope, safeLabel } from '../../policy/envelope.js';
 import type { PrivateMode } from '../../policy/scopes.js';
 import type { DialogDto, DialogFolder, DialogsPosition } from '../../services/dialogs.js';
@@ -663,6 +662,7 @@ function renderExport(job: JobRecord): string {
       `scanned messages: ${r.scanned}`,
       r.date_from && r.date_to ? `dates: ${r.date_from.slice(0, 10)} to ${r.date_to.slice(0, 10)}` : '',
       r.photos > 0 ? `photo previews downloaded: ${r.photos} (paths are in the photo_path column)` : '',
+      r.photos_refused ? `photo previews stopped: ${r.photos_refused}` : '',
       r.truncated ? `TRUNCATED at max_rows=${r.rows}: there are more messages. Narrow the window or raise max_rows (max ${EXPORT_MAX_ROWS}).` : '',
       `columns: ${r.columns.join(', ')}`,
       '',
@@ -778,7 +778,7 @@ const tgGetMedia = defineTool({
       for (const f of result.files) {
         if (images.length >= INLINE_MAX_IMAGES) break;
         if (f.bytes > INLINE_MAX_BYTES || !f.mime.startsWith('image/')) continue;
-        const data = readOwnFile(f.path, INLINE_MAX_BYTES);
+        const data = await services.files.readOwnFile(f.path, INLINE_MAX_BYTES);
         if (data) images.push({ data: data.toString('base64'), mimeType: f.mime });
       }
     } else if (args.inline === true) {

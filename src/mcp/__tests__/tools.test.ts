@@ -1,13 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writePrivateMode } from '../../policy/scopes.js';
 import { makeTestGateway, type TestClient, type TestGateway } from '../../__tests__/helpers/gateway.js';
 import { rawChannel, rawMessage, rawUser } from '../../__tests__/helpers/fakeTg.js';
 import { GatewayError } from '../../core/errors.js';
 
-// Exports and media previews attest the shared files directory with POSIX owner/mode bits;
-// Windows has no ACL attestation for that directory yet, so file-writing cases are POSIX-only.
-const windows = process.platform === 'win32';
 let gw: TestGateway;
 let user_a: TestClient;
 
@@ -159,7 +157,7 @@ describe('case 1: marketplace listings', () => {
     expect(gw.tg.callsOf('contacts.ResolveUsername')).toHaveLength(1);
   });
 
-  it.skipIf(windows)('exports JSONL with original texts, hashed authors, and masked phone numbers', async () => {
+  it('exports JSONL with original texts, hashed authors, and masked phone numbers', async () => {
     const reply = await user_a.call('tg_export', { chat: '@fixture_market', query: 'iphone 15', topic: 5, photos: 'thumb' });
     expect(reply.isError).toBe(false);
     expect(reply.text).toContain('Export finished: 3 rows');
@@ -169,7 +167,7 @@ describe('case 1: marketplace listings', () => {
     expect(reply.text).toContain('photo previews downloaded: 1');
     const path = reply.text.match(/^path: (.+)$/m)![1]!;
     expect(path.startsWith(gw.config.filesDir)).toBe(true);
-    expect(path).toContain('/exports/user_a/');
+    expect(path).toContain(`${sep}exports${sep}user_a${sep}`);
 
     const rows = readFileSync(path, 'utf8').trim().split('\n').map(l => JSON.parse(l) as Record<string, unknown>);
     expect(rows).toHaveLength(3);
@@ -183,7 +181,23 @@ describe('case 1: marketplace listings', () => {
     expect(JSON.stringify(rows)).not.toContain('user31');
   });
 
-  it.skipIf(windows)('exports CSV and retains contacts only on explicit request', async () => {
+  it.skipIf(process.platform === 'win32')('stops export photo previews after the media directory is refused', async () => {
+    gw.tg.on('messages.Search', () => ({ messages: [31, 32, 33].map(id => rawMessage(FORUM, id, { message: `iphone 15 lot ${id}`, media: { className: 'MessageMediaPhoto', photo: { className: 'Photo', sizes } } })), chats: [forum()] }));
+    mkdirSync(join(gw.config.filesDir, 'media'), { recursive: true, mode: 0o755 });
+    chmodSync(join(gw.config.filesDir, 'media'), 0o777);
+    const ensureDir = vi.spyOn(gw.services.files, 'ensureDir');
+    const reply = await user_a.call('tg_export', { chat: '@fixture_market', query: 'iphone 15', topic: 5, photos: 'thumb' });
+    expect(reply.isError).toBe(false);
+    expect(reply.text).toContain('Export finished: 3 rows');
+    expect(reply.text).toContain('photo previews stopped:');
+    expect(reply.text).toContain('is writable by other users');
+    expect(reply.text).not.toContain('photo previews downloaded');
+    // One refused check for the media directory (the export file itself is written elsewhere), no Telegram download.
+    expect(ensureDir.mock.calls.filter(([path]) => String(path).includes(`${sep}media${sep}`))).toHaveLength(1);
+    expect((gw.tg.client as unknown as { downloadMedia: ReturnType<typeof vi.fn> }).downloadMedia).not.toHaveBeenCalled();
+  });
+
+  it('exports CSV and retains contacts only on explicit request', async () => {
     const reply = await user_a.call('tg_export', { chat: '@fixture_market', query: 'iphone', format: 'csv', include_contacts: true });
     const path = reply.text.match(/^path: (.+)$/m)![1]!;
     const csv = readFileSync(path, 'utf8');
@@ -192,7 +206,7 @@ describe('case 1: marketplace listings', () => {
     expect(csv).toContain('+7 999 123-45-67');
   });
 
-  it.skipIf(windows)('returns listing album previews as files and inline images', async () => {
+  it('returns listing album previews as files and inline images', async () => {
     gw.tg.on('messages.GetHistory', () => ({ messages: [raw(listings[0]!), rawMessage(FORUM, 32, { groupedId: 900n, media: { className: 'MessageMediaPhoto', photo: { className: 'Photo', sizes } } })].reverse(), chats: [forum()] }));
     const reply = await user_a.call('tg_get_media', { link: 'https://t.me/fixture_market/5/31', inline: true });
     expect(reply.isError).toBe(false);
@@ -454,7 +468,7 @@ describe('errors and audit', () => {
     expect(gw.storage.audit.recent()[0]).toMatchObject({ userId: 'user_a', accountId: 'agent', tool: 'tg_read_history', peerKey: '-1000000000500', resultCount: 1, errorCode: null });
   });
 
-  it.skipIf(windows)('returns job_id for running exports and reads status with the same tool', async () => {
+  it('returns job_id for running exports and reads status with the same tool', async () => {
     let release!: () => void;
     const gate = new Promise<void>(r => (release = r));
     gw.tg.on('messages.GetHistory', async () => {
