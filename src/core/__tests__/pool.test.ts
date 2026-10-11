@@ -288,6 +288,24 @@ describe('loginAccount', () => {
     await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,cleanupTimeoutMs:5,onFatal:fatal})).rejects.toThrow('fatal_worker_exit');
     expect(fatal).toHaveBeenCalledTimes(1);
   });
+  for (const [name, destroy] of [['stuck', () => new Promise(() => undefined)], ['rejecting', async () => { throw new Error('synthetic close failure'); }]] as const) {
+    it(`persists the authorized session before a ${name} cleanup terminates the worker`, async () => {
+      const events: string[] = []; let original: unknown; let queued: ((request: unknown) => Promise<unknown>) | undefined;
+      const {factory,created}=makeFactory(c=>{original=c.invoke;c.start.mockImplementation(async()=>{queued=c.invoke as never});c.destroy.mockImplementation(async()=>{events.push('destroy');return destroy()})});
+      const fatal=vi.fn(()=>{events.push(created[0]!.invoke===original?'fatal-after-restore':'fatal');throw new Error('fatal_worker_exit')});
+      const persist=vi.fn(async(result:{session:string})=>{events.push(`persist:${result.session}`)});
+      await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,cleanupTimeoutMs:5,onFatal:fatal,persist})).rejects.toThrow('fatal_worker_exit');
+      expect(events).toEqual(['persist:SAVED_SESSION','destroy','fatal-after-restore']);
+      // The library-facing queue is shut down even though termination was requested.
+      await expect(queued!({className:'help.GetConfig'})).rejects.toMatchObject({code:'UNAVAILABLE'});
+    });
+  }
+  it('surfaces persistence errors unchanged and still closes the login client', async () => {
+    const {factory,created}=makeFactory(c=>{c.start.mockImplementation(async(params:{onError:(e:Error)=>Promise<boolean>})=>{await params.onError(new Error('PHONE_CODE_INVALID'))})});
+    const failure=new Error('synthetic storage failure');
+    await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,persist:async()=>{throw failure}})).rejects.toBe(failure);
+    expect(created[0]!.destroy).toHaveBeenCalledOnce();
+  });
 });
 
 describe('config', () => {

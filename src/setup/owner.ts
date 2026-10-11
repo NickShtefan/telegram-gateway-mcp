@@ -49,21 +49,25 @@ export async function ownerSetup(plan: OwnerPlan, deps: OwnerWorkerDeps): Promis
         const apiHash = (await deps.io.prompt('Telegram application hash: ', { hidden: true })).trim();
         credentials = parseSafe(apiSchema, { apiId: Number(apiId), apiHash }, 'invalid_request');
       } else credentials = parseSafe(apiSchema, credentials, 'invalid_state');
+      const api = credentials;
       if (!deps.storage.sessions.get(p.account) || p.replace_session) {
         const phone = await deps.io.prompt('Telegram phone (international format): ', { hidden: true });
-        const logged = await loginAccount({
-          factory: deps.factory ?? defaultClientFactory, ...credentials, phone, accountId: p.account,
+        await loginAccount({
+          factory: deps.factory ?? defaultClientFactory, ...api, phone, accountId: p.account,
           prompts: { code: () => deps.io.prompt('Telegram verification code: ', { hidden: true }),
             password: () => deps.io.prompt('Telegram two-factor password: ', { hidden: true }) },
           log: createLogger('owner-login', { level: 'silent' }), onFatal: deps.onFatal,
+          // Runs only after authorization and before client cleanup, which may terminate this worker.
+          // Do not cache a mistyped API pair on failed/canceled first login.
+          persist: async logged => {
+            if (newCredentials) await deps.credentials.write(api);
+            deps.storage.transaction(() => {
+              deps.storage.accounts.upsert({ id: p.account, ...logged.identity, status: 'active' });
+              deps.storage.sessions.put(p.account, seal(logged.session, deps.sessionSecret));
+            });
+          },
         });
-        // Do not cache a mistyped API pair on failed/canceled first login.
         // Existing sessions with a missing API file require explicit repair.
-        if (newCredentials) await deps.credentials.write(credentials);
-        deps.storage.transaction(() => {
-          deps.storage.accounts.upsert({ id: p.account, ...logged.identity, status: 'active' });
-          deps.storage.sessions.put(p.account, seal(logged.session, deps.sessionSecret));
-        });
       } else if (newCredentials) throw new SetupError('invalid_state');
       let pending = deps.storage.kv.get(pendingKey(p.setup_id));
       const user = deps.storage.users.get(p.user);

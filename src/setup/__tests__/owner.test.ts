@@ -67,6 +67,19 @@ describe('authorized owner worker core',()=>{
     expect((await ownerSetup(plan,f.deps)).phase).toBe('failed');expect(f.factory).not.toHaveBeenCalled();expect(f.storage.sessions.get(plan.account)).toBeNull();expect(f.storage.users.list()).toEqual([]);
     expect(await f.deps.credentials.read()).toBeNull();
   });
+  it('persists an authorized login and new API pair before cleanup terminates the worker',async()=>{
+    const f=fixture();const make=f.factory.getMockImplementation()!;
+    f.factory.mockImplementationOnce(()=>{const client=make() as unknown as {destroy:()=>Promise<void>};
+      client.destroy=async()=>{f.events.push('destroy');throw new Error('synthetic close failure')};return client as unknown as TelegramClient});
+    f.deps.onFatal=()=>{f.events.push('fatal');throw new Error('fixture-worker-exit')};
+    expect((await ownerSetup(plan,f.deps)).phase).toBe('failed');
+    expect(f.events).toEqual(['authorize','setup-lease','stop-and-lock','start','destroy','fatal','release-and-restore']);
+    expect(unseal(f.storage.sessions.get(plan.account)!,f.deps.sessionSecret)).toBe('fixture-session-secret');
+    expect(await f.deps.credentials.read()).toEqual({apiId:12345,apiHash:'a'.repeat(32)});
+    // A rerun after the forced exit reuses the stored session instead of requesting a new code.
+    f.prompts.mockClear();expect((await ownerSetup(plan,f.deps)).phase).toBe('needs_client_configuration');
+    expect(f.prompts).not.toHaveBeenCalled();expect(f.factory).toHaveBeenCalledTimes(1);
+  });
   it('requires explicit token rotation and preserves sessions when it is approved',async()=>{
     const f=fixture();await ownerSetup(plan,f.deps);const old=f.storage.users.get(plan.user)!.tokenSha256;
     expect((await ownerSetup({...plan,rotate_token:true},f.deps)).phase).toBe('needs_client_configuration');

@@ -32,6 +32,12 @@ export interface LoginOptions {
   accountId?: string;
   /** A hung auth call or cleanup must terminate the worker, never release its lease in process. */
   onFatal?: () => never;
+  /**
+   * Store the authorized result before the login client is closed. A failed or
+   * hung close terminates the process, which would otherwise lose the session
+   * and leave Telegram with an orphan authorization. Errors propagate unchanged.
+   */
+  persist?: (result: LoginResult) => Promise<void> | void;
   cleanupTimeoutMs?: number;
   connectTimeoutMs?: number;
 }
@@ -67,6 +73,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
   const limiter = new AccountLimiter({ onFatal: () => fatal(), log: options.log, maxFloodRetries: 0 });
   const restore = queueLoginCalls(client, options.accountId ?? 'login', limiter, fatal, options.connectTimeoutMs);
 
+  let persisting = false;
   let errors = 0;
   let lastError: Error | null = null;
   // Input canceled (Ctrl-C, timeout): teleproto swallows this error and asks again.
@@ -111,7 +118,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
       throw new GatewayError('ACCOUNT_UNAUTHORIZED', 'Login completed, but the session is empty.');
     }
 
-    return {
+    const result: LoginResult = {
       session,
       identity: {
         tgUserId: String(me.id),
@@ -119,15 +126,19 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
         displayName: [me.firstName, me.lastName].filter(Boolean).join(' ').trim() || null,
       },
     };
+    persisting = true;
+    await options.persist?.(result);
+    return result;
   } catch (err) {
-    throw classifyError(aborted ?? lastError ?? err);
+    throw persisting ? err : classifyError(aborted ?? lastError ?? err);
   } finally {
     // Always close the login client; the daemon opens its own client with the session.
+    // A client that may still be live shares the new auth key: terminate, never continue.
+    let closed = false;
     try {
       await withTimeout(client.destroy(), options.cleanupTimeoutMs ?? 5_000, 'client.destroy');
-    } catch {
-      fatal();
-    }
-    limiter.shutdown(); restore();
+      closed = true;
+    } catch { /* terminate below */ } finally { limiter.shutdown(); restore(); }
+    if (!closed) fatal();
   }
 }

@@ -91,6 +91,15 @@ describe('login', () => {
     expect(out.join('\n')).toContain('tg-mcp account grant agent <user>');
   });
 
+  it('stores the session before closing the login client, whose failure terminates the process', async () => {
+    io.prompt = vi.fn(async (q: string) => (q.startsWith('Phone') ? '+79991234567' : '12345'));
+    let storedAtClose = false;
+    const destroy = vi.fn(async () => { storedAtClose = storage.sessions.get('agent') !== null; });
+    await runLogin({ config, storage, io, account: 'agent', factory: fakeFactory({ destroy }), sessionSecret: 'secret' });
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(storedAtClose).toBe(true);
+  });
+
   it('does not start login without API credentials', async () => {
     const bare = loadConfig({ TG_MCP_HOME: home });
     await expect(runLogin({ config: bare, storage, io, account: 'agent', factory: fakeFactory() })).rejects.toThrow(/TG_API_ID/);

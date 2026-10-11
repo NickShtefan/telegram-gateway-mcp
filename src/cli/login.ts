@@ -44,11 +44,11 @@ export async function runLogin(options: LoginCommandOptions): Promise<void> {
       password: hint => io.prompt(`Two-step verification password${hint ? ` (hint: ${hint})` : ''}: `, { hidden: true }),
     },
     log: createLogger('login'),
-  });
-
-  storage.transaction(() => {
-    storage.accounts.upsert({ id: accountId, ...result.identity, status: 'active' });
-    storage.sessions.put(accountId, seal(result.session, secret));
+    // Store before the login client closes: a failed close terminates this process.
+    persist: authorized => storage.transaction(() => {
+      storage.accounts.upsert({ id: accountId, ...authorized.identity, status: 'active' });
+      storage.sessions.put(accountId, seal(authorized.session, secret));
+    }),
   });
 
   const name = result.identity.username ? `@${result.identity.username}` : (result.identity.displayName ?? 'no username');
