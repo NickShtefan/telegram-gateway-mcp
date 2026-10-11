@@ -737,10 +737,6 @@
       "destination": "scripts/release/dependency-notices.mjs"
     },
     {
-      "source": "scripts/release/sign-candidate.mjs",
-      "destination": "scripts/release/sign-candidate.mjs"
-    },
-    {
       "source": "src/install/provisionCli.ts",
       "destination": "src/install/provisionCli.ts"
     },
@@ -851,6 +847,18 @@
     {
       "source": "scripts/checks/windows-readme.ps1",
       "destination": "scripts/checks/windows-readme.ps1"
+    },
+    {
+      "source": "scripts/release/draft.mjs",
+      "destination": "scripts/release/draft.mjs"
+    },
+    {
+      "source": "src/install/__tests__/draftRelease.test.ts",
+      "destination": "src/install/__tests__/draftRelease.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/installCommands.test.ts",
+      "destination": "src/install/__tests__/installCommands.test.ts"
     }
   ],
   "excludedTrackedFiles": [
