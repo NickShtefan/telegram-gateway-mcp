@@ -147,6 +147,14 @@ describe.skipIf(process.platform === 'win32')('pinned signatures and no-Node POS
     writeFileSync(transport,encodeReleaseTar(new Map(transportNames.map(name=>[name,readFileSync(join(bundle,name))]))));
     const archiveResult=spawnSync('/bin/sh',[fixtureBootstrap,transport,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});
     expect(archiveResult.status,archiveResult.stderr).toBe(0);expect(JSON.parse(archiveResult.stdout)).toMatchObject({source_sha:sourceSha,installed:false});
+    // Release-notes commands pin the exact source: another owner-signed build is rejected.
+    const archiveRun=(...args:string[])=>spawnSync('/bin/sh',[fixtureBootstrap,...args],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});
+    const pinned=archiveRun(transport,sourceSha,'verify');expect(pinned.status,pinned.stderr).toBe(0);expect(JSON.parse(pinned.stdout)).toMatchObject({source_sha:sourceSha});
+    const otherBuild=archiveRun(transport,'b'.repeat(40),'verify');expect(otherBuild.status).toBe(1);expect(otherBuild.stdout).toBe('');expect(otherBuild.stderr).toContain('bootstrap_verification_failed');
+    const shortPin=archiveRun(transport,'a'.repeat(39),'verify');expect(shortPin.status).toBe(1);expect(shortPin.stderr).toContain('bootstrap_verification_failed');
+    // A browser that expanded the download leaves no archive at the documented path.
+    const expanded=archiveRun(join(directory,'telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz'),'verify');expect(expanded.status).toBe(1);expect(expanded.stderr).toContain('bootstrap_archive_missing');
+    const unpinnedDirectory=archiveRun(bundle,'verify');expect(unpinnedDirectory.status).toBe(1);expect(unpinnedDirectory.stderr).toContain('bootstrap_verification_failed');
     const archiveBytes=readFileSync(transport);writeFileSync(transport,archiveBytes.subarray(0,archiveBytes.length-8));
     const brokenArchive=spawnSync('/bin/sh',[fixtureBootstrap,transport,'verify'],{env:{PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:20000});expect(brokenArchive.status).toBe(1);
     // Deterministic adversarial interleavings after pathname prechecks and

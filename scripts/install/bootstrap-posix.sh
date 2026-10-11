@@ -11,17 +11,23 @@ fail() { printf '%s\n' '{"format_version":1,"error_code":"bootstrap_verification
 trusted_signer_sha256='f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682'
 readonly trusted_signer_sha256
 pin=$trusted_signer_sha256
-archive_input=0
 case "$#" in
-  2) bundle=$1; source_sha=; operation=$2; archive_input=1 ;;
+  2) bundle=$1; source_sha=; operation=$2 ;;
   3) bundle=$1; source_sha=$2; operation=$3 ;;
   4) bundle=$1; [ "$2" = "$trusted_signer_sha256" ] || fail; source_sha=$3; operation=$4 ;;
   *) fail ;;
 esac
+# A directory is a maintainer bundle and needs the exact source. Anything else is
+# a release archive; its optional source argument pins one exact signed build.
+if [ -d "$bundle" ]; then archive_input=0; else archive_input=1; fi
 [ "$operation" = verify ] || [ "$operation" = prepare ] || [ "$operation" = install ] || fail
 if [ "$operation" = install ]; then [ "$(/usr/bin/id -u)" -eq 0 ] || fail; fi
 [ "${#pin}" -eq 64 ] || fail
-[ "$archive_input" -eq 1 ] || [ "${#source_sha}" -eq 40 ] || fail
+{ [ "$archive_input" -eq 1 ] && [ -z "$source_sha" ]; } || [ "${#source_sha}" -eq 40 ] || fail
+if [ "$archive_input" -eq 1 ] && [ ! -f "$bundle" ]; then
+  # Typical after a browser expanded or renamed the download: name the cause.
+  printf '%s\n' '{"format_version":1,"error_code":"bootstrap_archive_missing"}' >&2; exit 1
+fi
 case "$pin$source_sha" in *[!0-9a-f]*) fail ;; esac
 case "$(/usr/bin/uname -s)" in
   Darwin) target=darwin; base=/private/tmp; stat_size() { /usr/bin/stat -f %z "$1"; }; stat_links() { /usr/bin/stat -f %l "$1"; } ;;
@@ -162,7 +168,7 @@ snapshot "$bundle/signer.der" "$stage/signer.der" 16384
 openssl_clean x509 -inform DER -in "$stage/signer.der" -pubkey -noout > "$stage/public.pem" 2>/dev/null || fail
 case "$(openssl_clean rsa -pubin -in "$stage/public.pem" -text -noout 2>/dev/null)" in *'(3072 bit)'*) ;; *) fail ;; esac
 openssl_clean dgst -sha256 -verify "$stage/public.pem" -signature "$stage/manifest.sig" "$stage/manifest.tsv" >/dev/null 2>&1 || fail
-if [ "$archive_input" -eq 1 ]; then
+if [ -z "$source_sha" ]; then
   source_sha=$(/usr/bin/awk -F '\t' 'NR==3&&$1=="source_sha" {print $2}' "$stage/manifest.tsv")
   [ "${#source_sha}" -eq 40 ] || fail
   case "$source_sha" in *[!0-9a-f]*) fail ;; esac

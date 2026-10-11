@@ -22,69 +22,89 @@ Write tools return a preview and `approval_id`. The agent must show it to the ow
 
 ## Installation
 
-Download a **signed release archive**, not an unsigned Actions candidate. No Node/npm, compiler, local signing key or manually entered hash is required. Only the maintainer signs releases. The current repository is private and a signed draft must first be prepared by the owner: draft releases are visible only to authorized users with the necessary repository permissions. Anonymous installation is unavailable until the owner publishes a release and chooses repository visibility. See [private tester access](docs/outsider-test.md).
+Install a **signed release archive**, not an unsigned Actions candidate. No Node/npm, compiler, local signing key or typed hash is required. Only the maintainer signs releases. The current repository is private and the owner must first prepare a signed draft: draft releases are visible only to authorized users with the necessary repository permissions. Anonymous installation is unavailable until the owner publishes a release and chooses repository visibility. See [private tester access](docs/outsider-test.md).
 
-1. In your browser, open [Releases](https://github.com/NickShtefan/telegram-gateway-mcp/releases) and download the archive for your machine into **Downloads**. Also download the bootstrap from the immutable source link below, not from an untrusted mirror. Do not rename the files or open/extract the archive yourself.
-2. Run the matching three-command sequence below. The first automatically checks the bootstrap against this README. The second installs with system authorization; the third runs the wizard as your ordinary user.
-3. In the wizard, press Enter for local account/user labels if appropriate, choose clients, and enter your own Telegram API credentials, phone/code/2FA directly into its hidden prompts. Restart selected clients after setup, then ask for an actual `telegram_gateway` / `tg_status` tool call.
+Before you start:
 
-| Platform | Signed archive |
-| --- | --- |
-| macOS arm64 (Apple Silicon) | `telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz` |
-| macOS Intel | `telegram-mcp-gateway-0.2.0-macos-x64.tar.gz` |
-| Ubuntu 24.04 x64, Arch x64 | `telegram-mcp-gateway-0.2.0-linux-x64.tar.gz` |
-| Ubuntu 24.04 arm64 | `telegram-mcp-gateway-0.2.0-linux-arm64.tar.gz` |
-| Windows 11 x64 | `telegram-mcp-gateway-0.2.0-windows-x64.zip` |
+- Use an **administrator account**: a macOS Administrator, a Linux user allowed to use `sudo`, or a Windows administrator account. A standard account cannot authorize command 2. Command 3 runs unelevated as that same user. On Windows, elevate your own account: elevating with another account's credentials changes `$HOME`, so the commands would read another profile's Downloads.
+- While the repository is private, install [GitHub CLI](https://cli.github.com/) and sign in with an account that can see the release (`gh auth login`). Command 1 uses it to download, including from a draft.
+- The current Node 24 bundle needs macOS 13.5 or later. macOS 13.0-13.4 requires a separately prepared Node 22 bundle and is not qualified by these assets. Other platforms/versions remain unqualified until tested. See [platform checks](docs/outsider-test.md).
 
-The current Node 24 bundle needs macOS 13.5 or later. macOS 13.0-13.4 requires a separately prepared Node 22 bundle and is not qualified by these assets. Other platforms/versions remain unqualified until tested. See [platform checks](docs/outsider-test.md).
+Run the three commands for your platform, each as shown:
 
-### macOS
+1. Download the bootstrap and the archive of release `v0.2.0` into Downloads under their exact names. Do not open or extract the archive.
+2. Install with system authorization. The command copies the bootstrap into a fresh protected directory, checks it against the SHA-256 pinned in this README and only then runs it on the archive.
+3. Run the wizard. Press Enter for local account/user labels if appropriate, choose clients, and enter your own Telegram API credentials, phone/code/2FA directly into its hidden prompts. Restart the selected clients afterwards, then ask for an actual `telegram_gateway` / `tg_status` tool call.
 
-Download [bootstrap-posix.sh at immutable source f16ac13](https://github.com/NickShtefan/telegram-gateway-mcp/blob/f16ac135c6e98d37876fffc161769fcea6e287dc/scripts/install/bootstrap-posix.sh) using **Download raw file**. For Apple Silicon, run in Terminal:
+Expected: on macOS and Linux the checksum line ends in `OK`; then `needs_api_credentials` with no service started yet; the wizard then verifies the authenticated connection and tells you which clients to restart. Stop if a checksum fails or an existing/foreign installation is reported. Keep the same archive for retries.
+
+### macOS Apple Silicon (arm64)
 
 ```sh
-cd "$HOME/Downloads" && printf '4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  bootstrap-posix.sh\n' | /usr/bin/shasum -a 256 -c -
-sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /private/tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  %s\n" "$d/bootstrap.sh" | /usr/bin/shasum -a 256 -c -; /bin/sh "$d/bootstrap.sh" "$2" install' sh "$HOME/Downloads/bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz"
+cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz
+sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /private/tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/shasum -a 256 -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-macos-arm64.tar.gz"
 '/Library/Application Support/TelegramMCPGateway/bin/tg-mcp-owner' setup
 ```
 
-On Intel, use the same commands with `macos-x64.tar.gz` in command 2. Expected: checksum `OK`, then `needs_api_credentials` with no service started yet; the wizard subsequently verifies the authenticated connection and tells you which clients to restart. Stop if a checksum fails or an existing/foreign installation is reported. Keep the same signed archive for retries.
-
-### Ubuntu 24.04 and Arch
-
-Download the same immutable [bootstrap-posix.sh](https://github.com/NickShtefan/telegram-gateway-mcp/blob/f16ac135c6e98d37876fffc161769fcea6e287dc/scripts/install/bootstrap-posix.sh). For x64:
+### macOS Intel (x64)
 
 ```sh
-cd "$HOME/Downloads" && printf '4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  bootstrap-posix.sh\n' | /usr/bin/sha256sum -c -
-sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "4299233c7c215ead859a44941e817878db3485a512289856571e9422e39ae630  %s\n" "$d/bootstrap.sh" | /usr/bin/sha256sum -c -; /bin/sh "$d/bootstrap.sh" "$2" install' sh "$HOME/Downloads/bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-linux-x64.tar.gz"
+cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-macos-x64.tar.gz
+sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /private/tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/shasum -a 256 -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-macos-x64.tar.gz"
+'/Library/Application Support/TelegramMCPGateway/bin/tg-mcp-owner' setup
+```
+
+The Terminal may ask once for access to the Downloads folder: allow it.
+
+### Ubuntu 24.04 x64 and Arch Linux x64
+
+```sh
+cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-linux-x64.tar.gz
+sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/sha256sum -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-linux-x64.tar.gz"
 /opt/telegram-mcp-gateway/bin/tg-mcp-owner setup
 ```
 
-On Ubuntu arm64, use `linux-arm64.tar.gz` in command 2. Arch ARM is not part of this release. If OS utilities are missing, the installer shows the complete official-source package transaction and asks you to type `INSTALL`. Cancel to leave gateway provisioning unstarted. It uses isolated Ubuntu official sources or Arch core/extra, never AUR/third-party repositories, and does not perform a full OS upgrade. Resolve stale Arch package databases by updating your OS yourself before retrying; the installer does not refresh the host database. [Linux checklist](docs/linux-private-test.md).
+### Ubuntu 24.04 arm64
+
+```sh
+cd "$HOME/Downloads" && gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-posix.sh --pattern telegram-mcp-gateway-0.2.0-linux-arm64.tar.gz
+sudo /bin/sh -c 'set -eu; d=$(/usr/bin/mktemp -d /tmp/tg-bootstrap.XXXXXX); trap '\''/bin/rm -rf "$d"'\'' EXIT; /bin/cp "$1" "$d/bootstrap.sh"; printf "5154fcc944091cd2184983630c412970d0daf6722a2c11c4919dc86466144771  %s\n" "$d/bootstrap.sh" | /usr/bin/sha256sum -c -; shift; /bin/sh "$d/bootstrap.sh" "$@" install' sh "$HOME/Downloads/telegram-mcp-gateway-0.2.0-bootstrap-posix.sh" "$HOME/Downloads/telegram-mcp-gateway-0.2.0-linux-arm64.tar.gz"
+/opt/telegram-mcp-gateway/bin/tg-mcp-owner setup
+```
+
+Arch ARM is not part of this release. If OS utilities are missing, the installer shows the complete official-source package transaction and asks you to type `INSTALL`. Cancel to leave gateway provisioning unstarted. It uses isolated Ubuntu official sources or Arch core/extra, never AUR/third-party repositories, and does not perform a full OS upgrade. Resolve stale Arch package databases by updating your OS yourself before retrying; the installer does not refresh the host database. [Linux checklist](docs/linux-private-test.md).
 
 ### Windows 11 x64
 
-Download [bootstrap-windows.ps1 at immutable source f16ac13](https://github.com/NickShtefan/telegram-gateway-mcp/blob/f16ac135c6e98d37876fffc161769fcea6e287dc/scripts/install/bootstrap-windows.ps1). Open **Windows PowerShell as Administrator** for commands 1 and 2 (same OS user). Command 2 copies the verified bootstrap into a fresh administrator/System-only directory before execution. After it finishes, close that elevated window and use an ordinary PowerShell for command 3:
+Open **Windows PowerShell as Administrator** with your own administrator account for commands 1 and 2. After command 2 finishes, close that elevated window and run command 3 in an ordinary (unelevated) PowerShell:
 
 ```powershell
-if ((Get-FileHash "$HOME\Downloads\bootstrap-windows.ps1" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '83f714d2f4ecf0c36cbe71438e936cc370c1071c0523845182c61487fada1a29') { throw 'Bootstrap checksum mismatch: stop' }
-& { $acl=New-Object Security.AccessControl.DirectorySecurity; $acl.SetAccessRuleProtection($true,$false); $admin=New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'; $acl.SetOwner($admin); foreach($sid in @($admin,(New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))){ $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'))) }; $d=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) ('TelegramMCPBootstrap-'+[guid]::NewGuid()); $null=[IO.Directory]::CreateDirectory($d,$acl); try{ Copy-Item -LiteralPath "$HOME\Downloads\bootstrap-windows.ps1" -Destination "$d\bootstrap.ps1"; if((Get-FileHash "$d\bootstrap.ps1" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '83f714d2f4ecf0c36cbe71438e936cc370c1071c0523845182c61487fada1a29'){throw 'Bootstrap checksum mismatch'}; & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$d\bootstrap.ps1" -Archive "$HOME\Downloads\telegram-mcp-gateway-0.2.0-windows-x64.zip" -Install; if($LASTEXITCODE -ne 0){throw 'Installation failed: preserve state'} }finally{Remove-Item -LiteralPath $d -Recurse -Force} }
+Set-Location "$HOME\Downloads"; gh release download v0.2.0 --repo NickShtefan/telegram-gateway-mcp --clobber --pattern telegram-mcp-gateway-0.2.0-bootstrap-windows.ps1 --pattern telegram-mcp-gateway-0.2.0-windows-x64.zip; if($LASTEXITCODE -ne 0){throw 'Download failed'}
+& { $acl=New-Object Security.AccessControl.DirectorySecurity; $acl.SetAccessRuleProtection($true,$false); $admin=New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'; $acl.SetOwner($admin); foreach($sid in @($admin,(New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))){ $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'))) }; $d=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) ('TelegramMCPBootstrap-'+[guid]::NewGuid()); $null=[IO.Directory]::CreateDirectory($d,$acl); try{ Copy-Item -LiteralPath "$HOME\Downloads\telegram-mcp-gateway-0.2.0-bootstrap-windows.ps1" -Destination "$d\bootstrap.ps1"; if((Get-FileHash "$d\bootstrap.ps1" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '83f714d2f4ecf0c36cbe71438e936cc370c1071c0523845182c61487fada1a29'){throw 'Bootstrap checksum mismatch'}; & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$d\bootstrap.ps1" -Archive "$HOME\Downloads\telegram-mcp-gateway-0.2.0-windows-x64.zip" -Install; if($LASTEXITCODE -ne 0){throw 'Installation failed: preserve state'} }finally{Remove-Item -LiteralPath $d -Recurse -Force} }
 & "$env:ProgramData\TelegramMCPGateway\bin\tg-mcp-owner.cmd" setup
 ```
 
-The process-scoped PowerShell execution policy does not change machine policy or replace signature verification. An organization policy may refuse execution. Expected: installation creates a stopped manual service; the ordinary-user wizard performs login and starts/verifies it. [Windows checklist](docs/windows-private-test.md).
+The process-scoped PowerShell execution policy does not change machine policy or replace signature verification. An organization policy may refuse execution. Expected: installation creates a stopped manual service; the unelevated wizard performs login and starts/verifies it. [Windows checklist](docs/windows-private-test.md).
+
+### Browser downloads
+
+Command 1 is the supported download path: no browser touches the files. If you download in a browser instead, save both files into Downloads under their exact names and do not open them. Safari's default "Open safe files after downloading" (Safari > Settings > General) expands a `.tar.gz` into a folder and removes the archive, and other browsers may rename a repeated download. Command 2 then stops with `bootstrap_archive_missing` (or `bootstrap_verification_failed` for a renamed or altered file). Delete the expanded folder or renamed copy and use command 1, or turn that Safari option off and download again.
+
+### Exact release pin
+
+A commit cannot contain its own commit SHA, so the commands above cannot name the source commit of the release they install. They download only the assets of tag `v0.2.0` and accept any owner-signed 0.2.0 build found there. The notes of each [release](https://github.com/NickShtefan/telegram-gateway-mcp/releases), generated by the owner's draft command, repeat these commands with that release's source commit added as the last argument of command 2 (`-SourceSha` on Windows); the bootstrap then rejects every other owner-signed build. Prefer those commands when the owner gave you the release link. They come from the release page, which is not an independent trust root: check that the SHA-256 in their command 2 equals the value here and that they differ from these commands only by the added commit.
 
 ### Bootstrap trust and limits
 
-The bootstrap is the trust root. This README pins its immutable repository commit and SHA-256; commands compare hashes automatically before executing a protected copy. Authenticate the repository/README independently (for example a reviewed clone or a known maintainer channel). A checksum from the same compromised release page is not independent proof. Replacing both an untrusted README and bootstrap, compromising the repository/maintainer account, or compromising the local OS remains outside this protection. A release page attacker who can replace only package bytes cannot pass the embedded owner-certificate check.
+The bootstrap is the trust root. This README pins its SHA-256 in command 2, which checks a protected copy before running it, so the download location of the bootstrap does not matter. Authenticate this README independently (for example a reviewed clone or a known maintainer channel). A checksum from the same compromised release page is not independent proof. Replacing both an untrusted README and the bootstrap, compromising the repository/maintainer account, or compromising the local OS remains outside this protection.
 
-The signed manifest supplies the exact source SHA only **after** RSA signature verification, so users never type it. The owner draft command binds all five CI manifests, the release target and existing tag to one frozen SHA. Bootstrap does not resolve a mutable GitHub tag during privileged execution: fresh installation trusts an owner-signed 0.2.0 manifest; existing installation receipts prevent silently adopting another source/certificate. Keep the selected release fixed during qualification/retries.
+The bootstrap accepts only a manifest signed by the embedded owner certificate (DER SHA-256 `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682`) and verifies the certificate, signature and every payload before executing bundled Node; a package that is not owner-signed fails. Without the exact release pin it does not reject a different owner-signed 0.2.0 build: someone able to change the release assets, or a mistaken upload, can substitute an older or test build signed by the same owner, and the installation receipt then keeps that build until a deliberate migration. Test drafts carry their own tag in every asset name (for example `telegram-mcp-gateway-0.2.0-test.1-macos-arm64.tar.gz`), so the commands above never download them. The release's `SHA256SUMS` file detects corrupted downloads but is not an independent authenticity root.
 
-Owner certificate DER SHA-256: `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682`. `SHA256SUMS` detects corrupted downloads but is not an independent authenticity root. The installer verifies the certificate, signature and every payload before executing bundled Node. No key, token or session is included. Private chats and writes default to disabled; secrets go only into the human terminal with agents/capture stopped.
+No key, token or session is included. Private chats and writes default to disabled; secrets go only into the human terminal with agents/capture stopped.
 
 ## Maintainer draft preparation
 
-Only the owner runs the [one-command draft procedure](docs/release-qualification.md), entering the signing passphrase once. Never give the signing key/passphrase to an agent or CI. Publication, repository visibility and npm remain separate owner decisions. The gateway package is private and unpublished; do not run `npx tg-mcp` (that package belongs to another project).
+Only the owner runs the [one-command draft procedure](docs/release-qualification.md), entering the signing passphrase once. Never give the signing key/passphrase to an agent or CI. Publication, repository visibility and npm remain separate owner decisions. Links and commands use the current private repository `NickShtefan/telegram-gateway-mcp`; moving to the planned public name `telegram-mcp-gateway` is a [separate documented step](docs/release-qualification.md#repository-name-and-public-downloads). The gateway package is private and unpublished; do not run `npx tg-mcp` (that package belongs to another project).
 
 ## Development
 
