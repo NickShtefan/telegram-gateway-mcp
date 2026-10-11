@@ -41,7 +41,7 @@ export function elevationNotice(platform: InstallLayout['platform']): string[] {
   return platform === 'win32'
     ? ['Next, Windows asks for administrator approval (User Account Control) to start the protected setup.',
       "Approve it and, if Windows asks, enter your computer's administrator password. Telegram details are requested only after this step."]
-    : ["Next, sudo asks for your computer's administrator password to start the protected setup.",
+    : ["Next, sudo may ask for your computer's administrator password to start the protected setup.",
       "Type your computer's administrator password there, not a Telegram value. Telegram details are requested only after this step."];
 }
 export const apiInstructions=[
