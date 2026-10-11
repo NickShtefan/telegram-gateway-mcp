@@ -3,10 +3,12 @@ $ErrorActionPreference='Stop'
 $source=(Resolve-Path -LiteralPath 'scripts/install/bootstrap-windows.ps1').Path
 $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'parse failed'}
-foreach($name in @('Fail','NativeReader','BoundedBytes')){
+foreach($name in @('Fail','AssertSignerPin','NativeReader','BoundedBytes')){
   $function=$ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name},$true)
   if(@($function).Count -ne 1){throw 'missing helper'};. ([scriptblock]::Create($function[0].Extent.Text))
 }
+AssertSignerPin 'f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682'
+$failed=$false;try{AssertSignerPin ('0'*64)}catch{$failed=$true};if(-not $failed){throw 'unapproved signer accepted'}
 $directory=Join-Path ([IO.Path]::GetTempPath()) ('tg-reader-'+[guid]::NewGuid().ToString());$null=New-Item -ItemType Directory -Path $directory
 try {
   $file=Join-Path $directory 'regular';[IO.File]::WriteAllBytes($file,[byte[]](1,2,3))

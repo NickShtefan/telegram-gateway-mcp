@@ -787,6 +787,10 @@
     {
       "source": "src/install/__tests__/posixBackend.test.ts",
       "destination": "src/install/__tests__/posixBackend.test.ts"
+    },
+    {
+      "source": "docs/mac-arm-private-test.md",
+      "destination": "docs/mac-arm-private-test.md"
     }
   ],
   "excludedTrackedFiles": [

@@ -636,3 +636,10 @@ Move PR #21 out of draft for owner review and installation testing in the curren
 Freeze the exact private candidate SHA during installation, cancellation/resume and platform/client qualification. Later clean-import/public release artifacts bind to their actual source SHA and require separate release verification and approval. Retain the one-review-round protocol and owner-only local signing/secret input.
 
 Reason: after stage 7 the owner explicitly prioritized testing all installation paths and requested that the current PR leave draft, while deferring the new repository and open-source work.
+
+
+## 69. Pin the owner's established installer certificate (accepted 2026-10-12)
+
+The owner supplied and approved DER certificate SHA-256 `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682` for the bootstrap scripts and README. Embed it in both POSIX and Windows bootstrap verification. An optional legacy caller pin may match this constant but cannot replace it. Do not load trust from environment variables or the downloaded bundle. A certificate/key rotation requires a separately approved code/documentation update. Reuse the established encrypted key/certificate for current private tests. The bootstrap itself still requires independent authentication before elevation.
+
+Reason: the owner explicitly requested embedding this fingerprint and documenting it, alongside the macOS certificate-command `-new` correction.

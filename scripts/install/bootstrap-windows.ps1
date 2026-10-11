@@ -1,7 +1,8 @@
 # Independently authenticated verification entry. Install requires an elevated owner terminal.
-param([Parameter(Mandatory=$true)][string]$Bundle,[Parameter(Mandatory=$true)][string]$SignerSha256,[Parameter(Mandatory=$true)][string]$SourceSha,[switch]$Prepare,[switch]$Install)
+param([Parameter(Mandatory=$true)][string]$Bundle,[string]$SignerSha256='f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682',[Parameter(Mandatory=$true)][string]$SourceSha,[switch]$Prepare,[switch]$Install)
 $ErrorActionPreference='Stop'
 function Fail { throw 'bootstrap_verification_failed' }
+function AssertSignerPin([string]$Value) { if($Value -cne 'f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682'){Fail} }
 function RunClean([string]$Executable,[string[]]$Arguments) {
   $start=New-Object Diagnostics.ProcessStartInfo
   $start.FileName=$Executable;$start.UseShellExecute=$false
@@ -81,6 +82,7 @@ function HashBytes([byte[]]$Bytes) {
   try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
 }
 try {
+  AssertSignerPin $SignerSha256
   if($SignerSha256 -cnotmatch '^[0-9a-f]{64}$' -or $SourceSha -cnotmatch '^[0-9a-f]{40}$') { Fail }
   $manifestPath=Join-Path $Bundle 'manifest.tsv';$signaturePath=Join-Path $Bundle 'manifest.sig';$certificatePath=Join-Path $Bundle 'signer.der'
   $null=Regular $manifestPath 8192;$signatureItem=Regular $signaturePath 384;$null=Regular $certificatePath 16384

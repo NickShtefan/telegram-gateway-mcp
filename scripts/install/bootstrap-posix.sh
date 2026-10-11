@@ -8,11 +8,14 @@ LC_ALL=C
 export LC_ALL
 unset NODE_OPTIONS NODE_PATH ENV BASH_ENV CDPATH
 fail() { printf '%s\n' '{"format_version":1,"error_code":"bootstrap_verification_failed"}' >&2; exit 1; }
-[ "$#" -eq 4 ] || fail
-bundle=$1
-pin=$2
-source_sha=$3
-operation=$4
+trusted_signer_sha256='f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682'
+readonly trusted_signer_sha256
+pin=$trusted_signer_sha256
+case "$#" in
+  3) bundle=$1; source_sha=$2; operation=$3 ;;
+  4) bundle=$1; [ "$2" = "$trusted_signer_sha256" ] || fail; source_sha=$3; operation=$4 ;;
+  *) fail ;;
+esac
 [ "$operation" = verify ] || [ "$operation" = prepare ] || [ "$operation" = install ] || fail
 if [ "$operation" = install ]; then [ "$(/usr/bin/id -u)" -eq 0 ] || fail; fi
 [ "${#pin}" -eq 64 ] && [ "${#source_sha}" -eq 40 ] || fail

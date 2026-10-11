@@ -1,6 +1,10 @@
 # Independent owner installation: 0.2.0 candidate
 
+For the owner's first ARM Mac test, start with the [concrete step-by-step guide](mac-arm-private-test.md). This page is the generic multi-platform contract.
+
 This is the candidate workflow. Publication, production signer establishment and live qualification are still required before it becomes an installation recommendation. Use the owner-approved exact source commit and platform bundle, not the current repository's private history or another npm package named `tg-mcp`.
+
+The current bootstrap scripts embed the owner-approved DER certificate SHA-256 `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682`. Caller-supplied alternatives are rejected.
 
 1. Obtain the versioned bootstrap verifier and bundle from the project owner's trusted release channel. Independently establish the verifier's exact code/checksum, the DER signer-certificate SHA-256 fingerprint and source commit. A fingerprint supplied only by an agent or by the same unauthenticated download is not an independent trust anchor. Have the human review and establish verifier trust before elevation; do not execute an untrusted downloaded verifier as administrator.
 2. Keep the bundle in a local regular filesystem directory. Verification rejects redirects, hard links, unsafe archives, wrong signer/version/platform/architecture and inconsistent artifact bytes. The bundle carries its exact official Node runtime and license. Target users need no Node/npm or compiler. If required OS utilities are missing, the installer presents an exact package list and installs only those official-repository prerequisites after owner confirmation. Package resolution uses an isolated fixed official-source configuration for the entire transaction, including dependencies. Ubuntu refreshes only a disposable official-source index; Arch uses core/extra with required package signatures and no global index refresh. Unsupported or unverifiable sources stop installation with a manual next action. It does not perform a full OS upgrade or use third-party/AUR repositories. The designed macOS 13.0-13.4 runtime path uses Node 22; Node 24 requires macOS 13.5+. The owner qualification matrix currently targets the available macOS 26.6.2 arm64 and 15.7.9 x64 hosts. A separate macOS 13 test is not a release blocker, but that version must remain explicitly unqualified unless actually tested.
@@ -9,13 +13,13 @@ This is the candidate workflow. Publication, production signer establishment and
 From an independently trusted POSIX verifier in the owner's terminal, verify without installation:
 
 ```sh
-/bin/sh bootstrap-posix.sh /absolute/bundle-directory CERTIFICATE_SHA256 EXACT_SOURCE_SHA verify
+/bin/sh bootstrap-posix.sh /absolute/bundle-directory EXACT_SOURCE_SHA verify
 ```
 
 After the owner establishes trust and approves system installation, run the same trusted verifier elevated:
 
 ```sh
-sudo /bin/sh bootstrap-posix.sh /absolute/bundle-directory CERTIFICATE_SHA256 EXACT_SOURCE_SHA install
+sudo /bin/sh bootstrap-posix.sh /absolute/bundle-directory EXACT_SOURCE_SHA install
 ```
 
 The selected owner Windows qualification target is Windows 11 x64 (Intel). Windows 10, ARM64 and WSL are not automatically declared supported.
@@ -23,7 +27,7 @@ The selected owner Windows qualification target is Windows 11 x64 (Intel). Windo
 On Windows, use Windows PowerShell 5.1 with the independently trusted verifier. Verification is read-only:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bootstrap-windows.ps1 -Bundle C:\Local\Bundle -SignerSha256 CERTIFICATE_SHA256 -SourceSha EXACT_SOURCE_SHA
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\bootstrap-windows.ps1 -Bundle C:\Local\Bundle -SourceSha EXACT_SOURCE_SHA
 ```
 
 The process-scoped execution policy does not change machine policy; organization policy may still reject execution. In a human-elevated terminal, add `-Install` to stage the authenticated bytes with administrator-only ACLs, extract them, and provision the fixed virtual-account service. Never substitute a different script or candidate after approval. The service remains unconfigured/unstarted after provisioning.
