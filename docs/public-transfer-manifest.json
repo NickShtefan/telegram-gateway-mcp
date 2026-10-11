@@ -117,6 +117,10 @@
       "destination": "src/core/__tests__/pool.test.ts"
     },
     {
+      "source": "src/core/__tests__/safeFs.test.ts",
+      "destination": "src/core/__tests__/safeFs.test.ts"
+    },
+    {
       "source": "src/core/auth.ts",
       "destination": "src/core/auth.ts"
     },
@@ -659,6 +663,10 @@
     {
       "source": "src/setup/__tests__/serviceControl.test.ts",
       "destination": "src/setup/__tests__/serviceControl.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/installed.test.ts",
+      "destination": "src/setup/__tests__/installed.test.ts"
     },
     {
       "source": "scripts/checks/windows-owner-contract.ps1",
