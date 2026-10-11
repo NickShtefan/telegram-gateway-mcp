@@ -1,16 +1,18 @@
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readdirSync, symlinkSync, lstatSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readdirSync, symlinkSync, existsSync, lstatSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PosixProvisionBackend } from '../posixBackend.js';
+import { ProtectionError } from '../posixPermissions.js';
 import { encodeApplicationArchive, type ApplicationFile } from '../archive.js';
 import { installLayout, type InstallLayout } from '../platform.js';
-import type { ProvisionPlan, ProvisionReceipt } from '../provision.js';
+import { provision, type ProvisionPlan, type ProvisionReceipt } from '../provision.js';
 
 // Count the fixed ACL utility subprocesses while still running the real system tools.
 const spawned = vi.hoisted(() => [] as string[]);
+const identity = vi.hoisted(() => ({ create: async (): Promise<unknown> => ({ kind: 'posix', uid: 450, gid: 450 }) }));
 vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   const { promisify } = await import('node:util');
@@ -19,10 +21,21 @@ vi.mock('node:child_process', async importOriginal => {
     { [promisify.custom]: (file: string, args: string[], options: object) => { spawned.push(file); return real(file, args, options); } });
   return { ...actual, execFile };
 });
+vi.mock('../posixIdentity.js', () => ({ createPosixIdentity: () => identity.create() }));
 
 const sha = 'c'.repeat(40);
 const platform = process.platform === 'darwin' ? 'darwin' : 'linux';
 const plan: ProvisionPlan = { format_version: 1, setup_id: '12345678-1234-4234-8234-123456789012', source_sha: sha, signer_sha256: 'b'.repeat(64), platform, port: 7777 };
+
+describe('POSIX identity outcomes', () => {
+  it('reports an existing fixed account or group as invalid_state and passes tool failures through', async () => {
+    const backend = new PosixProvisionBackend('/nonexistent', async () => undefined);
+    identity.create = async () => { throw new ProtectionError(); };
+    await expect(backend.createIdentity(installLayout(platform, sha))).rejects.toMatchObject({ code: 'invalid_state' });
+    identity.create = async () => { throw new Error('synthetic tool failure'); };
+    await expect(backend.createIdentity(installLayout(platform, sha))).rejects.toThrow('synthetic tool failure');
+  });
+});
 
 /** Release-like application: nested directories under dist and small files spread over all of them. */
 function application(directories: number, files: number): ApplicationFile[] {
@@ -75,6 +88,34 @@ describe.skipIf(process.getuid?.() !== 0 || process.env.TG_MCP_ROOT_TESTS !== '1
       expect(await backend.inspect(released, layout), name).toBe(inspected);
       await expect(backend.installRelease(layout), name).rejects.toThrow();
       undo(); expect(await backend.inspect(released, layout), name).toBe(true);
+    }
+  });
+  it('resumes a first run that failed before its first receipt, and leaves other receipt-less state to the owner', async () => {
+    const events: string[] = []; const run = join(base, 'run'); mkdirSync(run, { mode: 0o755 });
+    const { backend: first, layout } = fixture(run, application(2, 2));
+    Object.assign(first, { freshPrefix: true, attest: async () => undefined, inspect: async () => true,
+      installRelease: async () => { events.push('release'); }, createState: async () => { events.push('state'); },
+      installDefinition: async () => { events.push('definition'); }, installCommands: async () => { events.push('commands'); } });
+    identity.create = async () => { throw new Error('synthetic useradd failure'); };
+    expect((await provision(plan, first)).error_code).toBe('adapter_failed');
+    expect(readdirSync(layout.prefix)).toEqual(['provision.lock']);
+    // A retry finds the existing prefix (freshPrefix stays false) holding only the lease file.
+    const retry = new PosixProvisionBackend(join(run, 'candidate'), async () => undefined); Object.assign(retry, { ...first, freshPrefix: false });
+    identity.create = async () => ({ kind: 'posix', uid: 450, gid: 450 });
+    expect(await provision(plan, retry)).toMatchObject({ phase: 'needs_api_credentials', error_code: null });
+    expect(events).toEqual(['release', 'state', 'definition', 'commands']);
+    expect(existsSync(join(layout.prefix, 'install.json'))).toBe(true);
+    const lock = join(layout.prefix, 'provision.lock');
+    for (const [name, apply, expected] of [
+      ['stray file', () => writeFileSync(join(layout.prefix, 'stray'), ''), 'invalid_state'],
+      ['readable lease', () => chmodSync(lock, 0o644), 'invalid_state'],
+      ['non-empty lease', () => writeFileSync(lock, 'x'), 'invalid_state'],
+      ['lease only', () => undefined, null],
+      ['empty prefix', () => rmSync(lock), null],
+    ] as const) {
+      rmSync(layout.prefix, { recursive: true }); mkdirSync(layout.prefix, { mode: 0o755 }); writeFileSync(lock, '', { mode: 0o600 }); apply();
+      const read = retry.readReceipt();
+      if (expected) await expect(read, name).rejects.toMatchObject({ code: expected }); else expect(await read, name).toBeNull();
     }
   });
 });

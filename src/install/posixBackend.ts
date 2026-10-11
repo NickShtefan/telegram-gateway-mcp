@@ -12,6 +12,7 @@ import { decodeApplicationArchive } from './archive.js';
 import { verifyArtifact, verifyManifest, type ReleaseManifest } from './manifest.js';
 import { serviceDefinition, type InstallLayout } from './platform.js';
 import type { ProvisionBackend, ProvisionPlan, ProvisionReceipt, ServiceIdentity } from './provision.js';
+import { SetupError } from '../setup/contract.js';
 const run = promisify(execFile);
 
 /** With `tree` (from attestTree), its recursive ACL listing replaces the per-file subprocess for listed inodes. */
@@ -27,6 +28,17 @@ async function boundedRootFile(path: string, maximum: number, tree?: ReadonlyMap
     const data = Buffer.alloc(st.size + 1); const { bytesRead } = await fd.read(data, 0, data.length, 0);
     if (bytesRead !== st.size) throw new ProtectionError(); return data.subarray(0, bytesRead);
   } finally { await fd.close(); }
+}
+
+/** True when the attested prefix holds nothing but this installer's empty, root-private lease file. */
+async function onlyProvisionLease(prefix: string): Promise<boolean> {
+  await attestAncestry(prefix);
+  const names = await readdir(prefix);
+  if (names.some(name => name !== 'provision.lock')) return false;
+  if (!names.length) return true;
+  const lock = join(prefix, 'provision.lock'); const st = await lstat(lock);
+  if (!st.isFile() || st.uid !== 0 || st.nlink !== 1 || st.size !== 0 || (st.mode & 0o077) !== 0) return false;
+  await attestFile(lock, st); return true;
 }
 
 export class PosixProvisionBackend implements ProvisionBackend {
@@ -68,8 +80,15 @@ export class PosixProvisionBackend implements ProvisionBackend {
     try { return await work(); } finally { await lease.release(); }
   }
   async readReceipt(): Promise<unknown | null> {
-    try { return JSON.parse((await boundedRootFile(join(this.current().prefix, 'install.json'), 16384)).toString('utf8')) as unknown; }
-    catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT' && this.freshPrefix) return null; throw err; }
+    const prefix = this.current().prefix;
+    try { return JSON.parse((await boundedRootFile(join(prefix, 'install.json'), 16384)).toString('utf8')) as unknown; }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      // A first run that failed before its first receipt (for example in createIdentity) leaves only this
+      // installer's empty lease file; any other content without a receipt needs owner review.
+      if (this.freshPrefix || await onlyProvisionLease(prefix)) return null;
+      throw new SetupError('invalid_state');
+    }
   }
   async saveReceipt(receipt: ProvisionReceipt): Promise<void> {
     const path = join(this.current().prefix, 'install.json'); const temporary = `${path}.${receipt.plan.setup_id}.next`;
@@ -79,7 +98,10 @@ export class PosixProvisionBackend implements ProvisionBackend {
     try { await fd.writeFile(JSON.stringify(receipt) + '\n'); await fd.sync(); } finally { await fd.close(); }
     await rename(temporary, path);
   }
-  createIdentity(layout: InstallLayout): Promise<ServiceIdentity> { return createPosixIdentity(layout); }
+  async createIdentity(layout: InstallLayout): Promise<ServiceIdentity> {
+    // Without a receipt, an existing fixed account or group (foreign, or left by interrupted creation) needs owner review.
+    try { return await createPosixIdentity(layout); } catch (err) { throw err instanceof ProtectionError ? new SetupError('invalid_state') : err; }
+  }
   async installRelease(layout: InstallLayout): Promise<void> {
     const releases = dirname(layout.release);
     try { await attestDirectory(releases, [0]); } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; await newProtectedDirectory(releases, 0, 0, 0o755); }
