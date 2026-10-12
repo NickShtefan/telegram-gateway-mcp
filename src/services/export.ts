@@ -8,11 +8,11 @@
  */
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, writeSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { randomToken, sha256Hex } from '../core/crypto.js';
 import { GatewayError } from '../core/errors.js';
 import { totalReactions } from '../core/reactions.js';
-import { ensureTrustedDir, openNewFile } from '../core/safeFs.js';
+import type { SharedFiles } from '../core/safeFs.js';
 import type { TgCallOptions } from '../core/tg.js';
 import { sanitizeText } from '../policy/envelope.js';
 import type { EntityRecord, Storage } from '../storage/port.js';
@@ -88,6 +88,8 @@ export interface ExportResult extends Record<string, unknown> {
   date_to: string | null;
   columns: string[];
   samples: ExportRow[];
+  /** Present when the media directory was refused; later photos were not attempted. */
+  photos_refused?: string;
 }
 
 /** CSV cell following RFC 4180. */
@@ -113,7 +115,8 @@ export interface ExportServiceDeps {
   history: HistoryService;
   search: SearchService;
   media: MediaService;
-  filesDir: string;
+  /** Shared gateway directory; exports are stored in `<root>/exports`. */
+  files: SharedFiles;
   now?: () => number;
 }
 
@@ -175,13 +178,13 @@ export class ExportService {
     const stamp = new Date(this.now()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
     // Random filename suffix prevents path prediction and pre-creation.
     const name = `${stamp}-${slugify([chat.username ?? chat.peerKey, params.query ?? ''].join(' '))}-${randomBytes(3).toString('hex')}.${params.format}`;
-    const path = join(this.deps.filesDir, 'exports', context.job.userId, name);
-    ensureTrustedDir(dirname(path), this.deps.filesDir);
-
-    const fd = openNewFile(path, 0o644);
+    const path = join(this.deps.files.root, 'exports', context.job.userId, name);
+    const fd = await this.deps.files.openNewFile(path, 0o644);
     let rows = 0;
     let scanned = 0;
     let photos = 0;
+    // A refused media directory refuses every later photo too; checking it again per photo only repeats the refusal.
+    let photosRefused: string | undefined;
     let truncated = false;
     let newest: number | null = null;
     let oldest: number | null = null;
@@ -223,10 +226,11 @@ export class ExportService {
           }
           const row = this.toRow(message, chat, params.includeContacts);
 
-          if (params.photos === 'thumb' && message.media?.kind === 'photo' && photos < MAX_PHOTOS) {
+          if (params.photos === 'thumb' && message.media?.kind === 'photo' && photos < MAX_PHOTOS && photosRefused === undefined) {
             const raw = rawById.get(message.id);
             if (raw) {
               const downloaded = await this.deps.media.download(params.accountId, chat.peerKey, [raw], 'thumb', call);
+              photosRefused = downloaded.refused;
               if (downloaded.files[0]) {
                 row.photo_path = downloaded.files[0].path;
                 photos++;
@@ -264,6 +268,7 @@ export class ExportService {
       date_to: newest === null ? null : new Date(newest * 1000).toISOString(),
       columns: EXPORT_COLUMNS,
       samples,
+      ...(photosRefused === undefined ? {} : { photos_refused: photosRefused }),
     };
   }
 }

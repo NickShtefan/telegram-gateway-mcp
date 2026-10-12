@@ -29,14 +29,18 @@ Writes follow the same path twice: preparation stores the request and returns a 
 | Core | `src/core` | Client pool, limiter, watchdog, login, session encryption, entity cache, configuration, daemon lock |
 | Storage | `src/storage` | Storage port and SQLite implementation with migrations |
 | CLI | `src/cli` | `serve`, `stdio`, `login`, `doctor`, users, accounts, scopes |
+| Installation artifacts | `src/install`, `scripts/install` | Pinned manifest/runtime verification and bounded application archive; no service activation |
+| Setup | `src/setup` | Read-only preflight, owner setup worker and launcher, client adapters and handoff |
 
 `core` and `services` do not import `mcp` or `transport`. Dependencies are explicitly injected (`src/runtime.ts`, `src/services/index.ts`), allowing a Telegram double and in-memory database in tests.
 
+[Setup preflight](setup.md) is independent of MCP and does not execute a model, watch Telegram, start services or perform login. `setup preflight` bypasses configuration/storage initialization. Mutating setup stages run only through the owner terminal entry ([owner-setup.md](owner-setup.md)); no administrative MCP/HTTP API is exposed.
+
 ## Transport
 
-- **HTTP** (`transport/http.ts`): stateless Streamable HTTP on `127.0.0.1`. Checks `Host` against DNS rebinding and rejects browser `Origin`; body limit 1 MB; only `POST /mcp`. `/healthz` needs no token and reveals no account information. Non-localhost binding requires `TG_MCP_ALLOW_REMOTE=1`.
+- **HTTP** (`transport/http.ts`): stateless Streamable HTTP on `127.0.0.1`. Checks `Host` against DNS rebinding and rejects browser `Origin`; body limit 1 MB: an oversized body is read to its end (up to 8 MB extra within 10 s) and answered with 413, otherwise the connection is dropped; only `POST /mcp`. `/healthz` needs no token and reveals no account information. Non-localhost binding requires `TG_MCP_ALLOW_REMOTE=1`.
 - **stdio** (`transport/stdio.ts`): reads stdin JSON-RPC, forwards it to the daemon with `TG_MCP_TOKEN`, writes responses to stdout. Opens no sessions itself.
-- **Lock** (`core/lock.ts`): the daemon listens on `daemon.sock` in its directory. A responding Unix socket prevents a second process from opening sessions: duplicate session use causes `AUTH_KEY_DUPLICATED`.
+- **Lock** (`core/lock.ts`): POSIX session ownership uses a permanent-inode kernel lease (`core/fileLease.ts`). Stale `daemon.sock` cleanup occurs only while that lease is held; the socket remains a liveness endpoint and excludes still-running older daemons. A killed owner releases the kernel lease without unlinking its file. `flock` has no query operation, so a read-only probe (`isLockHeld`, used by `doctor` and `login`) briefly takes a free lease; acquisition therefore retries a busy lease for about half a second before reporting another owner. Windows uses canonical-directory first-instance named pipes; native execution/ACL qualification remains open. Duplicate session use causes `AUTH_KEY_DUPLICATED`.
 
 ## MCP layer
 
@@ -89,11 +93,11 @@ Requests expire after 30 minutes. Repeated confirmation never executes twice; an
 - **Client pool** (`clientPool.ts`): one teleproto client per account, lazy connection, coalesced concurrent attempts, 30-second connect limit. Library logging goes to stderr.
 - **Limiter** (`limiter.ts`): one sequential lane per account, 500 ms spacing, 60 calls/minute. Per-call deadlines: 20 seconds, 60 for downloads. FLOOD_WAIT up to five minutes pauses the account and is waited within the wait budget (15 seconds for agent calls); above five minutes, only the affected method is closed and the agent immediately receives `retry_after`. Chat slow mode is not an account pause. Agent calls take priority over background jobs.
 - **Watchdog** (`recovery.ts`): a timed-out MTProto call cannot be safely canceled. Waiting calls fail, the process exits with code 1, and a configured supervisor restarts it. Retry reads only after restart; do not replay writes with an unknown outcome.
-- **Login** (`auth.ts`): phone, code, and 2FA password in `tg-mcp login`. The agent cannot see the code. Unregistered numbers are not signed up.
+- **Login** (`auth.ts`): phone, code, and 2FA password in `tg-mcp login`. The agent cannot see the code. Unregistered numbers are not signed up. Whitespace is dropped from the code; passwords are used verbatim. The caller persists the authorized session before the login client closes, because a failed or hung close terminates the process (a possibly live client shares the new auth key).
 - **Sessions** (`crypto.ts`): session strings are AES-256-GCM encrypted with `session.key` (or `TG_MCP_SESSION_KEY`) and stored in SQLite.
 - **Entities** (`entities.ts`, `entities` table): accessHash is session-bound, so each account has its own cache. Reduces tightly limited `contacts.ResolveUsername` calls.
 - **Errors** (`errors.ts`): Telegram errors become `GatewayError` codes and actionable explanations.
-- **Shared files** (`safeFs.ts`): agent files are written without following symlinks, only in directories writable exclusively by the daemon.
+- **Shared files** (`safeFs.ts`, `windowsAcl.ts`): agent files are written and read without following symlinks, only in directories writable exclusively by the daemon. POSIX checks the owner and mode bits of every directory from the files root down. Windows has no such bits: every directory in the chain is lstat-checked for symbolic links and junctions on each use, and its ACL is attested once per process and file identity by one fixed PowerShell process per batch of new directories (owner and every write-capable allow entry limited to Administrators, SYSTEM and the daemon's own identity; no reparse point). New Windows files must be the empty single-link file the path names after an exclusive create, and reads require a single-link regular file whose open handle matches the path, because Windows has no `O_NOFOLLOW`. A refused directory is not remembered across calls, so a corrected ACL takes effect on the next call; within one media call the chat directory is checked once before the first Telegram download, a refusal skips every later fetch of that call without contacting Telegram, and an export stops downloading photo previews after the first refusal and reports it.
 
 ## Storage
 
@@ -123,4 +127,4 @@ Without a tool call, the daemon only maintains existing account connections; it 
 
 Keep daemon credentials, database and session key inaccessible to agent shells. Public installation will use a separate service identity with protected code/runtime and convenient owner management; the workflow remains to be implemented and verified. Running everything under the same user cannot enforce this boundary. HTTP tokens enforce logical account access, not OS separation. Shared exports/media must be readable by authorized clients without exposing account state.
 
-The current lock uses a Unix socket. Native Windows and the full target-platform matrix need release verification.
+The current session lock combines a POSIX kernel lease with a compatibility socket. The [platform provisioning components](install-platforms.md) require actual OS/ACL/service qualification on the full target-platform matrix.

@@ -4,6 +4,10 @@ Prepared October 7, 2026, from source commit `d57f0ae581845a4876edd9b03ccf90396d
 
 This is the implementation workstream for section 4 of the [open-source plan](open-source-plan.md). The owner requested that installation preparation take priority over installing the existing gateway on the main Mac, then selected a separate service with convenient owner management (decision 51). This document proposes implementation work; no deployment has been executed.
 
+Decisions 54-60 now select a terminal installer without Apple Developer dependency, human-controlled input in the current OS login with explicit limitations, public 0.2.0 on macOS/Linux/native Windows and four automatic client adapters. The [current trust design](installer-trust-design.md) replaces the unaccepted native-package proposal. The [stage journal](release-progress.md) governs implementation, one independent review round per stage and required corrections. Issue #2 remains the narrower initial macOS checklist; the public workstream also includes its selected follow-ups.
+
+The remaining sequences below are the original planning baseline. Where they refer to an unspecified interface, independent owner-input proof or platform/client follow-ups, decisions 54-60 and the current trust design take precedence. No old planning statement is permission to install, read secrets or update the lab.
+
 ## Current implementation
 
 | Component | Implemented behavior | Gap for external users |
@@ -14,7 +18,7 @@ This is the implementation workstream for section 4 of the [open-source plan](op
 | [Configuration](../src/core/config.ts) and [.env.example](../.env.example) | State outside the checkout; safe default toolset; configuration template | No guided credential entry, setup progress or repeat-run handling |
 | [Doctor](../src/cli/doctor.ts) | Node, state permissions, credentials, users/accounts and daemon checks | Opens local state through the CLI; not a general non-mutating installation preflight or a separate agent-readable service diagnostic |
 | [Client connections](connect.md) | Generic HTTP/stdio configuration examples | No generated client configuration or setup-time connection verification |
-| [Session lock](../src/core/lock.ts) and [file operations](../src/core/safeFs.ts) | Unix socket, UID/mode checks and symlink protections | Native Windows implementation and actual ACL/reparse-point verification remain necessary |
+| [Session lock](../src/core/lock.ts) and [file operations](../src/core/safeFs.ts) | Unix socket or Windows named pipe; UID/mode checks or Windows directory ACL attestation; symlink and junction protections | Windows behavior is covered by hosted synthetic tests only; verification under the provisioned service identity remains necessary |
 
 The package can already be packed and installed from a local archive. That proof does not install a supervisor, configure real credentials, create a Telegram session or connect a model client. The package remains private and unpublished.
 

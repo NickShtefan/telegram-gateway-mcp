@@ -16,6 +16,8 @@ import type { CliIo } from '../io.js';
 import { runLogin } from '../login.js';
 import { main } from '../main.js';
 
+// Windows owns sessions through a named-pipe lease; the Unix liveness socket cases are POSIX-only.
+const windows = process.platform === 'win32';
 let home: string;
 let config: GatewayConfig;
 let storage: SqliteStorage;
@@ -89,6 +91,15 @@ describe('login', () => {
     expect(out.join('\n')).toContain('logged in as @agent_acc');
     expect(out.join('\n')).not.toContain('SESSION_FROM_LOGIN');
     expect(out.join('\n')).toContain('tg-mcp account grant agent <user>');
+  });
+
+  it('stores the session before closing the login client, whose failure terminates the process', async () => {
+    io.prompt = vi.fn(async (q: string) => (q.startsWith('Phone') ? '+79991234567' : '12345'));
+    let storedAtClose = false;
+    const destroy = vi.fn(async () => { storedAtClose = storage.sessions.get('agent') !== null; });
+    await runLogin({ config, storage, io, account: 'agent', factory: fakeFactory({ destroy }), sessionSecret: 'secret' });
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(storedAtClose).toBe(true);
   });
 
   it('does not start login without API credentials', async () => {
@@ -183,7 +194,7 @@ describe('lock: races and stale files', () => {
     await (won[0] as PromiseFulfilledResult<{ release(): Promise<void> }>).value.release();
   });
 
-  it('reclaims a dead process socket', async () => {
+  it.skipIf(windows)('reclaims a dead process socket', async () => {
     // Closed server without socket removal, as after kill -9.
     const dead = createServer();
     await new Promise<void>(resolve => dead.listen(lockPath(home), resolve));
@@ -195,16 +206,16 @@ describe('lock: races and stale files', () => {
     await lock.release();
   });
 
-  it('explains an oversized home path instead of returning EINVAL', async () => {
+  it.skipIf(windows)('explains an oversized home path instead of returning EINVAL', async () => {
     const deep = join(home, 'a'.repeat(60), 'b'.repeat(60));
     expect(await isLockHeld(deep)).toBe(false);
     await expect(acquireLock(deep)).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringContaining('Set TG_MCP_HOME to a shorter path') });
   });
 
-  it('does not treat a regular file at the socket path as a live process', async () => {
+  it.skipIf(windows)('preserves a regular file at the socket path as unsafe state', async () => {
     writeFileSync(lockPath(home), 'stale');
-    const lock = await acquireLock(home);
-    await lock.release();
+    await expect(acquireLock(home)).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    expect(await isLockHeld(home)).toBe(true);
   });
 
   it('doctor --connect holds the lock while sessions remain open', async () => {

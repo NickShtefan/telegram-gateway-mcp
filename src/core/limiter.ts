@@ -13,6 +13,7 @@
 import { classifyError, floodInfo, GatewayError } from './errors.js';
 import { createLogger, type Logger } from './log.js';
 import { DeadlineError, MAX_TIMER_MS, withTimeout } from './time.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type Priority = 'interactive' | 'background';
 
@@ -37,6 +38,8 @@ export interface LimiterOptions {
 }
 
 export interface CallOptions {
+  /** Private library authentication only: preserve control exceptions and nested lane ownership. */
+  authentication?: boolean;
   /** Call name for logs/errors, e.g. `messages.GetHistory`. */
   label: string;
   priority?: Priority;
@@ -57,6 +60,7 @@ export interface LaneStatus {
 }
 
 interface Item {
+  authentication: boolean;
   op: () => Promise<unknown>;
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
@@ -86,6 +90,7 @@ interface Lane {
 const WINDOW_MS = 60_000;
 
 export class AccountLimiter {
+  private readonly context = new AsyncLocalStorage<{ accountId: string; lane: Lane; active: boolean; authentication: boolean; tail: Promise<void> }>();
   private readonly lanes = new Map<string, Lane>();
   private readonly minIntervalMs: number;
   private readonly perMinute: number;
@@ -129,6 +134,7 @@ export class AccountLimiter {
 
     return new Promise<T>((resolve, reject) => {
       const item: Item = {
+        authentication: options.authentication ?? false,
         op,
         resolve: resolve as (value: unknown) => void,
         reject,
@@ -155,7 +161,27 @@ export class AccountLimiter {
         return;
       }
 
-      this.enqueue(accountId, lane, item);
+      const parent = this.context.getStore();
+      if (item.authentication && parent?.authentication && parent.active && parent.accountId === accountId && parent.lane === lane) {
+        // teleproto DC migration invokes authorization/config RPCs while its
+        // outer RPC still owns this lane. Serialize siblings under that owner;
+        // descendants get their own context, avoiding a wait behind themselves.
+        // A FLOOD_WAIT retry also stays here: the lane queue is blocked behind the parent.
+        const work = parent.tail.then(async () => {
+          for (let retry = true; retry;) {
+            retry = false;
+            if (this.stopped || !parent.active) { item.reject(new GatewayError('UNAVAILABLE', 'Authentication operation ended.')); return; }
+            let wait: number;
+            while (!this.stopped && parent.active && (wait = this.requiredWait(lane, this.now())) > 0) {
+              if (wait > item.startBy - this.now()) { item.reject(this.waitTooLongError(lane)); return; }
+              await this.interruptibleSleep(lane, wait);
+            }
+            if (this.stopped || !parent.active) { item.reject(new GatewayError('UNAVAILABLE', 'Authentication operation ended.')); return; }
+            await this.execute(accountId, lane, item, () => { retry = true; });
+          }
+        });
+        parent.tail = work.catch(() => undefined);
+      } else this.enqueue(accountId, lane, item);
     });
   }
 
@@ -310,7 +336,7 @@ export class AccountLimiter {
     });
   }
 
-  private async execute(accountId: string, lane: Lane, item: Item): Promise<void> {
+  private async execute(accountId: string, lane: Lane, item: Item, retry = (): void => this.enqueue(accountId, lane, item, true)): Promise<void> {
     const startedAt = this.now();
     this.windowCount(lane, startedAt);
     lane.windowCount++;
@@ -318,7 +344,10 @@ export class AccountLimiter {
 
     try {
       // Deadline inside the lane: a hung call releases the lane on timeout.
-      const result = await withTimeout(item.op(), item.deadlineMs, item.label);
+      const owner = { accountId, lane, active: true, authentication: item.authentication, tail: Promise.resolve() };
+      let result: unknown;
+      try { result = await withTimeout(this.context.run(owner, item.op), item.deadlineMs, item.label); }
+      finally { owner.active = false; }
       item.resolve(result);
     } catch (err) {
       if (err instanceof DeadlineError) {
@@ -359,7 +388,7 @@ export class AccountLimiter {
         if (seconds <= this.floodCapSeconds && fitsBudget && item.retries < this.maxFloodRetries) {
           // FLOOD_WAIT means the request was not executed; retry is safe even for writes.
           item.retries++;
-          this.enqueue(accountId, lane, item, true);
+          retry();
           return;
         }
         item.reject(
@@ -371,7 +400,10 @@ export class AccountLimiter {
         return;
       }
 
-      item.reject(classifyError(err, { write: item.write }));
+      // Authentication's library state machine needs the original RPC error
+      // (notably errorMessage=SESSION_PASSWORD_NEEDED). Public calls still use
+      // gateway classification; flood/deadline policy above is never bypassed.
+      item.reject(item.authentication && err instanceof Error ? err : classifyError(err, { write: item.write }));
     }
   }
 

@@ -117,6 +117,10 @@
       "destination": "src/core/__tests__/pool.test.ts"
     },
     {
+      "source": "src/core/__tests__/safeFs.test.ts",
+      "destination": "src/core/__tests__/safeFs.test.ts"
+    },
+    {
       "source": "src/core/auth.ts",
       "destination": "src/core/auth.ts"
     },
@@ -415,6 +419,446 @@
     {
       "source": "docs/public-agent-instructions.md",
       "destination": "AGENTS.md"
+    },
+    {
+      "source": "docs/setup.md",
+      "destination": "docs/setup.md"
+    },
+    {
+      "source": "src/cli/setup.ts",
+      "destination": "src/cli/setup.ts"
+    },
+    {
+      "source": "src/setup/contract.ts",
+      "destination": "src/setup/contract.ts"
+    },
+    {
+      "source": "src/setup/preflight.ts",
+      "destination": "src/setup/preflight.ts"
+    },
+    {
+      "source": "src/setup/__tests__/setup.test.ts",
+      "destination": "src/setup/__tests__/setup.test.ts"
+    },
+    {
+      "source": "src/core/fileLease.ts",
+      "destination": "src/core/fileLease.ts"
+    },
+    {
+      "source": "src/core/__tests__/lock.test.ts",
+      "destination": "src/core/__tests__/lock.test.ts"
+    },
+    {
+      "source": "src/core/__tests__/fileLease.test.ts",
+      "destination": "src/core/__tests__/fileLease.test.ts"
+    },
+    {
+      "source": "docs/install-artifacts.md",
+      "destination": "docs/install-artifacts.md"
+    },
+    {
+      "source": "scripts/build-native.mjs",
+      "destination": "scripts/build-native.mjs"
+    },
+    {
+      "source": "scripts/install/installer.mjs",
+      "destination": "scripts/install/installer.mjs"
+    },
+    {
+      "source": "scripts/install/fetch-runtime.mjs",
+      "destination": "scripts/install/fetch-runtime.mjs"
+    },
+    {
+      "source": "scripts/install/lease-helper.c",
+      "destination": "scripts/install/lease-helper.c"
+    },
+    {
+      "source": "scripts/install/build-bundle.mjs",
+      "destination": "scripts/install/build-bundle.mjs"
+    },
+    {
+      "source": "scripts/install/bootstrap-windows.ps1",
+      "destination": "scripts/install/bootstrap-windows.ps1"
+    },
+    {
+      "source": "scripts/install/bootstrap-posix.sh",
+      "destination": "scripts/install/bootstrap-posix.sh"
+    },
+    {
+      "source": "scripts/install/runtime-catalog.json",
+      "destination": "scripts/install/runtime-catalog.json"
+    },
+    {
+      "source": "src/install/archive.ts",
+      "destination": "src/install/archive.ts"
+    },
+    {
+      "source": "src/install/manifest.ts",
+      "destination": "src/install/manifest.ts"
+    },
+    {
+      "source": "src/install/__tests__/artifacts.test.ts",
+      "destination": "src/install/__tests__/artifacts.test.ts"
+    },
+    {
+      "source": "docs/install-platforms.md",
+      "destination": "docs/install-platforms.md"
+    },
+    {
+      "source": ".github/workflows/platform-checks.yml",
+      "destination": ".github/workflows/platform-checks.yml"
+    },
+    {
+      "source": "scripts/install/provision-windows.ps1",
+      "destination": "scripts/install/provision-windows.ps1"
+    },
+    {
+      "source": "scripts/install/service-host.cs",
+      "destination": "scripts/install/service-host.cs"
+    },
+    {
+      "source": "src/core/windowsLease.ts",
+      "destination": "src/core/windowsLease.ts"
+    },
+    {
+      "source": "src/core/__tests__/windowsLease.test.ts",
+      "destination": "src/core/__tests__/windowsLease.test.ts"
+    },
+    {
+      "source": "src/core/windowsAcl.ts",
+      "destination": "src/core/windowsAcl.ts"
+    },
+    {
+      "source": "src/core/__tests__/sharedFiles.test.ts",
+      "destination": "src/core/__tests__/sharedFiles.test.ts"
+    },
+    {
+      "source": "src/install/platform.ts",
+      "destination": "src/install/platform.ts"
+    },
+    {
+      "source": "src/install/provision.ts",
+      "destination": "src/install/provision.ts"
+    },
+    {
+      "source": "src/install/posixBackend.ts",
+      "destination": "src/install/posixBackend.ts"
+    },
+    {
+      "source": "src/install/posixIdentity.ts",
+      "destination": "src/install/posixIdentity.ts"
+    },
+    {
+      "source": "src/install/posixPermissions.ts",
+      "destination": "src/install/posixPermissions.ts"
+    },
+    {
+      "source": "src/install/__tests__/provision.test.ts",
+      "destination": "src/install/__tests__/provision.test.ts"
+    },
+    {
+      "source": "scripts/checks/windows-acl.ps1",
+      "destination": "scripts/checks/windows-acl.ps1"
+    },
+    {
+      "source": "src/install/__tests__/permissions.test.ts",
+      "destination": "src/install/__tests__/permissions.test.ts"
+    },
+    {
+      "source": "docs/owner-setup.md",
+      "destination": "docs/owner-setup.md"
+    },
+    {
+      "source": "src/setup/owner.ts",
+      "destination": "src/setup/owner.ts"
+    },
+    {
+      "source": "src/setup/credentials.ts",
+      "destination": "src/setup/credentials.ts"
+    },
+    {
+      "source": "src/setup/serviceControl.ts",
+      "destination": "src/setup/serviceControl.ts"
+    },
+    {
+      "source": "src/setup/__tests__/owner.test.ts",
+      "destination": "src/setup/__tests__/owner.test.ts"
+    },
+    {
+      "source": "src/setup/installed.ts",
+      "destination": "src/setup/installed.ts"
+    },
+    {
+      "source": "src/setup/promptChannel.ts",
+      "destination": "src/setup/promptChannel.ts"
+    },
+    {
+      "source": "src/setup/ownerCli.ts",
+      "destination": "src/setup/ownerCli.ts"
+    },
+    {
+      "source": "src/setup/ownerWindows.ts",
+      "destination": "src/setup/ownerWindows.ts"
+    },
+    {
+      "source": "src/setup/__tests__/promptChannel.test.ts",
+      "destination": "src/setup/__tests__/promptChannel.test.ts"
+    },
+    {
+      "source": "scripts/install/owner-protection.ps1",
+      "destination": "scripts/install/owner-protection.ps1"
+    },
+    {
+      "source": "scripts/install/owner-windows.ps1",
+      "destination": "scripts/install/owner-windows.ps1"
+    },
+    {
+      "source": "src/cli/__tests__/io.test.ts",
+      "destination": "src/cli/__tests__/io.test.ts"
+    },
+    {
+      "source": "docs/client-adapters.md",
+      "destination": "docs/client-adapters.md"
+    },
+    {
+      "source": "scripts/install/client-protection.ps1",
+      "destination": "scripts/install/client-protection.ps1"
+    },
+    {
+      "source": "src/setup/clientConfig.ts",
+      "destination": "src/setup/clientConfig.ts"
+    },
+    {
+      "source": "src/setup/clientFile.ts",
+      "destination": "src/setup/clientFile.ts"
+    },
+    {
+      "source": "src/setup/clientHandoff.ts",
+      "destination": "src/setup/clientHandoff.ts"
+    },
+    {
+      "source": "src/setup/clientProbe.ts",
+      "destination": "src/setup/clientProbe.ts"
+    },
+    {
+      "source": "src/setup/ownerProfile.ts",
+      "destination": "src/setup/ownerProfile.ts"
+    },
+    {
+      "source": "src/setup/ownerLauncher.ts",
+      "destination": "src/setup/ownerLauncher.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientConfig.test.ts",
+      "destination": "src/setup/__tests__/clientConfig.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientFile.test.ts",
+      "destination": "src/setup/__tests__/clientFile.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientHandoff.test.ts",
+      "destination": "src/setup/__tests__/clientHandoff.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/clientProbe.test.ts",
+      "destination": "src/setup/__tests__/clientProbe.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/privateLifecycle.test.ts",
+      "destination": "src/setup/__tests__/privateLifecycle.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/serviceControl.test.ts",
+      "destination": "src/setup/__tests__/serviceControl.test.ts"
+    },
+    {
+      "source": "src/setup/__tests__/installed.test.ts",
+      "destination": "src/setup/__tests__/installed.test.ts"
+    },
+    {
+      "source": "scripts/checks/windows-owner-contract.ps1",
+      "destination": "scripts/checks/windows-owner-contract.ps1"
+    },
+    {
+      "source": "src/setup/listener.ts",
+      "destination": "src/setup/listener.ts"
+    },
+    {
+      "source": "src/setup/ackWindows.ts",
+      "destination": "src/setup/ackWindows.ts"
+    },
+    {
+      "source": "scripts/checks/windows-owner-input.ps1",
+      "destination": "scripts/checks/windows-owner-input.ps1"
+    },
+    {
+      "source": "LICENSE",
+      "destination": "LICENSE"
+    },
+    {
+      "source": "NOTICE",
+      "destination": "NOTICE"
+    },
+    {
+      "source": "THIRD_PARTY_NOTICES.md",
+      "destination": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "source": "CONTRIBUTING.md",
+      "destination": "CONTRIBUTING.md"
+    },
+    {
+      "source": "SECURITY.md",
+      "destination": "SECURITY.md"
+    },
+    {
+      "source": "CODE_OF_CONDUCT.md",
+      "destination": "CODE_OF_CONDUCT.md"
+    },
+    {
+      "source": ".github/pull_request_template.md",
+      "destination": ".github/pull_request_template.md"
+    },
+    {
+      "source": "docs/dependency-provenance.json",
+      "destination": "docs/dependency-provenance.json"
+    },
+    {
+      "source": "docs/install-owner.md",
+      "destination": "docs/install-owner.md"
+    },
+    {
+      "source": "docs/install-agent.md",
+      "destination": "docs/install-agent.md"
+    },
+    {
+      "source": "scripts/release/dependency-notices.mjs",
+      "destination": "scripts/release/dependency-notices.mjs"
+    },
+    {
+      "source": "src/install/provisionCli.ts",
+      "destination": "src/install/provisionCli.ts"
+    },
+    {
+      "source": "scripts/checks/windows-bootstrap-reader.ps1",
+      "destination": "scripts/checks/windows-bootstrap-reader.ps1"
+    },
+    {
+      "source": "scripts/release/prepare-application.mjs",
+      "destination": "scripts/release/prepare-application.mjs"
+    },
+    {
+      "source": "scripts/checks/windows-bootstrap-execution.ps1",
+      "destination": "scripts/checks/windows-bootstrap-execution.ps1"
+    },
+    {
+      "source": "scripts/checks/windows-archive.mjs",
+      "destination": "scripts/checks/windows-archive.mjs"
+    },
+    {
+      "source": "src/install/__tests__/prerequisites.test.ts",
+      "destination": "src/install/__tests__/prerequisites.test.ts"
+    },
+    {
+      "source": "docs/release-qualification.md",
+      "destination": "docs/release-qualification.md"
+    },
+    {
+      "source": "scripts/install/runtime-entry.mjs",
+      "destination": "scripts/install/runtime-entry.mjs"
+    },
+    {
+      "source": "scripts/release/ci-candidate.mjs",
+      "destination": "scripts/release/ci-candidate.mjs"
+    },
+    {
+      "source": "scripts/checks/windows-runtime.mjs",
+      "destination": "scripts/checks/windows-runtime.mjs"
+    },
+    {
+      "source": "src/install/__tests__/runtimeEntry.test.ts",
+      "destination": "src/install/__tests__/runtimeEntry.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/posixBackend.test.ts",
+      "destination": "src/install/__tests__/posixBackend.test.ts"
+    },
+    {
+      "source": "docs/mac-arm-private-test.md",
+      "destination": "docs/mac-arm-private-test.md"
+    },
+    {
+      "source": "src/install/releasePackage.ts",
+      "destination": "src/install/releasePackage.ts"
+    },
+    {
+      "source": "src/install/__tests__/releasePackage.test.ts",
+      "destination": "src/install/__tests__/releasePackage.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/batchSign.test.ts",
+      "destination": "src/install/__tests__/batchSign.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/releasePlan.test.ts",
+      "destination": "src/install/__tests__/releasePlan.test.ts"
+    },
+    {
+      "source": "src/setup/presentation.ts",
+      "destination": "src/setup/presentation.ts"
+    },
+    {
+      "source": "src/setup/__tests__/presentation.test.ts",
+      "destination": "src/setup/__tests__/presentation.test.ts"
+    },
+    {
+      "source": "scripts/release/batch-sign.mjs",
+      "destination": "scripts/release/batch-sign.mjs"
+    },
+    {
+      "source": "scripts/release/draft-release.mjs",
+      "destination": "scripts/release/draft-release.mjs"
+    },
+    {
+      "source": "scripts/release/plan.mjs",
+      "destination": "scripts/release/plan.mjs"
+    },
+    {
+      "source": "scripts/checks/windows-release.ps1",
+      "destination": "scripts/checks/windows-release.ps1"
+    },
+    {
+      "source": "docs/outsider-test.md",
+      "destination": "docs/outsider-test.md"
+    },
+    {
+      "source": "docs/mac-intel-private-test.md",
+      "destination": "docs/mac-intel-private-test.md"
+    },
+    {
+      "source": "docs/windows-private-test.md",
+      "destination": "docs/windows-private-test.md"
+    },
+    {
+      "source": "docs/linux-private-test.md",
+      "destination": "docs/linux-private-test.md"
+    },
+    {
+      "source": "scripts/checks/windows-readme.ps1",
+      "destination": "scripts/checks/windows-readme.ps1"
+    },
+    {
+      "source": "scripts/release/draft.mjs",
+      "destination": "scripts/release/draft.mjs"
+    },
+    {
+      "source": "src/install/__tests__/draftRelease.test.ts",
+      "destination": "src/install/__tests__/draftRelease.test.ts"
+    },
+    {
+      "source": "src/install/__tests__/installCommands.test.ts",
+      "destination": "src/install/__tests__/installCommands.test.ts"
     }
   ],
   "excludedTrackedFiles": [
@@ -473,6 +917,14 @@
     {
       "path": "docs/public-transfer-manifest.json",
       "reason": "Private cleanup preparation record"
+    },
+    {
+      "path": "docs/installer-trust-design.md",
+      "reason": "Private installer design and owner-review evidence; public guide follows verified implementation"
+    },
+    {
+      "path": "docs/release-progress.md",
+      "reason": "Private staged implementation, review and release evidence"
     }
   ],
   "excludedLocalPaths": [

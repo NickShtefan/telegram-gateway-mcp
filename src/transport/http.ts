@@ -63,22 +63,29 @@ export function allowedHosts(host: string, port: number): Set<string> {
   return out;
 }
 
+/** Oversized request bytes discarded before answering 413; past this bound or time the connection is dropped. */
+const MAX_DISCARD_BYTES = 8 * 1024 * 1024;
+const DISCARD_MS = 10_000;
+
 function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let discarding: NodeJS.Timeout | undefined;
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
-      if (size > limit) {
-        // Close after the 413 response; otherwise the client sees a disconnect, not the reason.
-        req.pause();
-        reject(new Error('body too large'));
-        return;
-      }
-      chunks.push(chunk);
+      if (size <= limit) { chunks.push(chunk); return; }
+      // Answer 413 only after the client has finished sending: closing a socket with unread request
+      // bytes makes Windows reset it, and the reset discards the response before the client reads it.
+      if (!discarding) { chunks.length = 0; discarding = setTimeout(() => req.destroy(), DISCARD_MS); discarding.unref(); }
+      if (size > limit + MAX_DISCARD_BYTES) req.destroy();
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    req.on('end', () => {
+      clearTimeout(discarding);
+      if (size > limit) reject(new Error('body too large')); else resolve(Buffer.concat(chunks));
+    });
+    req.on('error', err => { clearTimeout(discarding); reject(err); });
+    req.on('close', () => { clearTimeout(discarding); reject(new Error('body dropped')); });
   });
 }
 
@@ -120,8 +127,9 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     try {
       body = JSON.parse((await readBody(req, maxBody)).toString('utf8'));
     } catch (err) {
+      // An oversized body beyond the discard bound, or a stalled one, has no reader left for a response.
+      if ((err as Error).message === 'body dropped') return;
       const tooLarge = (err as Error).message === 'body too large';
-      if (tooLarge) res.once('finish', () => req.destroy());
       return sendJson(res, tooLarge ? 413 : 400, {
         jsonrpc: '2.0',
         error: { code: tooLarge ? -32000 : -32700, message: tooLarge ? 'Request body is too large.' : 'Parse error: body is not valid JSON.' },

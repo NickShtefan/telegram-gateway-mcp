@@ -123,6 +123,36 @@ describe('AccountLimiter: FLOOD_WAIT', () => {
     expect(calls).toBe(2);
   });
 
+  it('retries a nested authentication FLOOD_WAIT under its owner instead of the blocked lane queue', async () => {
+    const { limiter, onFatal } = makeLimiter({ minIntervalMs: 0, maxFloodRetries: 2 });
+    const auth = { authentication: true, write: true };
+    let nested = 0;
+    const outer = limiter.run('a', () => limiter.run('a', async () => {
+      if (++nested === 1) throw floodError(2);
+      return 'config';
+    }, { label: 'help.GetConfig', ...auth }), { label: 'auth.SendCode', ...auth });
+    const unrelated = limiter.run('a', async () => 'unrelated', { label: 'unrelated' });
+    // Re-entering the lane queue would wait behind its own parent until its budget expires.
+    await vi.advanceTimersByTimeAsync(25_000);
+    await expect(outer).resolves.toBe('config');
+    await expect(unrelated).resolves.toBe('unrelated');
+    expect(nested).toBe(2);
+    expect(onFatal).not.toHaveBeenCalled();
+    expect(limiter.status('a').queued).toBe(0);
+  });
+
+  it('rejects a nested authentication FLOOD_WAIT beyond its retries without stalling the owner', async () => {
+    const { limiter, onFatal } = makeLimiter({ minIntervalMs: 0, maxFloodRetries: 1 });
+    const auth = { authentication: true, write: true };
+    const nested = vi.fn(async () => { throw floodError(2); });
+    const outer = limiter.run('a', () => limiter.run('a', nested, { label: 'help.GetConfig', ...auth }), { label: 'auth.SendCode', ...auth });
+    const rejected = expect(outer).rejects.toMatchObject({ code: 'FLOOD_WAIT', retryAfter: 2 });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await rejected;
+    expect(nested).toHaveBeenCalledTimes(2);
+    expect(onFatal).not.toHaveBeenCalled();
+  });
+
   it('returns retry_after without waiting beyond the budget', async () => {
     const { limiter } = makeLimiter({ interactiveWaitBudgetMs: 15_000 });
     const p = limiter.run('a', async () => {

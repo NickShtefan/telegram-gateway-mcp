@@ -9,6 +9,8 @@ import type { ClientFactory, AccountIdentity } from './clientPool.js';
 import { classifyError, GatewayError } from './errors.js';
 import type { Logger } from './log.js';
 import { withTimeout } from './time.js';
+import { AccountLimiter } from './limiter.js';
+import { queueLoginCalls } from './tg.js';
 
 export interface LoginPrompts {
   code(): Promise<string>;
@@ -27,6 +29,17 @@ export interface LoginOptions {
   inputTimeoutMs?: number;
   /** Maximum invalid code/password attempts before aborting login. */
   maxAttempts?: number;
+  accountId?: string;
+  /** A hung auth call or cleanup must terminate the worker, never release its lease in process. */
+  onFatal?: () => never;
+  /**
+   * Store the authorized result before the login client is closed. A failed or
+   * hung close terminates the process, which would otherwise lose the session
+   * and leave Telegram with an orphan authorization. Errors propagate unchanged.
+   */
+  persist?: (result: LoginResult) => Promise<void> | void;
+  cleanupTimeoutMs?: number;
+  connectTimeoutMs?: number;
 }
 
 export interface LoginResult {
@@ -56,7 +69,11 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
   const maxAttempts = options.maxAttempts ?? 3;
   const phone = normalizePhone(options.phone);
   const client = options.factory({ session: '', apiId: options.apiId, apiHash: options.apiHash, log: options.log });
+  const fatal = options.onFatal ?? (() => process.exit(1));
+  const limiter = new AccountLimiter({ onFatal: () => fatal(), log: options.log, maxFloodRetries: 0 });
+  const restore = queueLoginCalls(client, options.accountId ?? 'login', limiter, fatal, options.connectTimeoutMs);
 
+  let persisting = false;
   let errors = 0;
   let lastError: Error | null = null;
   // Input canceled (Ctrl-C, timeout): teleproto swallows this error and asks again.
@@ -73,7 +90,8 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
   try {
     await client.start({
       phoneNumber: phone,
-      phoneCode: () => ask('phone code input', () => options.prompts.code()),
+      // Codes are digits: drop pasted spaces/newlines; passwords stay verbatim.
+      phoneCode: async () => (await ask('phone code input', () => options.prompts.code())).replace(/\s/g, ''),
       password: (hint?: string) => ask('2FA password input', () => options.prompts.password(hint)),
       // Without this, teleproto silently signs up unregistered numbers and accepts Telegram terms.
       firstAndLastNames: async () => {
@@ -85,9 +103,11 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
         lastError = aborted ?? err;
         options.log.warn('login step failed', { error: lastError.message, attempt: errors });
         // true aborts login; otherwise teleproto keeps asking for another code.
-        return aborted !== null || errors >= maxAttempts;
+        return aborted !== null || classifyError(err).code === 'FLOOD_WAIT' || errors >= maxAttempts;
       },
     });
+
+    if (aborted) throw aborted;
 
     const me = (await client.getMe()) as MeLike | null;
     if (!me || me.id === undefined || me.id === null) {
@@ -99,7 +119,7 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
       throw new GatewayError('ACCOUNT_UNAUTHORIZED', 'Login completed, but the session is empty.');
     }
 
-    return {
+    const result: LoginResult = {
       session,
       identity: {
         tgUserId: String(me.id),
@@ -107,14 +127,19 @@ export async function loginAccount(options: LoginOptions): Promise<LoginResult> 
         displayName: [me.firstName, me.lastName].filter(Boolean).join(' ').trim() || null,
       },
     };
+    persisting = true;
+    await options.persist?.(result);
+    return result;
   } catch (err) {
-    throw classifyError(aborted ?? lastError ?? err);
+    throw persisting ? err : classifyError(aborted ?? lastError ?? err);
   } finally {
     // Always close the login client; the daemon opens its own client with the session.
+    // A client that may still be live shares the new auth key: terminate, never continue.
+    let closed = false;
     try {
-      await withTimeout(client.destroy(), 5_000, 'client.destroy');
-    } catch {
-      // Preserve the result or original error.
-    }
+      await withTimeout(client.destroy(), options.cleanupTimeoutMs ?? 5_000, 'client.destroy');
+      closed = true;
+    } catch { /* terminate below */ } finally { limiter.shutdown(); restore(); }
+    if (!closed) fatal();
   }
 }

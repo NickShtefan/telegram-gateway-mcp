@@ -521,3 +521,136 @@ Independent installation must not require an agent, a model provider key or an A
 Prepare instructions and acceptance checks for both entries, including a fresh machine without Node/npm and interruption/resume. Protected owner participation and the separate service identity remain required under decisions 51/52. The exact human interface remains design work; no installation was executed by this decision.
 
 Reason: the owner explicitly required that users be able to launch and finish installation themselves without an agent.
+
+## 54. Public 0.2.0 across macOS, Linux and native Windows (accepted 2026-10-08)
+
+Complete the work through a first public `0.2.0` release, including GitHub Release and npm publication after the existing owner approval gates. Native Windows is required in this release, rather than optional under decision 40. Target macOS 13+ on arm64 and Intel; platform/version support still requires real qualification. Linux and native Windows are part of the release workstream, not silently marked complete by the narrower macOS issue #2.
+
+The selected version has no prerelease suffix. Do not infer a production-readiness guarantee from this choice; release notes must state verified support and limitations. Updates, destructive uninstall and broader administration remain follow-ups unless required to resolve a release-blocking defect.
+
+Reason: owner answers 1A, 5A, 6B and version 0.2.0.
+
+## 55. Terminal installer without paid Apple dependency (accepted 2026-10-08)
+
+Use a terminal wizard and an independently verifiable signed artifact bundle with installer-managed Node. Do not depend on Apple Developer Program, Developer ID or notarization. This replaces the earlier native `.pkg`/GUI/XPC design proposal, which was never accepted. Keep both independent and agent-assisted presentations of one shared setup engine.
+
+Project cryptographic signatures do not constitute Apple notarization, Authenticode or OS publisher assessment. Define the initial trust anchor, verifier trust, artifact acquisition and protected privilege transition explicitly. Agent-provided checksums, public keys or a copied root-owned installer alone do not establish authenticity.
+
+Reason: owner answers 2B and 3 (no paid Apple dependency).
+
+## 56. Owner terminal in the existing OS login (accepted 2026-10-08)
+
+The owner manually enters system authorization and Telegram application credentials/phone/code/2FA through a human-controlled terminal in the existing OS login, with agents stopped and UI control/capture disabled for the sensitive step. Do not drive this terminal with an agent tool, read its output or capture screenshots/accessibility state while secrets are entered. Secrets never pass through chat, arguments, logs or agent-managed input.
+
+This explicitly accepts an operational limitation: stopping agents and disabling UI access is not independent protection against arbitrary same-user software. Do not claim an isolated input channel or require a separate human OS login as an accepted default. Keep the separate service identity and protected persistent sessions/code/runtime under decision 51. Do not add broad passwordless sudo or unrestricted service-user administration.
+
+Reason: owner answer 4B. This refines the input-boundary design under decision 52 without weakening persistent service isolation.
+
+## 57. Automatic adapters for four clients (accepted 2026-10-08)
+
+Prepare automatic connection adapters for Codex Desktop, Claude Code, OpenCode and Hermes in this release workstream. Preserve unrelated client settings, use direct token handoff and verify actual tool loading separately from configuration/SDK connectivity. Do not assume unsupported client configuration or credential mechanisms; inspect the actual version and supported interface. Installing/authenticating model providers is outside gateway setup.
+
+This brings issue #19 forward from the original macOS follow-up scope. Client selection remains optional; gateway setup can complete independently.
+
+Reason: owner answer 8B.
+
+## 58. Repository and npm onboarding deferred until publication preparation (accepted 2026-10-08)
+
+Focus on development now. The owner will create the new private `NickShtefan/telegram-mcp-gateway` repository later, preserving decisions 33/39. Do not create it, change current repository visibility or transfer private history/issues/PRs. npm account verification/registration is also deferred. Prepare CI, clean snapshots and publishing workflows without needing publishing secrets.
+
+These prerequisites must be completed before their actual remote/publication gates; their deferral is not permission to publish from the current repository. Owner merge approval and separate exact-candidate release approval remain required under decisions 44/48.
+
+Reason: owner answers 9 and 10.
+
+## 59. Controlled owner test account and channel (accepted 2026-10-08)
+
+Use a separate owner-controlled Telegram test account and an owner-controlled test channel/chat for live qualification. Each machine creates its own gateway session; never copy one. The account holder enters secrets manually. Every real write still requires its own preview and owner consent before confirmation. Do not create Telegram accounts through the gateway or interact with strangers for testing.
+
+Reason: owner answer 11A. This chooses test resources, not blanket authorization for live writes.
+
+## 60. One independent review round after each stage (accepted 2026-10-08)
+
+The implementation agent automatically starts a separate read-only review agent at the end of each documented stage. Review the exact candidate and report evidence, severity and affected files. Fix all confirmed medium, high and critical findings, then rerun affected checks. Low findings are recorded and do not automatically expand scope.
+
+There is exactly one independent review round per stage. Post-fix self-verification and tests are required, but do not start an automatic second review round. Do not mark a stage complete while a confirmed medium-or-higher finding remains unresolved. The next stage starts only after the reviewed stage's required corrections/checks are complete. Record the reviewed SHA and corrected SHA separately.
+
+Reason: owner's staged release instruction and answer 12A.
+
+## 61. Ubuntu selected as the Linux qualification baseline (accepted 2026-10-09)
+
+The owner accepted the proposed Ubuntu baseline for 0.2.0: Ubuntu 24.04 LTS. This selects an OS qualification target, not Debian package distribution. The signed bundle, installer-managed Node runtime and systemd service remain the installation approach. Decision 62 subsequently adds Arch Linux x64; its actual updated test snapshot is recorded during qualification.
+
+Reason: the owner said Ubuntu is acceptable and asked about popular distributions and possible Arch coverage. Do not infer that every Ubuntu release or Arch-derived distribution is supported.
+
+## 62. Arch Linux x64 included in first-release qualification (accepted 2026-10-09)
+
+Include Arch Linux x64 alongside Ubuntu 24.04 LTS in the required 0.2.0 Linux qualification matrix. Arch qualification uses a fully updated system with its update date and relevant package versions recorded, because it is a rolling release. Do not infer Arch Linux ARM or derivative-distribution support.
+
+Both targets use the common signed artifact bundle, installer-managed Node and systemd profile. This decision does not add a Debian package, AUR publication or separate package-manager distribution. The owner will test both target systems; code/source checks remain distinct from actual installation and Telegram/client evidence.
+
+Reason: the owner accepted adding Arch to the mandatory first-release checks on October 9.
+
+## 63. Confirmed installation of missing OS prerequisites (accepted 2026-10-09)
+
+Inspect required operating-system utilities read-only and present an exact allowlisted missing-package plan. Install missing prerequisites from the official OS repositories only after the owner confirms that concrete plan. Node.js remains installer-managed and does not require a separate user-installed Node/npm environment.
+
+On the selected Ubuntu/Arch targets, use the distribution's package manager with fixed package names and no caller-provided commands. This does not authorize a full OS upgrade, third-party repositories, AUR packages, unrelated packages or unattended system changes. If the owner declines or the package operation fails, preserve completed gateway state and return a resumable next action.
+
+Reason: the owner selected prerequisite installation after confirmation on October 9.
+
+## 64. Owner Windows qualification machine is Windows 11 x64 (accepted 2026-10-09)
+
+The owner provides a Windows 11 machine with an Intel processor for native Windows qualification. Use Windows 11 x64 as the concrete owner test target for 0.2.0. This resource selection does not establish verified support for Windows 10, Windows ARM64 or WSL, and does not replace actual installation, service isolation, login and selected-client checks.
+
+Reason: the owner identified Windows 11 on Intel as the available test machine.
+
+## 65. Owner-only local release signing (accepted 2026-10-09)
+
+CI prepares release candidates; the owner signs the verified bundles locally. The production private signing key remains exclusively under the owner's control, outside source control, installer bundles, agent access and CI secrets/environments. Do not request the private key or its passphrase through chat, arguments, environment variables or logs.
+
+Prepare a local owner-operated signing procedure that validates the exact qualified source SHA, artifact bytes and public certificate before producing detached manifest signatures. Public certificates, fingerprints, signatures and artifact digests may be used by the installer and publication pipeline. Local signing does not replace the separate exact-candidate release approval under decision 48, and project signatures do not imply Apple notarization or Windows Authenticode.
+
+Reason: the owner selected local signing and explicitly retained exclusive private-key ownership.
+
+## 66. Both macOS architectures available for owner qualification (accepted 2026-10-09)
+
+The owner has macOS machines on both ARM and Intel. The current development/chat machine is ARM; the existing lab gateway operates on Intel. Qualify macOS arm64 and x64 separately, recording exact OS/runtime/client versions. The existing Intel lab installation remains unchanged unless the owner authorizes a concrete test/deployment action. Create any qualification session through this gateway's own login separately on each machine; never copy a session.
+
+Availability of both architectures does not prove the selected macOS 13 minimum: establish the actual OS versions and record any untested version boundary before declaring release support.
+
+Reason: the owner identified both machines and their current roles on October 9.
+
+## 67. Qualify available macOS hosts without a separate minimum-version environment (accepted 2026-10-09)
+
+Use the owner's available macOS arm64 and Intel machines for 0.2.0 qualification. Do not make procuring or preparing a separate macOS 13 environment a release blocker. At inventory time these hosts run macOS 26.6.2 arm64 and 15.7.9 x64.
+
+Retain the designed compatibility floor separately from verified support. Release documentation must list the actual tested OS/architecture combinations and explicitly identify macOS 13 as unqualified if no test is performed. Do not label untested version coverage as verified or silently change the minimum to 15. This owner-selected qualification boundary refines decisions 54/66; actual installation, isolation, login and client checks on the available hosts remain required.
+
+Reason: the owner declined extra minimum-version qualification work after the available macOS versions were identified.
+
+
+## 68. Test the existing private candidate before open-source onboarding (accepted 2026-10-09)
+
+Move PR #21 out of draft for owner review and installation testing in the current private repository. Creating the new private repository, clean import, npm onboarding and open-source publication remain deferred until the owner chooses to proceed. None of those activities is a prerequisite for testing the current installer candidate. Ready-for-review status does not authorize merging or publication.
+
+Freeze the exact private candidate SHA during installation, cancellation/resume and platform/client qualification. Later clean-import/public release artifacts bind to their actual source SHA and require separate release verification and approval. Retain the one-review-round protocol and owner-only local signing/secret input.
+
+Reason: after stage 7 the owner explicitly prioritized testing all installation paths and requested that the current PR leave draft, while deferring the new repository and open-source work.
+
+
+## 69. Pin the owner's established installer certificate (accepted 2026-10-12)
+
+The owner supplied and approved DER certificate SHA-256 `f6d3d70c8909d302f24c6853dfb82dad1ab7a2a2006221699002117b6a22c682` for the bootstrap scripts and README. Embed it in both POSIX and Windows bootstrap verification. An optional legacy caller pin may match this constant but cannot replace it. Do not load trust from environment variables or the downloaded bundle. A certificate/key rotation requires a separately approved code/documentation update. Reuse the established encrypted key/certificate for current private tests. The bootstrap itself still requires independent authentication before elevation.
+
+Reason: the owner explicitly requested embedding this fingerprint and documenting it, alongside the macOS certificate-command `-new` correction.
+
+
+## 70. Signed owner draft and no-build user entry (accepted 2026-10-12)
+
+The owner prepares all five frozen CI candidates with one command and one hidden passphrase, verifies CI manifest hashes, packages/signs them and creates only a draft GitHub Release. Key/certificate files in the owner's Projects/KEYS/tg-mcp-signing directory remain exclusively owner-operated; agents must not inspect them. Publication, repository visibility/new repository and npm are separate owner decisions.
+
+End users use signed platform archives, authenticated immutable bootstrap/checksum instructions, authorized provisioning and the ordinary-user wizard. They do not build, install Node/npm, sign packages or enter hashes/source SHA. Source identity comes from the verified manifest and the owner's frozen release/tag preparation. Windows supplies a short installed owner command. Private draft access and uncompromised independently authenticated README/source are explicit trust prerequisites; no anonymous availability or local same-user protection is claimed.
+
+The wizard explains labels/defaults, OWNER READY, API application creation and client restart/tool verification. Actual README-only trials on new macOS/Windows users remain owner-controlled proof, separate from source/fixture CI. No lab changes are authorized.
+
+Reason: the owner explicitly specified this installer entry/release/testing workstream.

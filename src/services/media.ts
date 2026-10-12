@@ -6,10 +6,10 @@
  * individual file limits, and directory quotas.
  */
 import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
-import { dirname, extname, join } from 'node:path';
+import { extname, join } from 'node:path';
 import type { Api } from 'teleproto';
 import { createLogger, type Logger } from '../core/log.js';
-import { ensureTrustedDir, isOwnRegularFile, writeNewFile } from '../core/safeFs.js';
+import type { SharedFiles } from '../core/safeFs.js';
 import { sleep } from '../core/time.js';
 import type { Tg, TgCallOptions } from '../core/tg.js';
 import { normalizeMedia, type MediaKind } from './messages.js';
@@ -35,12 +35,14 @@ export interface MediaSkip {
 export interface MediaResult {
   files: MediaFile[];
   skipped: MediaSkip[];
+  /** Why the chat directory was refused; nothing could be fetched into it during this call. */
+  refused?: string;
 }
 
 export interface MediaServiceOptions {
   tg: Tg;
-  /** Shared gateway directory; media are stored in `<filesDir>/media`. */
-  filesDir: string;
+  /** Shared gateway directory; media are stored in `<root>/media`. */
+  files: SharedFiles;
   /** Maximum full-size file saved or returned from cache; not a download memory cap. */
   maxFullBytes?: number;
   /** Maximum total media directory size. */
@@ -112,7 +114,7 @@ export function chatDirName(chatKey: string): string {
 
 export class MediaService {
   private readonly tg: Tg;
-  private readonly filesDir: string;
+  private readonly files: SharedFiles;
   private readonly root: string;
   private readonly maxFullBytes: number;
   private readonly quotaBytes: number;
@@ -122,8 +124,8 @@ export class MediaService {
 
   constructor(options: MediaServiceOptions) {
     this.tg = options.tg;
-    this.filesDir = options.filesDir;
-    this.root = join(options.filesDir, 'media');
+    this.files = options.files;
+    this.root = join(options.files.root, 'media');
     this.maxFullBytes = options.maxFullBytes ?? DEFAULT_MAX_FULL_BYTES;
     this.quotaBytes = options.quotaBytes ?? DEFAULT_QUOTA_BYTES;
     this.log = options.log ?? createLogger('media');
@@ -136,6 +138,11 @@ export class MediaService {
    */
   async download(accountId: string, chatKey: string, rawMessages: unknown[], size: MediaSize, options?: TgCallOptions): Promise<MediaResult> {
     const result: MediaResult = { files: [], skipped: [] };
+    // Private message IDs are account-specific, so their caches must be separate; one call writes one chat directory.
+    const chatDir = join(this.root, accountId, chatDirName(chatKey));
+    // Checked once, before the first Telegram download: a refused directory skips every later fetch of this call.
+    // SharedFiles does not remember the refusal, so the next call checks again; each write still re-checks the chain.
+    let dirChecked: Promise<void> | undefined;
 
     for (const raw of rawMessages as RawMessage[]) {
       const messageId = raw?.id;
@@ -173,10 +180,9 @@ export class MediaService {
         ext = /^\.[a-z0-9]{1,8}$/.test(named) ? named : (MIME_EXT[mime] ?? '.bin');
       }
 
-      // Private message IDs are account-specific, so their caches must be separate.
-      const path = join(this.root, accountId, chatDirName(chatKey), `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
+      const path = join(chatDir, `${messageId}-${thumb ? 'thumb' : 'full'}${ext}`);
       // Only owned regular files count as cache hits; never follow planted symlinks.
-      if (isOwnRegularFile(path) && lstatSync(path).size > 0) {
+      if ((await this.files.isOwnRegularFile(path)) && lstatSync(path).size > 0) {
         const bytes = lstatSync(path).size;
         if (size === 'full' && bytes > this.maxFullBytes) {
           result.skipped.push({ messageId, reason: this.sizeLimitReason(bytes) });
@@ -187,6 +193,7 @@ export class MediaService {
       }
 
       try {
+        await (dirChecked ??= this.files.ensureDir(chatDir).catch((err: Error) => { result.refused = err.message; throw err; }));
         const buffer = await this.fetch(accountId, raw, thumb, options);
         if (!buffer || buffer.length === 0) {
           result.skipped.push({ messageId, reason: 'Telegram returned an empty file' });
@@ -196,7 +203,7 @@ export class MediaService {
           result.skipped.push({ messageId, reason: this.sizeLimitReason(buffer.length) });
           continue;
         }
-        this.write(path, buffer);
+        await this.write(path, buffer);
         result.files.push({ messageId, kind: media.kind, size: thumb ? 'thumb' : 'full', path, bytes: buffer.length, mime, cached: false });
       } catch (err) {
         result.skipped.push({ messageId, reason: (err as Error).message });
@@ -234,10 +241,9 @@ export class MediaService {
     }
   }
 
-  /** Writes files readable by agents running as another macOS user. */
-  private write(path: string, buffer: Buffer): void {
-    ensureTrustedDir(dirname(path), this.filesDir);
-    writeNewFile(path, buffer, 0o644);
+  /** Writes files readable by agents running as another OS user. */
+  private async write(path: string, buffer: Buffer): Promise<void> {
+    await this.files.writeNewFile(path, buffer, 0o644);
 
     if (++this.writesSinceQuotaCheck >= QUOTA_CHECK_EVERY) {
       this.writesSinceQuotaCheck = 0;

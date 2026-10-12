@@ -1,7 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TelegramClient } from 'teleproto';
+import { Api, type TelegramClient } from 'teleproto';
+import { signInUser } from 'teleproto/client/auth';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loginAccount, normalizePhone } from '../auth.js';
 import { ClientPool, type ClientFactory } from '../clientPool.js';
@@ -9,7 +10,7 @@ import { loadConfig, loadSessionSecret, parseToolsets, requireApiCredentials } f
 import { seal } from '../crypto.js';
 import { AccountLimiter } from '../limiter.js';
 import { createLogger } from '../log.js';
-import { TgGateway } from '../tg.js';
+import { TgGateway, queueLoginCalls } from '../tg.js';
 import { SqliteStorage } from '../../storage/sqlite.js';
 
 const silent = createLogger('test', { level: 'silent' });
@@ -275,6 +276,42 @@ describe('loginAccount', () => {
     expect(normalizePhone('79991234567')).toBe('+79991234567');
     expect(() => normalizePhone('abc')).toThrow(/international format/);
   });
+  it('does not return a session after cancelled input even if the library returns normally', async () => {
+    const {factory}=makeFactory(c=>{
+      c.start.mockImplementation(async(params:{phoneCode:()=>Promise<string>})=>{await params.phoneCode().catch(()=>undefined)});
+    });
+    await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>{throw new Error('cancelled')},password:async()=>''},log:silent})).rejects.toMatchObject({code:'UNAVAILABLE'});
+  });
+  it('requires worker termination rather than continuing after stuck cleanup', async () => {
+    const {factory}=makeFactory(c=>{c.destroy.mockImplementation(async()=>new Promise(()=>undefined))});
+    const fatal=vi.fn(()=>{throw new Error('fatal_worker_exit')});
+    await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,cleanupTimeoutMs:5,onFatal:fatal})).rejects.toThrow('fatal_worker_exit');
+    expect(fatal).toHaveBeenCalledTimes(1);
+  });
+  for (const [name, destroy] of [['stuck', () => new Promise(() => undefined)], ['rejecting', async () => { throw new Error('synthetic close failure'); }]] as const) {
+    it(`persists the authorized session before a ${name} cleanup terminates the worker`, async () => {
+      const events: string[] = []; let original: unknown; let queued: ((request: unknown) => Promise<unknown>) | undefined;
+      const {factory,created}=makeFactory(c=>{original=c.invoke;c.start.mockImplementation(async()=>{queued=c.invoke as never});c.destroy.mockImplementation(async()=>{events.push('destroy');return destroy()})});
+      const fatal=vi.fn(()=>{events.push(created[0]!.invoke===original?'fatal-after-restore':'fatal');throw new Error('fatal_worker_exit')});
+      const persist=vi.fn(async(result:{session:string})=>{events.push(`persist:${result.session}`)});
+      await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,cleanupTimeoutMs:5,onFatal:fatal,persist})).rejects.toThrow('fatal_worker_exit');
+      expect(events).toEqual(['persist:SAVED_SESSION','destroy','fatal-after-restore']);
+      // The library-facing queue is shut down even though termination was requested.
+      await expect(queued!({className:'help.GetConfig'})).rejects.toMatchObject({code:'UNAVAILABLE'});
+    });
+  }
+  it('surfaces persistence errors unchanged and still closes the login client', async () => {
+    const {factory,created}=makeFactory(c=>{c.start.mockImplementation(async(params:{onError:(e:Error)=>Promise<boolean>})=>{await params.onError(new Error('PHONE_CODE_INVALID'))})});
+    const failure=new Error('synthetic storage failure');
+    await expect(loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>'',password:async()=>''},log:silent,persist:async()=>{throw failure}})).rejects.toBe(failure);
+    expect(created[0]!.destroy).toHaveBeenCalledOnce();
+  });
+  it('drops whitespace from pasted login codes but passes passwords verbatim', async () => {
+    const {factory}=makeFactory(c=>{c.start.mockImplementation(async(params:{phoneCode:()=>Promise<string>;password:(h?:string)=>Promise<string>})=>{
+      expect(await params.phoneCode()).toBe('12345');expect(await params.password()).toBe(' pass word ');
+    })});
+    await loginAccount({factory,apiId:1,apiHash:'h',phone:'+79991234567',prompts:{code:async()=>' 12 345 \n',password:async()=>' pass word '},log:silent});
+  });
 });
 
 describe('config', () => {
@@ -332,7 +369,63 @@ describe('config', () => {
     const second = loadSessionSecret(home, {});
     expect(first).toBe(second);
     expect(readFileSync(join(home, 'session.key'), 'utf8').trim()).toBe(first);
-    expect(statSync(join(home, 'session.key')).mode & 0o777).toBe(0o600);
+    // POSIX mode bits are not Windows ACL evidence; service ACLs have their own checks.
+    if (process.platform !== 'win32') expect(statSync(join(home, 'session.key')).mode & 0o777).toBe(0o600);
     expect(loadSessionSecret(home, { TG_MCP_SESSION_KEY: 'from-env' })).toBe('from-env');
+  });
+});
+
+describe('queued authentication RPC boundary', () => {
+  it('preserves DC migration and call options, then restores the original methods', async () => {
+    const invoke = vi.fn(async () => ({ ok: true })); const connect = vi.fn(async () => true);
+    const client = { invoke, connect } as unknown as TelegramClient;
+    const limiter = new AccountLimiter({ log: silent, onFatal: () => { throw new Error('fatal'); } });
+    const restore = queueLoginCalls(client, 'login', limiter, () => { throw new Error('fatal'); });
+    const request = { className: 'auth.SignIn' }; const options = { floodSleepThreshold: 0 };
+    await client.invoke(request as never, 4, options as never);
+    expect(invoke).toHaveBeenCalledWith(request, 4, options);
+    restore(); limiter.shutdown();
+    expect(client.invoke).toBe(invoke); expect(client.connect).toBe(connect);
+  });
+});
+
+describe('authentication library regressions', () => {
+  it('reaches the pinned library password branch after SESSION_PASSWORD_NEEDED', async () => {
+    const control = Object.assign(new Error('password required'), { errorMessage: 'SESSION_PASSWORD_NEEDED' });
+    const password = vi.fn(async () => 'synthetic-password');
+    const signInWithPassword = vi.fn(async (_credentials, params) => { await params.password(); return { id: 1 }; });
+    const client = { invoke: vi.fn(async (request: { className: string }) => {
+      if (request.className === 'auth.SendCode') return new Api.auth.SentCode({ type: new Api.auth.SentCodeTypeApp({ length: 5 }), phoneCodeHash: 'synthetic' });
+      throw control;
+    }), signInWithPassword } as unknown as TelegramClient;
+    const limiter = new AccountLimiter({ log: silent, minIntervalMs: 0, onFatal: () => { throw new Error('fatal'); } });
+    const restore = queueLoginCalls(client, 'login', limiter, () => { throw new Error('fatal'); });
+    try {
+      await expect(signInUser(client, { apiId: 1, apiHash: 'synthetic' }, {
+        phoneNumber: '+15550000000', phoneCode: async () => '12345', password,
+        onError: async () => { throw new Error('2FA must not enter generic retry'); },
+      })).resolves.toEqual({ id: 1 });
+      expect(password).toHaveBeenCalledOnce(); expect(signInWithPassword).toHaveBeenCalledOnce();
+    } finally { restore(); limiter.shutdown(); }
+  });
+  it('executes nested migration calls in order under the auth owner while other work stays queued', async () => {
+    const order: string[] = []; const fatal = vi.fn();
+    const client = { invoke: vi.fn(async (request: { className: string }) => {
+      order.push(request.className);
+      if (request.className === 'auth.SendCode') {
+        await client.invoke({ className: 'updates.GetState' } as never);
+        await Promise.all([client.invoke({ className: 'help.GetConfig' } as never), client.invoke({ className: 'auth.ExportAuthorization' } as never)]);
+      }
+      return { ok: true };
+    }) } as unknown as TelegramClient;
+    const limiter = new AccountLimiter({ log: silent, minIntervalMs: 0, defaultDeadlineMs: 2000, interactiveWaitBudgetMs: 1000, onFatal: fatal });
+    const restore = queueLoginCalls(client, 'login', limiter, () => { throw new Error('fatal'); });
+    try {
+      const auth = client.invoke({ className: 'auth.SendCode' } as never);
+      const unrelated = limiter.run('login', async () => { order.push('unrelated'); return true; }, { label: 'unrelated' });
+      await auth; await unrelated;
+      expect(order).toEqual(['auth.SendCode', 'updates.GetState', 'help.GetConfig', 'auth.ExportAuthorization', 'unrelated']);
+      expect(limiter.status('login').callsInWindow).toBe(5); expect(fatal).not.toHaveBeenCalled();
+    } finally { restore(); limiter.shutdown(); }
   });
 });

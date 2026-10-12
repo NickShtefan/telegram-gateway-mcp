@@ -95,6 +95,20 @@ describe('HTTP: daemon entry point', () => {
     }
   });
 
+  it('drops a body beyond the discard bound instead of reading it forever, and keeps serving', async () => {
+    const small = await startHttpServer({ services: gw.services, host: '127.0.0.1', port: 0, toolsets: ['core'], version: 'test', log: silent, maxBodyBytes: 2_000 });
+    try {
+      await expect(fetch(`http://127.0.0.1:${small.port}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gw.tokens.user_a}` },
+        body: 'x'.repeat(9 * 1024 * 1024),
+      })).rejects.toThrow();
+      expect((await fetch(`http://127.0.0.1:${small.port}/healthz`)).status).toBe(200);
+    } finally {
+      await small.close();
+    }
+  });
+
   it('MCP HTTP client: the token identifies the user', async () => {
     const connect = async (token: string) => {
       const client = new Client({ name: 'agent', version: '1' });

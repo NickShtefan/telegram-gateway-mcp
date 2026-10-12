@@ -19,6 +19,8 @@ import { Resolver } from './resolve.js';
 import { SearchService } from './search.js';
 import { SnapshotStore, StatsService } from './stats.js';
 import { GatewayError } from '../core/errors.js';
+import { SharedFiles } from '../core/safeFs.js';
+import type { DirectoryAttestor } from '../core/windowsAcl.js';
 import { SqliteStorage } from '../storage/sqlite.js';
 import { TopicsService } from './topics.js';
 
@@ -39,12 +41,16 @@ export interface GatewayServices {
   indexStore: IndexStore;
   topics: TopicsService;
   media: MediaService;
+  /** Shared files directory guard for exports and media, one per process. */
+  files: SharedFiles;
   jobs: JobManager;
   writeGate: WriteGate;
 }
 
 export interface BuildOptions {
   now?: () => number;
+  /** Windows ACL check of the shared files directories; defaults to the fixed PowerShell helper. */
+  attestDirectories?: DirectoryAttestor;
 }
 
 export function buildServices(runtime: Runtime, options: BuildOptions = {}): GatewayServices {
@@ -52,8 +58,9 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
   const { tg, storage, config, log } = runtime;
   const history = new HistoryService(tg);
   const search = new SearchService(tg, storage.entities);
-  const media = new MediaService({ tg, filesDir: config.filesDir, log: log.child('media'), now });
-  const exporter = new ExportService({ storage, history, search, media, filesDir: config.filesDir, now });
+  const files = new SharedFiles(config.filesDir, { attest: options.attestDirectories });
+  const media = new MediaService({ tg, files, log: log.child('media'), now });
+  const exporter = new ExportService({ storage, history, search, media, files, now });
   const jobs = new JobManager({ storage, log: log.child('jobs') });
   jobs.register('export', context => exporter.run(context));
 
@@ -83,6 +90,7 @@ export function buildServices(runtime: Runtime, options: BuildOptions = {}): Gat
     indexStore,
     topics: new TopicsService(tg),
     media,
+    files,
     jobs,
     writeGate,
   };
